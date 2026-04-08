@@ -1,0 +1,497 @@
+﻿{% extends "base.html" %}
+{% block title %}Lobby — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════════
+       Header bar
+       ═══════════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold">Lobby</h1>
+      <p class="text-gray-400 text-sm mt-0.5 flex items-center gap-1.5">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel">Connecting…</span>
+      </p>
+    </div>
+    <div class="flex items-center gap-3 text-sm">
+      <span class="text-gray-400">{{ user_profile.country_flag }} {{ user_profile.username }}</span>
+      <span class="font-semibold text-brand">{{ user_profile.elo }} ELO</span>
+      <span class="{{ category.css }}">{{ category.icon }} {{ category.tier }}</span>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+
+    <!-- ═══════════════════════════════════════════
+         LEFT  (3 cols): Quick Pair + Tournaments
+         ═══════════════════════════════════════════ -->
+    <div class="lg:col-span-3 space-y-8">
+
+      <!-- ── Quick Pairing ──────────────────────── -->
+      <section>
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          ⚡ Quick Pair
+          <span class="text-xs text-gray-500 font-normal">— rated AI match</span>
+        </h2>
+
+        <div class="card space-y-5">
+          <!-- Time control selector -->
+          <div>
+            <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Time Control</p>
+            <div class="flex flex-wrap gap-2" id="tcSelector">
+              {% for tc in time_controls %}
+                <button type="button"
+                        class="tc-btn{% if tc.primary %} active{% endif %}"
+                        data-tc="{{ tc.value }}"
+                        title="{{ tc.desc }}">
+                  {{ tc.label }}
+                  <span class="block text-[0.65rem] text-gray-500">{{ tc.desc }}</span>
+                </button>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- Play button + queue state -->
+          <div class="flex flex-col sm:flex-row items-center gap-4">
+            <button id="playBtn" class="btn-brand text-lg px-10 py-3 w-full sm:w-auto">
+              ♟ Play
+            </button>
+            <div id="queueState" class="hidden flex items-center gap-3 text-sm text-gray-300">
+              <span class="spinner"></span>
+              <span id="queueMsg">Searching for opponent…</span>
+              <button id="cancelBtn" class="btn-danger text-xs px-3 py-1">Cancel</button>
+            </div>
+          </div>
+
+          <!-- Queue sizes -->
+          <div class="flex flex-wrap gap-4 text-xs text-gray-500" id="queueSizes">
+            {% for tc in time_controls %}
+              <span>{{ tc.label }}: <strong id="qs-{{ tc.value }}" class="text-gray-300">0</strong> in queue</span>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Tournaments ────────────────────────── -->
+      <section>
+        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
+          🏆 Tournaments
+          <span class="text-xs text-gray-500 font-normal">— free entry</span>
+        </h2>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" id="tournamentGrid">
+
+          <!-- 4 × Small tournament cards -->
+          {% for t in small_tournaments %}
+          <div class="tournament-card {% if t.status == 'open' %}joinable{% endif %}"
+               id="tc-{{ t.pk }}"
+               data-tid="{{ t.pk }}" data-cap="{{ t.capacity }}">
+
+            <!-- Badge row -->
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-semibold px-2 py-0.5 rounded
+                {% if t.category == 'beginner' %}bg-amber-900/40 text-amber-400
+                {% elif t.category == 'intermediate' %}bg-gray-700 text-gray-200
+                {% elif t.category == 'advanced' %}bg-yellow-900/40 text-yellow-300
+                {% elif t.category == 'expert' %}bg-purple-900/40 text-purple-300
+                {% endif %}">
+                {{ t.category_info.icon }} {{ t.category_info.label }}
+              </span>
+              <span class="text-[0.65rem] text-gray-500 uppercase">{{ t.rounds_total }} rounds · {{ t.time_control_display }}</span>
+            </div>
+
+            <!-- Title -->
+            <h3 class="font-semibold text-sm leading-tight">{{ t.name }}</h3>
+
+            <!-- Prize -->
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-brand font-semibold">${{ t.prize_pool }} prize</span>
+              <span class="text-gray-500">{{ t.capacity }} players</span>
+            </div>
+
+            <!-- Player count + progress -->
+            <div>
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="text-gray-400">
+                  <span class="tc-count font-medium text-gray-200">{{ t.participant_count }}</span> / {{ t.capacity }}
+                </span>
+                <span class="text-gray-500">{{ t.fill_pct }}%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill {% if t.is_full %}full{% endif %}"
+                     style="width: {{ t.fill_pct }}%"></div>
+              </div>
+            </div>
+
+            <!-- Join / Leave / Watch button -->
+            {% if t.pk in joined_tournament_ids %}
+              {% if t.status == 'open' or t.status == 'full' %}
+                <div class="flex gap-2 mt-auto">
+                  <a href="{% url 'tournaments:detail' t.pk %}"
+                     class="btn-outline text-xs py-1.5 flex-1 text-center">Joined ✓</a>
+                  <form method="post" action="{% url 'tournaments:leave' t.pk %}" class="flex-1">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-danger text-xs py-1.5 w-full">Leave</button>
+                  </form>
+                </div>
+              {% else %}
+                <a href="{% url 'tournaments:detail' t.pk %}"
+                   class="btn-outline text-xs py-1.5 w-full text-center mt-auto">Watch Live</a>
+              {% endif %}
+            {% elif t.status == 'open' %}
+              <a href="{% url 'tournaments:join' t.pk %}"
+                 class="btn-brand text-xs py-1.5 w-full text-center mt-auto">Join — Free</a>
+            {% elif t.status == 'ongoing' %}
+              <a href="{% url 'tournaments:detail' t.pk %}"
+                 class="btn-outline text-xs py-1.5 w-full text-center mt-auto">Watch Live</a>
+            {% else %}
+              <span class="text-center text-xs text-gray-500 py-1.5">Full — starting soon</span>
+            {% endif %}
+          </div>
+          {% empty %}
+            <!-- Placeholder cards -->
+            {% for i in "1234" %}
+            <div class="tournament-card opacity-50">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold px-2 py-0.5 rounded bg-gray-700 text-gray-400">TBD</span>
+                <span class="text-[0.65rem] text-gray-500 uppercase">7 rounds</span>
+              </div>
+              <h3 class="font-semibold text-sm text-gray-500">Coming soon</h3>
+              <div class="text-xs text-gray-600">$15 prize · 128 players</div>
+              <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+              <span class="text-center text-xs text-gray-600 py-1.5">Not yet available</span>
+            </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+
+        <!-- Large tournament card (full width) -->
+        <div class="mt-4">
+          {% if large_tournament %}
+          <div class="tournament-card large-card {% if large_tournament.status == 'open' %}joinable{% endif %}"
+               id="tc-{{ large_tournament.pk }}"
+               data-tid="{{ large_tournament.pk }}" data-cap="{{ large_tournament.capacity }}">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-bold px-2 py-0.5 rounded bg-brand/20 text-brand uppercase tracking-wider">
+                    Grand Arena
+                  </span>
+                  <span class="text-[0.65rem] text-gray-500 uppercase">{{ large_tournament.rounds_total }} rounds · {{ large_tournament.time_control_display }} · Rotating category</span>
+                </div>
+                <h3 class="font-bold text-lg">{{ large_tournament.name }}</h3>
+                <p class="text-xs text-gray-400 mt-0.5">{{ large_tournament.description|default:"Weekly rotating ELO category — all skill levels welcome." }}</p>
+              </div>
+              <div class="flex items-center gap-6 text-sm shrink-0">
+                <div class="stat-pill">
+                  <span class="stat-value text-brand">${{ large_tournament.prize_pool }}</span>
+                  <span class="stat-label">Prize</span>
+                </div>
+                <div class="stat-pill">
+                  <span class="stat-value text-gray-100 tc-count">{{ large_tournament.participant_count }}</span>
+                  <span class="stat-label">/ {{ large_tournament.capacity }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress -->
+            <div>
+              <div class="flex items-center justify-between text-xs mb-1">
+                <span class="text-gray-400">Prize split: <span class="text-brand font-semibold">$30 / $20 / $10</span></span>
+                <span class="text-gray-500">{{ large_tournament.fill_pct }}%</span>
+              </div>
+              <div class="progress-track">
+                <div class="progress-fill {% if large_tournament.is_full %}full{% endif %}"
+                     style="width: {{ large_tournament.fill_pct }}%"></div>
+              </div>
+            </div>
+
+            {% if large_tournament.pk in joined_tournament_ids %}
+              {% if large_tournament.status == 'open' or large_tournament.status == 'full' %}
+                <div class="flex flex-col sm:flex-row gap-2">
+                  <a href="{% url 'tournaments:detail' large_tournament.pk %}"
+                     class="btn-outline text-sm py-2 sm:px-8 text-center">Joined ✓</a>
+                  <form method="post" action="{% url 'tournaments:leave' large_tournament.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-danger text-sm py-2 sm:px-8 w-full">Leave</button>
+                  </form>
+                </div>
+              {% else %}
+                <a href="{% url 'tournaments:detail' large_tournament.pk %}"
+                   class="btn-outline text-sm py-2 w-full sm:w-auto sm:px-12 text-center">Watch Live</a>
+              {% endif %}
+            {% elif large_tournament.status == 'open' %}
+              <a href="{% url 'tournaments:join' large_tournament.pk %}"
+                 class="btn-brand text-sm py-2 w-full sm:w-auto sm:px-12 text-center">Join Grand Arena — Free</a>
+            {% elif large_tournament.status == 'ongoing' %}
+              <a href="{% url 'tournaments:detail' large_tournament.pk %}"
+                 class="btn-outline text-sm py-2 w-full sm:w-auto sm:px-12 text-center">Watch Live</a>
+            {% else %}
+              <span class="text-sm text-gray-500">Full — starting soon</span>
+            {% endif %}
+          </div>
+          {% else %}
+          <div class="tournament-card large-card opacity-50">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-xs font-bold px-2 py-0.5 rounded bg-gray-700 text-gray-500 uppercase tracking-wider">Grand Arena</span>
+            </div>
+            <h3 class="font-bold text-lg text-gray-500">Coming Soon</h3>
+            <p class="text-xs text-gray-600">1024 players · 10 rounds · $60 prize pool · Rotating weekly category</p>
+            <div class="progress-track"><div class="progress-fill" style="width:0%"></div></div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <!-- ═══════════════════════════════════════════
+         RIGHT  (1 col): User stats sidebar
+         ═══════════════════════════════════════════ -->
+    <aside class="space-y-6">
+
+      <!-- Mini profile card -->
+      <div class="card text-center">
+        <p class="text-3xl mb-1">{{ user_profile.country_flag }}</p>
+        <h3 class="font-bold text-lg">{{ user_profile.username }}</h3>
+        <p class="text-brand text-2xl font-bold mt-1">{{ user_profile.elo }}</p>
+        <p class="{{ category.css }} text-sm font-semibold">{{ category.icon }} {{ category.tier }}</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Your Stats</h3>
+        <table class="stats-table text-sm">
+          <tbody>
+            <tr>
+              <td class="text-gray-400">Wins</td>
+              <td class="text-right text-green-400 font-medium">{{ user_profile.wins }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Losses</td>
+              <td class="text-right text-red-400 font-medium">{{ user_profile.losses }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Draws</td>
+              <td class="text-right text-yellow-300 font-medium">{{ user_profile.draws }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Total</td>
+              <td class="text-right font-medium">{{ user_profile.total_games }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Win Rate</td>
+              <td class="text-right font-medium">{% widthratio user_profile.win_rate 1 100 %}%</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Streak</td>
+              <td class="text-right font-medium
+                {% if user_profile.current_streak > 0 %}text-green-400
+                {% elif user_profile.current_streak < 0 %}text-red-400
+                {% else %}text-gray-400{% endif %}">
+                {% if user_profile.current_streak > 0 %}+{% endif %}{{ user_profile.current_streak }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- AI Bot -->
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Your AI</h3>
+        {% if user_profile.ai_name %}
+          <p class="font-medium">{{ user_profile.ai_name }}</p>
+          <p class="text-xs text-gray-500 mt-0.5">
+            {% if user_profile.ai_file %}
+              {{ user_profile.ai_file.name|truncatechars:30 }}
+            {% else %}
+              No file uploaded
+            {% endif %}
+          </p>
+        {% else %}
+          <p class="text-gray-500 text-sm">No AI bot configured.</p>
+          <a href="{% url 'users:profile' %}" class="text-brand text-xs hover:underline">Upload one →</a>
+        {% endif %}
+      </div>
+
+      <!-- Quick links -->
+      <div class="space-y-2">
+        <a href="{% url 'users:profile' %}" class="btn-outline text-xs py-2 w-full text-center">Edit Profile / AI</a>
+        <a href="{% url 'games:history' %}" class="btn-outline text-xs py-2 w-full text-center">Game History</a>
+        <a href="{% url 'core:leaderboard' %}" class="btn-outline text-xs py-2 w-full text-center">Leaderboard</a>
+      </div>
+    </aside>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // ── Elements ──────────────────────────────────
+  const playBtn    = document.getElementById('playBtn');
+  const cancelBtn  = document.getElementById('cancelBtn');
+  const queueState = document.getElementById('queueState');
+  const queueMsg   = document.getElementById('queueMsg');
+  const wsDot      = document.getElementById('wsDot');
+  const wsLabel    = document.getElementById('wsLabel');
+  const tcBtns     = document.querySelectorAll('#tcSelector .tc-btn');
+
+  let selectedTC = '3+1';
+  let isQueued   = false;
+  let ws         = null;
+
+  // ── Time‑control selector ─────────────────────
+  tcBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (isQueued) return;                 // can't switch while queued
+      tcBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedTC = btn.dataset.tc;
+    });
+  });
+
+  // ── WebSocket ─────────────────────────────────
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/games/lobby/`);
+
+    ws.onopen = () => {
+      wsDot.className = 'ws-dot connected';
+      wsLabel.textContent = 'Connected';
+    };
+
+    ws.onclose = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Disconnected — reconnecting…';
+      setTimeout(connectWS, 2000);
+    };
+
+    ws.onerror = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Connection error';
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      handleMessage(data);
+    };
+  }
+  connectWS();
+
+  // ── Message handler ───────────────────────────
+  function handleMessage(data) {
+    switch (data.type) {
+      case 'queued':
+        setQueued(true, `Searching (position ${data.position})…`);
+        break;
+
+      case 'matched':
+        setQueued(false);
+        // Redirect to the game page
+        window.location.href = `/games/${data.game_id}/`;
+        break;
+
+      case 'queue_cancelled':
+        setQueued(false);
+        break;
+
+      case 'queue_size': {
+        const el = document.getElementById(`qs-${data.time_control}`);
+        if (el) el.textContent = data.size;
+        break;
+      }
+
+      case 'tournament_counts':
+        updateTournamentCounts(data.counts);
+        break;
+
+      case 'tournament_count':
+        updateSingleTournament(data);
+        break;
+
+      case 'error':
+        alert(data.message || 'An error occurred.');
+        setQueued(false);
+        break;
+    }
+  }
+
+  // ── Queue UI state ────────────────────────────
+  function setQueued(queued, msg) {
+    isQueued = queued;
+    if (queued) {
+      playBtn.classList.add('hidden');
+      queueState.classList.remove('hidden');
+      playBtn.classList.remove('pulse-queue');
+      if (msg) queueMsg.textContent = msg;
+    } else {
+      playBtn.classList.remove('hidden');
+      queueState.classList.add('hidden');
+    }
+  }
+
+  // ── Play / Cancel ─────────────────────────────
+  playBtn.addEventListener('click', () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      alert('Not connected to server. Please wait…');
+      return;
+    }
+    ws.send(JSON.stringify({ action: 'queue', time_control: selectedTC }));
+    playBtn.classList.add('pulse-queue');
+  });
+
+  cancelBtn.addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'cancel_queue', time_control: selectedTC }));
+    }
+    setQueued(false);
+  });
+
+  // ── Tournament live counts ────────────────────
+  function updateTournamentCounts(counts) {
+    for (const [tid, info] of Object.entries(counts)) {
+      updateCardUI(tid, info);
+    }
+  }
+
+  function updateSingleTournament(data) {
+    updateCardUI(data.tournament_id, data);
+  }
+
+  function updateCardUI(tid, info) {
+    const card = document.getElementById(`tc-${tid}`);
+    if (!card) return;
+
+    const cap   = parseInt(card.dataset.cap) || 1;
+    const count = info.count ?? 0;
+    const pct   = Math.min(Math.round(count / cap * 100), 100);
+
+    // Update count text
+    const countEl = card.querySelector('.tc-count');
+    if (countEl) countEl.textContent = count;
+
+    // Update progress bar
+    const fill = card.querySelector('.progress-fill');
+    if (fill) {
+      fill.style.width = pct + '%';
+      fill.classList.toggle('full', pct >= 100);
+    }
+
+    // Update joinable border
+    const status = info.status || '';
+    card.classList.toggle('joinable', status === 'open');
+  }
+
+  // ── Periodic tournament refresh ───────────────
+  setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'request_counts' }));
+    }
+  }, 15000);
+
+})();
+</script>
+{% endblock %}

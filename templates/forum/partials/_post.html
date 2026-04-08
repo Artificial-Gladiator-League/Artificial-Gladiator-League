@@ -1,0 +1,92 @@
+{% load forum_tags %}
+{% load core_tags %}
+{# ── Single post / reply block ──────────────────────────────────────────── #}
+{# Context: post, thread, user, is_op (bool)                                #}
+
+{% with indent=post.indent|default:0 %}
+<article id="{% if is_op %}op{% else %}post-{{ post.pk }}{% endif %}"
+         class="forum-post group {% if is_op %}forum-post--op{% endif %}"
+         {% if not is_op %}style="margin-left: {{ indent|multiply:24 }}px;"{% endif %}>
+
+  {# ── Nesting connector line (replies only) ── #}
+  {% if not is_op and indent > 0 %}
+  <div class="absolute left-0 top-0 bottom-0 w-0.5 bg-purple/20 rounded-full"
+       style="margin-left: -12px;"></div>
+  {% endif %}
+
+  <div class="flex items-start gap-3 sm:gap-4">
+    {# ── Avatar ── #}
+    {% if is_op %}
+    <div class="flex-shrink-0 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-br from-purple to-purpleDim flex items-center justify-center text-sm sm:text-base font-bold text-white shadow-lg shadow-purple/20 select-none">
+      {% if post.author %}{{ post.author.username|make_list|first|upper }}{% else %}?{% endif %}
+    </div>
+    {% else %}
+    <div class="flex-shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-surfaceLight border border-borderDark/60 flex items-center justify-center text-xs sm:text-sm font-semibold text-gray-400 select-none">
+      {% if post.author %}{{ post.author.username|make_list|first|upper }}{% else %}?{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="flex-1 min-w-0">
+      {# ── Metadata line ── #}
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs mb-1.5">
+        <a href="#" class="font-semibold text-gray-200 hover:text-purple transition-colors">
+          {% fide_badge post.author %} {{ post.author.username|default:"[deleted]" }}
+        </a>
+        {% if post.author.elo %}
+        <span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-purple/10 text-purple text-[11px] font-medium leading-none">
+          {{ post.author.elo }} Elo
+        </span>
+        {% endif %}
+        <span class="text-gray-600">·</span>
+        <time class="text-gray-500" datetime="{{ post.created_at|date:'c' }}">{{ post.created_at|timesince }} ago</time>
+        {% if not is_op and post.parent %}
+        <span class="text-gray-600">·</span>
+        <span class="text-gray-500">
+          <span class="text-gray-600">↩</span> {% fide_badge post.parent.author %} {{ post.parent.author.username|default:"[deleted]" }}
+        </span>
+        {% endif %}
+      </div>
+
+      {# ── Body (Markdown) ── #}
+      <div class="prose prose-invert {% if is_op %}prose-base{% else %}prose-sm{% endif %} max-w-none text-gray-300 leading-relaxed">
+        {{ post.body|render_markdown }}
+      </div>
+
+      {# ── Linked items (OP only) ── #}
+      {% if is_op %}
+        {% if thread.linked_game or thread.linked_tournament %}
+        <div class="mt-4 flex flex-wrap gap-2">
+          {% if thread.linked_game %}
+          <a href="{% url 'games:game_detail' thread.linked_game.pk %}"
+             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-borderDark text-xs text-gray-300 hover:border-purple/50 hover:text-purple transition-all group/pill">
+            <span class="text-sm">🎮</span>
+            <span class="font-medium">Replay #{{ thread.linked_game.pk }}</span>
+            <span class="text-gray-500 group-hover/pill:text-gray-400 transition-colors">
+              {% fide_badge thread.linked_game.white %} {{ thread.linked_game.white.username|default:"?" }} vs {% fide_badge thread.linked_game.black %} {{ thread.linked_game.black.username|default:"?" }}
+            </span>
+          </a>
+          {% endif %}
+          {% if thread.linked_tournament %}
+          <a href="{% url 'tournaments:detail' thread.linked_tournament.pk %}"
+             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-borderDark text-xs text-gray-300 hover:border-gold/50 hover:text-gold transition-all group/pill">
+            <span class="text-sm">⚔️</span>
+            <span class="font-medium">{{ thread.linked_tournament.name }}</span>
+          </a>
+          {% endif %}
+        </div>
+        {% endif %}
+      {% endif %}
+
+      {# ── Reply action (replies only, not locked) ── #}
+      {% if not is_op and not thread.is_locked and user.is_authenticated %}
+      <div class="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+        <a href="{% url 'forum:reply' thread.pk %}?parent={{ post.pk }}"
+           class="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-purple transition-colors font-medium">
+          <span>↩</span> Reply
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</article>
+{% endwith %}

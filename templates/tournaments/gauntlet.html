@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% load static core_tags %}
+{% block title %}
+  {% if tournament %}Gladiator Gauntlet Week {{ tournament.week_number|default:"?" }}{% else %}Gladiator Gauntlet{% endif %}
+  — Artificial Gladiator
+{% endblock %}
+
+{% block content %}
+{% if not tournament %}
+<!-- ═══ No Gauntlet Yet ═══ -->
+<div class="text-center py-20 animate-fade-in">
+  <div class="text-6xl mb-4">⚔️</div>
+  <h1 class="text-3xl font-extrabold mb-3">Gladiator Gauntlet</h1>
+  <p class="text-gray-400 text-lg mb-6">No gauntlet has been run yet. Stay tuned!</p>
+  <a href="{% url 'core:home' %}" class="btn-gold">← Back to Home</a>
+</div>
+
+{% else %}
+<div class="animate-fade-in">
+
+  <!-- ═══ Header ═══ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <a href="{% url 'tournaments:list' %}" class="text-xs text-gray-500 hover:text-brand transition">← All Arenas</a>
+      <h1 class="text-2xl sm:text-3xl font-extrabold mt-1 flex items-center gap-3">
+        <span class="text-4xl">⚔️</span>
+        {{ tournament.name }}
+      </h1>
+      <p class="text-sm text-gray-400 mt-1">
+        Swiss System · {{ tournament.rounds_total }} Rounds · {{ tournament.time_control }} · Top {{ tournament.capacity }} AIs
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if tournament.status == 'ongoing' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-900/60 text-green-300 text-xs font-semibold border border-green-700">
+          <span class="live-dot"></span> Live — Round {{ tournament.current_round }}/{{ tournament.rounds_total }}
+        </span>
+      {% elif tournament.status == 'completed' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple/20 text-purple text-xs font-semibold border border-purple/40">
+          ✅ Completed
+        </span>
+      {% elif tournament.status == 'upcoming' or tournament.status == 'open' %}
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-900/40 text-yellow-300 text-xs font-semibold border border-yellow-700">
+          ⏳ Upcoming
+        </span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if countdown_seconds > 0 %}
+  <!-- ═══ Countdown ═══ -->
+  <div class="card card-glow-gold text-center py-8 mb-8">
+    <p class="text-sm text-gray-400 uppercase tracking-wider mb-2">Gauntlet starts in</p>
+    <div class="text-4xl font-mono font-bold text-gold" id="countdown">--:--:--</div>
+    <p class="text-xs text-gray-500 mt-3">Top {{ tournament.capacity }} Elo-rated AIs will be auto-selected</p>
+  </div>
+  {% endif %}
+
+  {% if tournament.status == 'completed' and tournament.announcement %}
+  <!-- ═══ Winner Announcement ═══ -->
+  <div class="card card-glow-purple mb-8 text-center py-6">
+    {% for line in tournament.announcement.splitlines %}
+      <p class="{% if forloop.first %}text-xl font-bold text-gold mb-2{% else %}text-sm text-gray-300{% endif %}">
+        {{ line }}
+      </p>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="grid lg:grid-cols-3 gap-6">
+
+    <!-- ═══ Left: Standings Table ═══ -->
+    <div class="lg:col-span-2">
+      <div class="card p-0" id="standings-card">
+        <div class="px-4 py-3 border-b border-borderDark flex items-center justify-between">
+          <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2">
+            🏆 Standings
+          </h2>
+          {% if tournament.status == 'ongoing' %}
+          <span class="text-xs text-gray-500"
+                hx-get="{% url 'tournaments:gauntlet_standings_partial' tournament.pk %}"
+                hx-trigger="every 10s"
+                hx-target="#standings-body"
+                hx-swap="innerHTML">
+            Auto-refreshing
+          </span>
+          {% endif %}
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-borderDark text-xs text-gray-500 uppercase tracking-wider">
+                <th class="px-4 py-2 text-left w-12">#</th>
+                <th class="px-4 py-2 text-left">AI / Owner</th>
+                <th class="px-4 py-2 text-right">Elo</th>
+                <th class="px-4 py-2 text-center">Score</th>
+                <th class="px-4 py-2 text-center">W</th>
+                <th class="px-4 py-2 text-center">D</th>
+                <th class="px-4 py-2 text-center">L</th>
+                <th class="px-4 py-2 text-right hidden sm:table-cell">Buchholz</th>
+              </tr>
+            </thead>
+            <tbody id="standings-body">
+              {% for s in standings %}
+              <tr class="border-b border-borderDark/50 hover:bg-surfaceLight/50 transition
+                         {% if s.rank == 1 and tournament.status == 'completed' %}bg-gold/5{% endif %}">
+                <td class="px-4 py-2.5 font-semibold
+                    {% if s.rank == 1 %}text-gold{% elif s.rank == 2 %}text-gray-300{% elif s.rank == 3 %}text-amber-600{% else %}text-gray-500{% endif %}">
+                  {% if s.rank == 1 %}🥇{% elif s.rank == 2 %}🥈{% elif s.rank == 3 %}🥉{% else %}{{ s.rank }}{% endif %}
+                </td>
+                <td class="px-4 py-2.5">
+                  <div class="flex items-center gap-2">
+                    <div class="w-7 h-7 rounded-full bg-purple flex-shrink-0 flex items-center justify-center text-xs font-bold text-white">
+                      {{ s.user.username|make_list|first|upper }}
+                    </div>
+                    <div>
+                      <span class="font-semibold text-white">{% fide_badge s.user %} {{ s.user.ai_name|default:s.user.username }}</span>
+                      <span class="text-xs text-gray-500 block">@{{ s.user.username }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-4 py-2.5 text-right font-semibold text-gold">{{ s.user.elo }}</td>
+                <td class="px-4 py-2.5 text-center font-bold text-lg
+                    {% if s.rank == 1 %}text-gold{% else %}text-white{% endif %}">
+                  {{ s.score|floatformat:1 }}
+                </td>
+                <td class="px-4 py-2.5 text-center text-green-400">{{ s.wins }}</td>
+                <td class="px-4 py-2.5 text-center text-gray-400">{{ s.draws }}</td>
+                <td class="px-4 py-2.5 text-center text-red-400">{{ s.losses }}</td>
+                <td class="px-4 py-2.5 text-right text-gray-500 hidden sm:table-cell">{{ s.buchholz|floatformat:1 }}</td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="8" class="px-4 py-8 text-center text-gray-500">
+                  Standings will appear once the first round begins.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ═══ Round-by-Round Matches ═══ -->
+      <div class="mt-6 space-y-4">
+        {% for round in round_list %}
+        <div class="card p-0 {% if round.is_future %}opacity-50{% endif %}">
+          <div class="px-4 py-2.5 border-b border-borderDark flex items-center justify-between">
+            <h3 class="text-sm font-semibold flex items-center gap-2">
+              Round {{ round.num }}
+              {% if round.is_current and tournament.status == 'ongoing' %}
+                <span class="live-dot"></span>
+                <span class="text-xs text-green-400">In Progress</span>
+              {% endif %}
+            </h3>
+          </div>
+
+          {% if round.matches %}
+          <div class="divide-y divide-borderDark/50">
+            {% for m in round.matches %}
+            <div class="px-4 py-2.5 flex items-center justify-between text-sm hover:bg-surfaceLight/30 transition">
+              <div class="flex items-center gap-4 flex-1">
+                <!-- Player 1 -->
+                <div class="flex items-center gap-1.5 w-2/5 justify-end text-right">
+                  <span class="font-medium {% if m.winner and m.winner == m.player1 %}text-green-400{% elif m.winner %}text-gray-500{% endif %}">
+                    {% fide_badge m.player1 %} {{ m.player1.ai_name|default:m.player1.username }}
+                  </span>
+                  <span class="text-xs text-gray-500">({{ m.player1.elo }})</span>
+                </div>
+
+                <!-- Score/Status -->
+                <div class="w-1/5 text-center">
+                  {% if m.is_completed %}
+                    <span class="font-mono font-bold
+                      {% if m.result == '1-0' %}text-white{% elif m.result == '0-1' %}text-white{% else %}text-gray-400{% endif %}">
+                      {{ m.result }}
+                    </span>
+                  {% elif m.is_live %}
+                    <span class="text-xs text-green-400 font-semibold flex items-center justify-center gap-1">
+                      <span class="live-dot" style="width:5px;height:5px;"></span> Live
+                    </span>
+                  {% else %}
+                    <span class="text-xs text-gray-600">—</span>
+                  {% endif %}
+                </div>
+
+                <!-- Player 2 -->
+                <div class="flex items-center gap-1.5 w-2/5">
+                  <span class="text-xs text-gray-500">({{ m.player2.elo }})</span>
+                  <span class="font-medium {% if m.winner and m.winner == m.player2 %}text-green-400{% elif m.winner %}text-gray-500{% endif %}">
+                    {% fide_badge m.player2 %} {{ m.player2.ai_name|default:m.player2.username }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- Watch / Replay -->
+              <div class="ml-2 flex-shrink-0">
+                {% if m.is_live %}
+                  <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
+                     class="text-xs text-green-400 hover:text-green-300 font-semibold transition">
+                    👁️ Watch
+                  </a>
+                {% elif m.is_completed and m.pk in game_map %}
+                  <a href="{% url 'games:game_detail' game_map|dictget:m.pk %}"
+                     class="text-xs text-gray-400 hover:text-brand transition">
+                    ▶ Replay
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="px-4 py-6 text-center text-gray-600 text-sm">
+            {% if round.is_future %}
+              Pairings will be generated after Round {{ round.num|add:"-1" }}.
+            {% else %}
+              No matches in this round.
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- ═══ Right Sidebar ═══ -->
+    <div class="space-y-4">
+
+      <!-- Tournament Info -->
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Tournament Info</h3>
+        <table class="text-xs w-full">
+          <tbody>
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Format</td>
+              <td class="font-medium">Swiss System</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Time Control</td>
+              <td class="font-medium">{{ tournament.time_control }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Rounds</td>
+              <td class="font-medium">{{ tournament.current_round }}/{{ tournament.rounds_total }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Participants</td>
+              <td class="font-medium">{{ tournament.participant_count }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Week</td>
+              <td class="font-medium">#{{ tournament.week_number|default:"?" }}</td>
+            </tr>
+            {% if tournament.champion %}
+            <tr>
+              <td class="text-gray-500 py-1 pr-3">Champion</td>
+              <td class="font-semibold text-gold">🏆 {% fide_badge tournament.champion %} {{ tournament.champion.username }}</td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Prize Info -->
+      <div class="card card-glow-gold">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Prizes</h3>
+        <div class="space-y-2 text-sm">
+          <div class="flex items-center gap-2">
+            <span class="text-gold">🏆</span>
+            <span>Champion: <strong class="text-gold">"Gauntlet Champion" Badge</strong></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-gray-400">🥈🥉</span>
+            <span>Top 3: <strong class="text-purple">"Gauntlet Top 3" Badge</strong></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">🏅</span>
+            <span>All: <strong>Hall of Fame on Homepage</strong></span>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500 mt-3">No cash prizes — only reputation, badges, and glory.</p>
+      </div>
+
+      <!-- Past Gauntlets -->
+      {% if past_gauntlets %}
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Archive</h3>
+        <div class="space-y-1.5">
+          {% for g in past_gauntlets %}
+          <a href="{% url 'tournaments:gauntlet_by_pk' g.pk %}"
+             class="flex items-center justify-between text-sm hover:text-brand transition py-1">
+            <span>Week {{ g.week_number }}</span>
+            <span class="text-xs text-gray-500">🏆 {% fide_badge g.champion %} {{ g.champion.username|default:"—" }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Navigation -->
+      <div class="space-y-2">
+        <a href="{% url 'tournaments:list' %}" class="btn-outline text-xs py-2 w-full text-center">← All Arenas</a>
+        <a href="{% url 'core:home' %}" class="btn-outline text-xs py-2 w-full text-center">🏠 Home</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endif %}
+
+{% if tournament and tournament.status == 'ongoing' %}
+{% include "tournaments/partials/chat_box.html" %}
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if tournament and countdown_seconds > 0 %}
+<script>
+(function(){
+  var secs = {{ countdown_seconds }};
+  var el = document.getElementById('countdown');
+  function fmt(s) {
+    var h = Math.floor(s/3600);
+    var m = Math.floor((s%3600)/60);
+    var sec = s % 60;
+    return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(sec).padStart(2,'0');
+  }
+  el.textContent = fmt(secs);
+  var iv = setInterval(function(){
+    secs--;
+    if (secs <= 0) { clearInterval(iv); location.reload(); return; }
+    el.textContent = fmt(secs);
+  }, 1000);
+})();
+</script>
+{% endif %}
+{% endblock %}

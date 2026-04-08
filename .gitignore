@@ -1,0 +1,35 @@
+# Django
+*.log
+*.pot
+*.pyc
+__pycache__/
+db.sqlite3
+media/
+staticfiles/
+
+# Environments
+.env
+venv/
+env/
+ENV/
+.venv/
+
+# Config files with secrets
+config_data.json
+config_model.json
+*.env*
+settings_local.py
+
+# HF models and large files
+*.safetensors
+*.bin
+*.pt
+my-chessbot/model.safetensors
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+*.code-workspace

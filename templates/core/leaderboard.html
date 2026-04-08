@@ -1,0 +1,324 @@
+﻿{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}Artificial Gladiator — {% block page_title %}Leaderboard{% endblock %}{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Header — Gladiator-themed
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <h1 class="text-3xl font-extrabold flex items-center gap-2">
+        <span class="text-gold">🏆</span> Global Leaderboard
+      </h1>
+      <p class="text-gray-400 text-sm mt-1 flex items-center gap-1.5">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel">Connecting…</span>
+        <span class="text-gray-600 ml-2">|</span>
+        <span class="text-gray-500 ml-2">Top gladiators ranked by Elo rating</span>
+      </p>
+    </div>
+    {% if user.is_authenticated %}
+    <div class="flex items-center gap-3 text-sm bg-surfaceLight dark:bg-surfaceLight border border-borderDark rounded-lg px-4 py-2">
+      <span class="text-gray-400">{{ user.country_flag|safe }} {% fide_badge user %} {{ user.username }}</span>
+      <span class="font-bold text-gold">{{ user.elo }} Elo</span>
+      <span class="{{ user.get_category.css }}">{{ user.get_category.icon }} {{ user.get_category.tier }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Filter bar: search + time-range tabs
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+    <!-- Search input -->
+    <div class="relative w-full sm:w-64">
+      <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <input type="text" id="lbSearch" placeholder="Search gladiator…"
+             class="w-full pl-10 pr-4 py-2 rounded-lg border border-borderDark bg-surface text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple focus:border-purple transition"
+             aria-label="Search leaderboard">
+    </div>
+
+    <!-- Time range (visual only for now) -->
+    <div class="flex gap-1 text-xs">
+      <button class="px-3 py-1.5 rounded-lg font-medium bg-purple/20 text-purple">All Time</button>
+      <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Week</button>
+      <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Month</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Category Tabs
+       ═══════════════════════════════════════════ -->
+  <div class="lb-tabs mb-0" id="lbTabs" role="tablist">
+    {% for key, meta in tabs.items %}
+      <button class="lb-tab{% if key == active_tab %} active{% endif %}"
+              role="tab"
+              aria-selected="{% if key == active_tab %}true{% else %}false{% endif %}"
+              data-tab="{{ key }}">
+        <span>{{ meta.icon }}</span>
+        <span>{{ meta.label }}</span>
+        <span class="badge" id="cnt-{{ key }}">{{ counts|dictget:key }}</span>
+      </button>
+    {% endfor %}
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Leaderboard Table — Dense Codeforces-style
+       ═══════════════════════════════════════════ -->
+  <div class="card rounded-t-none border-t-0 overflow-x-auto">
+    <table class="stats-table lb-table text-sm w-full" id="lbTable">
+      <thead>
+        <tr>
+          <th class="w-14 sortable" data-col="rank">#<span class="sort-arrow">▲</span></th>
+          <th class="sortable" data-col="username">Gladiator<span class="sort-arrow">▲</span></th>
+          <th>AI Bot</th>
+          <th class="text-right sortable sorted" data-col="elo" data-dir="desc">Elo<span class="sort-arrow">▼</span></th>
+          <th class="text-center w-24">Title</th>
+          <th class="text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="draws">D<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="win_pct">Win&nbsp;%<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
+        </tr>
+      </thead>
+      <tbody id="lbBody">
+        {% for p in players %}
+        <tr data-username="{{ p.username }}">
+          <td class="font-semibold {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}text-gray-500{% endif %}">
+            {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
+          </td>
+          <td class="font-medium">
+            <div class="flex items-center gap-2">
+              <div class="w-6 h-6 rounded-full bg-purple/30 flex items-center justify-center text-xs font-bold text-purple">
+                {{ p.username|make_list|first|upper }}
+              </div>
+              <span class="mr-1">{{ p.country_flag|safe }}</span>
+              <a href="#" class="hover:text-gold transition">{% fide_badge p %} {{ p.username }}</a>
+            </div>
+          </td>
+          <td class="text-gray-400 text-xs">{{ p.ai_name|default:"—" }}</td>
+          <td class="text-right font-bold text-gold">{{ p.elo }}</td>
+          <td class="text-center">
+            <span class="{{ p.get_category.css }}" title="{{ p.get_category.tier }}">
+              {{ p.get_category.icon }}
+              <span class="text-xs ml-0.5 hidden sm:inline">{{ p.get_category.tier }}</span>
+            </span>
+          </td>
+          <td class="text-right text-green-400">{{ p.wins }}</td>
+          <td class="text-right text-red-400">{{ p.losses }}</td>
+          <td class="text-right text-yellow-300">{{ p.draws }}</td>
+          <td class="text-right">{% widthratio p.win_rate 1 100 %}%</td>
+          <td class="text-right">
+            {% if p.current_streak > 0 %}
+              <span class="badge-streak positive">🔥 +{{ p.current_streak }}</span>
+            {% elif p.current_streak < 0 %}
+              <span class="badge-streak negative">{{ p.current_streak }}</span>
+            {% else %}
+              <span class="text-gray-500">0</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr id="emptyRow">
+          <td colspan="10" class="text-center text-gray-500 py-12">
+            <div class="text-3xl mb-2">⚔️</div>
+            No gladiators in this category yet.
+            {% if not user.is_authenticated %}
+            <br><a href="{% url 'users:register' %}" class="text-gold hover:underline">Sign up</a> to be the first!
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Legend -->
+  <div class="flex flex-wrap items-center gap-4 mt-4 text-xs text-gray-500">
+    <span class="flex items-center gap-1"><span class="rank-1">🥇</span> = Rank 1 (Gold)</span>
+    <span class="flex items-center gap-1"><span class="rank-2">🥈</span> = Rank 2 (Silver)</span>
+    <span class="flex items-center gap-1"><span class="rank-3">🥉</span> = Rank 3 (Bronze)</span>
+    <span class="flex items-center gap-1"><span class="badge-streak positive text-xs">🔥</span> = Win streak</span>
+    <span>Click any column header to sort</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  /* ── Elements ──────────────────────────────── */
+  const tabs    = document.querySelectorAll('#lbTabs .lb-tab');
+  const tbody   = document.getElementById('lbBody');
+  const wsDot   = document.getElementById('wsDot');
+  const wsLabel = document.getElementById('wsLabel');
+  const searchInput = document.getElementById('lbSearch');
+
+  let activeTab = '{{ active_tab }}';
+  let ws        = null;
+
+  /* ── Tab switching (AJAX) ──────────────────── */
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const t = tab.dataset.tab;
+      if (t === activeTab) return;
+      activeTab = t;
+      const url = new URL(window.location);
+      url.searchParams.set('tab', t);
+      history.pushState(null, '', url);
+      tabs.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      fetchTab(t);
+    });
+  });
+
+  function fetchTab(tab) {
+    fetch(`/api/leaderboard/?tab=${encodeURIComponent(tab)}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then(r => r.json())
+      .then(data => { renderTable(data.rows); updateCounts(data.counts); })
+      .catch(err => console.error('Leaderboard fetch error:', err));
+  }
+
+  /* ── Render table from JSON ────────────────── */
+  function renderTable(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = `<tr id="emptyRow"><td colspan="10" class="text-center text-gray-500 py-12"><div class="text-3xl mb-2">⚔️</div>No gladiators in this category yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((p, i) => {
+      const rank = i + 1;
+      const rankCls = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'text-gray-500';
+      const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+      const initial = (p.username[0] || '?').toUpperCase();
+
+      let streakHtml;
+      if (p.streak > 0) streakHtml = `<span class="badge-streak positive">🔥 +${p.streak}</span>`;
+      else if (p.streak < 0) streakHtml = `<span class="badge-streak negative">${p.streak}</span>`;
+      else streakHtml = '<span class="text-gray-500">0</span>';
+
+      return `<tr data-username="${esc(p.username)}">
+        <td class="font-semibold ${rankCls}">${rankLabel}</td>
+        <td class="font-medium"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-purple/30 flex items-center justify-center text-xs font-bold text-purple">${initial}</div><span class="mr-1">${p.flag}</span><a href="#" class="hover:text-gold transition">${esc(p.username)}</a></div></td>
+        <td class="text-gray-400 text-xs">${esc(p.ai_name)}</td>
+        <td class="text-right font-bold text-gold">${p.elo}</td>
+        <td class="text-center"><span class="${p.tier_css}" title="${esc(p.tier_label)}">${p.tier_icon} <span class="text-xs ml-0.5 hidden sm:inline">${esc(p.tier_label)}</span></span></td>
+        <td class="text-right text-green-400">${p.wins}</td>
+        <td class="text-right text-red-400">${p.losses}</td>
+        <td class="text-right text-yellow-300">${p.draws}</td>
+        <td class="text-right">${p.win_pct}%</td>
+        <td class="text-right">${streakHtml}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateCounts(counts) {
+    if (!counts) return;
+    for (const [key, val] of Object.entries(counts)) {
+      const el = document.getElementById(`cnt-${key}`);
+      if (el) el.textContent = val;
+    }
+  }
+
+  function esc(s) {
+    const d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  /* ── Client-side search filter ─────────────── */
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase();
+      const rows = tbody.querySelectorAll('tr[data-username]');
+      rows.forEach(row => {
+        const name = row.dataset.username.toLowerCase();
+        const aiName = (row.children[2]?.textContent || '').toLowerCase();
+        row.style.display = (name.includes(q) || aiName.includes(q)) ? '' : 'none';
+      });
+    });
+  }
+
+  /* ── Column sorting (client-side) ──────────── */
+  const headers = document.querySelectorAll('#lbTable th.sortable');
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      let dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+      headers.forEach(h => {
+        h.classList.remove('sorted'); h.dataset.dir = '';
+        h.querySelector('.sort-arrow').textContent = '▲';
+      });
+      th.classList.add('sorted');
+      th.dataset.dir = dir;
+      th.querySelector('.sort-arrow').textContent = dir === 'asc' ? '▲' : '▼';
+      sortTable(col, dir);
+    });
+  });
+
+  function sortTable(col, dir) {
+    const rows = Array.from(tbody.querySelectorAll('tr[data-username]'));
+    if (!rows.length) return;
+    const idx = { rank: 0, username: 1, elo: 3, wins: 5, losses: 6, draws: 7, win_pct: 8, streak: 9 }[col];
+    if (idx === undefined) return;
+    const numeric = col !== 'username';
+    rows.sort((a, b) => {
+      let va = a.children[idx]?.textContent.trim().replace(/[+%🥇🥈🥉🔥]/g, '') || '';
+      let vb = b.children[idx]?.textContent.trim().replace(/[+%🥇🥈🥉🔥]/g, '') || '';
+      if (numeric) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+      let cmp = numeric ? va - vb : va.localeCompare(vb);
+      return dir === 'desc' ? -cmp : cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    rows.forEach((r, i) => {
+      const td = r.children[0];
+      const rank = i + 1;
+      td.className = 'font-semibold ' + (rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'text-gray-500');
+      td.textContent = rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank;
+    });
+  }
+
+  /* ── WebSocket for real-time ───────────────── */
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/leaderboard/`);
+    ws.onopen = () => { wsDot.className = 'ws-dot connected'; wsLabel.textContent = 'Live'; };
+    ws.onclose = () => { wsDot.className = 'ws-dot disconnected'; wsLabel.textContent = 'Reconnecting…'; setTimeout(connectWS, 3000); };
+    ws.onerror = () => { wsDot.className = 'ws-dot disconnected'; wsLabel.textContent = 'Connection error'; };
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'refresh') handleRefresh(data);
+    };
+  }
+  connectWS();
+
+  function handleRefresh(data) {
+    if (data.players) {
+      data.players.forEach(p => {
+        const row = tbody.querySelector(`tr[data-username="${CSS.escape(p.username)}"]`);
+        if (row) { row.classList.remove('row-updated'); void row.offsetWidth; row.classList.add('row-updated'); }
+      });
+    }
+    setTimeout(() => fetchTab(activeTab), 300);
+  }
+
+  /* ── Browser back/forward ──────────────────── */
+  window.addEventListener('popstate', () => {
+    const url = new URL(window.location);
+    const t = url.searchParams.get('tab') || 'global';
+    if (t !== activeTab) {
+      activeTab = t;
+      tabs.forEach(b => { b.classList.toggle('active', b.dataset.tab === t); });
+      fetchTab(t);
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,296 @@
+﻿{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}Leaderboard — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Header
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <h1 class="text-3xl font-bold flex items-center gap-2">🏆 Leaderboard</h1>
+      <p class="text-gray-400 text-sm mt-0.5 flex items-center gap-1.5">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel">Connecting…</span>
+      </p>
+    </div>
+    {% if user.is_authenticated %}
+    <div class="flex items-center gap-3 text-sm">
+      <span class="text-gray-400">{{ user.country_flag }} {{ user.username }}</span>
+      <span class="font-semibold text-brand">{{ user.elo }} ELO</span>
+      <span class="{{ user.get_category.css }}">{{ user.get_category.icon }} {{ user.get_category.tier }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Tabs: Global + 4 categories
+       ═══════════════════════════════════════════ -->
+  <div class="lb-tabs mb-0" id="lbTabs" role="tablist">
+    {% for key, meta in tabs.items %}
+      <button class="lb-tab{% if key == active_tab %} active{% endif %}"
+              role="tab"
+              aria-selected="{% if key == active_tab %}true{% else %}false{% endif %}"
+              data-tab="{{ key }}">
+        <span>{{ meta.icon }}</span>
+        <span>{{ meta.label }}</span>
+        <span class="badge" id="cnt-{{ key }}">{{ counts|dictget:key }}</span>
+      </button>
+    {% endfor %}
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Table
+       ═══════════════════════════════════════════ -->
+  <div class="card rounded-t-none border-t-0 overflow-x-auto">
+    <table class="stats-table lb-table text-sm w-full" id="lbTable">
+      <thead>
+        <tr>
+          <th class="w-14 sortable" data-col="rank">#<span class="sort-arrow">▲</span></th>
+          <th class="sortable" data-col="username">Player<span class="sort-arrow">▲</span></th>
+          <th>AI Bot</th>
+          <th class="text-right sortable sorted" data-col="elo" data-dir="desc">ELO<span class="sort-arrow">▼</span></th>
+          <th class="text-center w-24">Title</th>
+          <th class="text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="draws">D<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="win_pct">Win&nbsp;%<span class="sort-arrow">▲</span></th>
+          <th class="text-right sortable" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
+        </tr>
+      </thead>
+      <tbody id="lbBody">
+        {% for p in players %}
+        <tr data-username="{{ p.username }}">
+          <td class="font-semibold {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}text-gray-500{% endif %}">
+            {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
+          </td>
+          <td class="font-medium">
+            <span class="mr-1">{{ p.country_flag }}</span>{{ p.username }}
+          </td>
+          <td class="text-gray-400">{{ p.ai_name|default:"—" }}</td>
+          <td class="text-right text-brand font-semibold">{{ p.elo }}</td>
+          <td class="text-center">
+            <span class="{{ p.get_category.css }}" title="{{ p.get_category.tier }}">
+              {{ p.get_category.icon }}
+              <span class="text-xs ml-0.5 hidden sm:inline">{{ p.get_category.tier }}</span>
+            </span>
+          </td>
+          <td class="text-right text-green-400">{{ p.wins }}</td>
+          <td class="text-right text-red-400">{{ p.losses }}</td>
+          <td class="text-right text-yellow-300">{{ p.draws }}</td>
+          <td class="text-right">{% widthratio p.win_rate 1 100 %}%</td>
+          <td class="text-right
+            {% if p.current_streak > 0 %}text-green-400
+            {% elif p.current_streak < 0 %}text-red-400
+            {% else %}text-gray-500{% endif %}">
+            {% if p.current_streak > 0 %}+{% endif %}{{ p.current_streak }}
+          </td>
+        </tr>
+        {% empty %}
+        <tr id="emptyRow">
+          <td colspan="10" class="text-center text-gray-500 py-12">
+            No players in this category yet.
+            {% if not user.is_authenticated %}
+            <a href="{% url 'users:register' %}" class="text-brand hover:underline">Sign up</a> to be first!
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  /* ── Elements ──────────────────────────────── */
+  const tabs    = document.querySelectorAll('#lbTabs .lb-tab');
+  const tbody   = document.getElementById('lbBody');
+  const wsDot   = document.getElementById('wsDot');
+  const wsLabel = document.getElementById('wsLabel');
+
+  let activeTab = '{{ active_tab }}';
+  let ws        = null;
+
+  /* ── Tab switching (AJAX) ──────────────────── */
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const t = tab.dataset.tab;
+      if (t === activeTab) return;
+      activeTab = t;
+
+      /* Update URL without reload */
+      const url = new URL(window.location);
+      url.searchParams.set('tab', t);
+      history.pushState(null, '', url);
+
+      /* Visual active state */
+      tabs.forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+
+      fetchTab(t);
+    });
+  });
+
+  function fetchTab(tab) {
+    fetch(`/api/leaderboard/?tab=${encodeURIComponent(tab)}`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then(r => r.json())
+      .then(data => {
+        renderTable(data.rows);
+        updateCounts(data.counts);
+      })
+      .catch(err => console.error('Leaderboard fetch error:', err));
+  }
+
+  /* ── Render table from JSON ────────────────── */
+  function renderTable(rows) {
+    if (!rows.length) {
+      tbody.innerHTML = `<tr id="emptyRow"><td colspan="10" class="text-center text-gray-500 py-12">No players in this category yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map((p, i) => {
+      const rank = i + 1;
+      const rankCls = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'text-gray-500';
+      const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+      const streakCls = p.streak > 0 ? 'text-green-400' : p.streak < 0 ? 'text-red-400' : 'text-gray-500';
+      const streakTxt = p.streak > 0 ? `+${p.streak}` : p.streak;
+      return `<tr data-username="${esc(p.username)}">
+        <td class="font-semibold ${rankCls}">${rankLabel}</td>
+        <td class="font-medium"><span class="mr-1">${p.flag}</span>${esc(p.username)}</td>
+        <td class="text-gray-400">${esc(p.ai_name)}</td>
+        <td class="text-right text-brand font-semibold">${p.elo}</td>
+        <td class="text-center"><span class="${p.tier_css}" title="${esc(p.tier_label)}">${p.tier_icon} <span class="text-xs ml-0.5 hidden sm:inline">${esc(p.tier_label)}</span></span></td>
+        <td class="text-right text-green-400">${p.wins}</td>
+        <td class="text-right text-red-400">${p.losses}</td>
+        <td class="text-right text-yellow-300">${p.draws}</td>
+        <td class="text-right">${p.win_pct}%</td>
+        <td class="text-right ${streakCls}">${streakTxt}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function updateCounts(counts) {
+    if (!counts) return;
+    for (const [key, val] of Object.entries(counts)) {
+      const el = document.getElementById(`cnt-${key}`);
+      if (el) el.textContent = val;
+    }
+  }
+
+  function esc(s) {
+    const d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  /* ── Column sorting (client‑side) ──────────── */
+  const headers = document.querySelectorAll('#lbTable th.sortable');
+  headers.forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      let dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+
+      /* Reset all */
+      headers.forEach(h => {
+        h.classList.remove('sorted');
+        h.dataset.dir = '';
+        h.querySelector('.sort-arrow').textContent = '▲';
+      });
+      th.classList.add('sorted');
+      th.dataset.dir = dir;
+      th.querySelector('.sort-arrow').textContent = dir === 'asc' ? '▲' : '▼';
+
+      sortTable(col, dir);
+    });
+  });
+
+  function sortTable(col, dir) {
+    const rows = Array.from(tbody.querySelectorAll('tr[data-username]'));
+    if (!rows.length) return;
+
+    const idx = { rank: 0, username: 1, elo: 3, wins: 5, losses: 6, draws: 7, win_pct: 8, streak: 9 }[col];
+    if (idx === undefined) return;
+
+    const numeric = col !== 'username';
+    rows.sort((a, b) => {
+      let va = a.children[idx]?.textContent.trim().replace(/[+%🥇🥈🥉]/g, '') || '';
+      let vb = b.children[idx]?.textContent.trim().replace(/[+%🥇🥈🥉]/g, '') || '';
+      if (numeric) { va = parseFloat(va) || 0; vb = parseFloat(vb) || 0; }
+      let cmp = numeric ? va - vb : va.localeCompare(vb);
+      return dir === 'desc' ? -cmp : cmp;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+
+    /* Re‑number ranks */
+    rows.forEach((r, i) => {
+      const td = r.children[0];
+      const rank = i + 1;
+      td.className = 'font-semibold ' + (rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'text-gray-500');
+      td.textContent = rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank;
+    });
+  }
+
+  /* ── WebSocket for real‑time refresh ───────── */
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/leaderboard/`);
+
+    ws.onopen = () => {
+      wsDot.className = 'ws-dot connected';
+      wsLabel.textContent = 'Live';
+    };
+    ws.onclose = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Reconnecting…';
+      setTimeout(connectWS, 3000);
+    };
+    ws.onerror = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Connection error';
+    };
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'refresh') {
+        handleRefresh(data);
+      }
+    };
+  }
+  connectWS();
+
+  function handleRefresh(data) {
+    /* Flash affected rows, then reload the active tab */
+    if (data.players) {
+      data.players.forEach(p => {
+        const row = tbody.querySelector(`tr[data-username="${CSS.escape(p.username)}"]`);
+        if (row) {
+          row.classList.remove('row-updated');
+          void row.offsetWidth;           /* trigger reflow */
+          row.classList.add('row-updated');
+        }
+      });
+    }
+    /* Re‑fetch after a short delay so DB is committed */
+    setTimeout(() => fetchTab(activeTab), 300);
+  }
+
+  /* ── Keyboard: back / forward buttons ──────── */
+  window.addEventListener('popstate', () => {
+    const url = new URL(window.location);
+    const t = url.searchParams.get('tab') || 'global';
+    if (t !== activeTab) {
+      activeTab = t;
+      tabs.forEach(b => { b.classList.toggle('active', b.dataset.tab === t); });
+      fetchTab(t);
+    }
+  });
+})();
+</script>
+{% endblock %}

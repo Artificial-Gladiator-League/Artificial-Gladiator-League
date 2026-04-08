@@ -1,0 +1,474 @@
+﻿{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}{{ user_profile.username }} — Profile{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* profile chessground board size */
+  .profile-board { width: 280px; height: 280px; }
+  @media (min-width: 640px) { .profile-board { width: 320px; height: 320px; } }
+  /* replay board */
+  .replay-board { width: 320px; height: 320px; }
+  @media (min-width: 640px) { .replay-board { width: 400px; height: 400px; } }
+  /* history table */
+  .history-row { cursor: pointer; }
+  .history-row:hover { background: rgba(119,178,85,.08); }
+  .history-row.active { background: rgba(119,178,85,.15); }
+  .locked-hint { color: #f59e0b; font-size: .7rem; margin-top: .15rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Top: identity bar
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold flex items-center gap-2">
+        <span class="text-4xl" title="{{ user_profile.country|country_name }}">{{ user_profile.country_flag }}</span>
+        {{ user_profile.username }}
+      </h1>
+      <p class="text-sm text-gray-400 mt-1">
+        <span class="{{ category.css }} font-semibold">{{ category.icon }} {{ category.tier }}</span>
+        &nbsp;·&nbsp; {{ category.category }}
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="stat-pill">
+        <span class="stat-value text-brand">{{ user_profile.elo }}</span>
+        <span class="stat-label">ELO</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <!-- ═══════════════════════════════════════
+         Left col: Stats + chessboard
+         ═══════════════════════════════════════ -->
+    <div class="lg:col-span-1 space-y-6">
+
+      <!-- Stats pills row -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="stat-pill">
+          <span class="stat-value text-green-400">{{ user_profile.wins }}</span>
+          <span class="stat-label">Wins</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value text-red-400">{{ user_profile.losses }}</span>
+          <span class="stat-label">Losses</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value text-yellow-300">{{ user_profile.draws }}</span>
+          <span class="stat-label">Draws</span>
+        </div>
+      </div>
+
+      <!-- Full stats table -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Statistics</h2>
+        <table class="stats-table text-sm">
+          <tbody>
+            <tr>
+              <td class="text-gray-400">Total Games</td>
+              <td class="text-right font-medium">{{ user_profile.total_games }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Win Rate</td>
+              <td class="text-right font-medium">
+                {% widthratio user_profile.win_rate 1 100 %}%
+              </td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Current Streak</td>
+              <td class="text-right font-medium
+                {% if user_profile.current_streak > 0 %}text-green-400
+                {% elif user_profile.current_streak < 0 %}text-red-400
+                {% else %}text-gray-400{% endif %}">
+                {% if user_profile.current_streak > 0 %}+{% endif %}{{ user_profile.current_streak }}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Category</td>
+              <td class="text-right font-medium {{ category.css }}">
+                {{ category.icon }} {{ category.tier }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Static chessground board -->
+      <div class="card flex items-center justify-center">
+        <div id="profileBoard" class="profile-board"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         Right col: AI info + Edit form + History
+         ═══════════════════════════════════════ -->
+    <div class="lg:col-span-2 space-y-6">
+
+      <!-- AI Bot info card -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">AI Bot</h2>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+          <div>
+            <span class="text-gray-400 block">Name</span>
+            <span class="font-medium">{{ user_profile.ai_name|default:"—" }}</span>
+          </div>
+          <div>
+            <span class="text-gray-400 block">Created</span>
+            <span class="font-medium">
+              {% if user_profile.ai_date_of_birth %}
+                {{ user_profile.ai_date_of_birth|date:"N j, Y" }}
+              {% else %}
+                —
+              {% endif %}
+            </span>
+          </div>
+          <div class="sm:col-span-2">
+            <span class="text-gray-400 block">File</span>
+            {% if user_profile.ai_file %}
+              <span class="font-medium text-brand">{{ user_profile.ai_file.name }}</span>
+            {% else %}
+              <span class="text-gray-500 italic">No file uploaded yet.</span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit profile form -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Edit Profile</h2>
+
+        <div class="rounded-lg bg-gray-800/60 border border-gray-700 px-4 py-2 mb-4 text-sm text-gray-400">
+          🔒 Username, date of birth, AI name, and AI date of birth cannot be changed after registration.
+        </div>
+
+        <form method="post" enctype="multipart/form-data" id="profileForm" novalidate>
+          {% csrf_token %}
+
+          {% if form.non_field_errors %}
+            <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-4 text-sm text-red-300">
+              {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+              {% endfor %}
+            </div>
+          {% endif %}
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="form-group">
+              <label for="id_username">Username</label>
+              {{ form.username }}
+              {% if form.username.help_text %}<p class="locked-hint">🔒 {{ form.username.help_text }}</p>{% endif %}
+              {% if form.username.errors %}<ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+            <div class="form-group">
+              <label for="id_date_of_birth">Date of Birth</label>
+              {{ form.date_of_birth }}
+              {% if form.date_of_birth.help_text %}<p class="locked-hint">🔒 {{ form.date_of_birth.help_text }}</p>{% endif %}
+              {% if form.date_of_birth.errors %}<ul class="errorlist">{% for e in form.date_of_birth.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="form-group">
+              <label for="id_email">Email</label>
+              {{ form.email }}
+              {% if form.email.errors %}<ul class="errorlist">{% for e in form.email.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+            <div class="form-group">
+              <label for="id_country">Country</label>
+              {{ form.country }}
+              {% if form.country.help_text %}<p class="locked-hint">🔒 {{ form.country.help_text }}</p>{% endif %}
+              {% if form.country.errors %}<ul class="errorlist">{% for e in form.country.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+          </div>
+
+          <hr class="divider">
+          <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">AI Bot</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="form-group">
+              <label for="id_ai_name">AI Name</label>
+              {{ form.ai_name }}
+              {% if form.ai_name.help_text %}<p class="locked-hint">🔒 {{ form.ai_name.help_text }}</p>{% endif %}
+              {% if form.ai_name.errors %}<ul class="errorlist">{% for e in form.ai_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+            <div class="form-group">
+              <label for="id_ai_date_of_birth">AI Date of Birth</label>
+              {{ form.ai_date_of_birth }}
+              {% if form.ai_date_of_birth.help_text %}<p class="locked-hint">🔒 {{ form.ai_date_of_birth.help_text }}</p>{% endif %}
+              {% if form.ai_date_of_birth.errors %}<ul class="errorlist">{% for e in form.ai_date_of_birth.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="id_ai_file">Upload / Replace AI Agent</label>
+            {{ form.ai_file }}
+            <span class="help-text">.py or .pth — max 50 MB.</span>
+            {% if form.ai_file.errors %}<ul class="errorlist">{% for e in form.ai_file.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+
+          <div class="form-group" id="profileRightsGroup" style="display:none;">
+            <label class="flex items-start gap-2 cursor-pointer">
+              {{ form.rights_declaration }}
+              <span class="text-sm text-gray-300 leading-tight">
+                I confirm I hold full rights to this AI file and it does not infringe
+                on any third‑party intellectual property.
+              </span>
+            </label>
+            {% if form.rights_declaration.errors %}<ul class="errorlist">{% for e in form.rights_declaration.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+
+          <button type="submit" class="btn-brand w-full sm:w-auto text-base py-2.5 px-8 mt-2">
+            Save Changes
+          </button>
+        </form>
+      </div>
+
+      <!-- ═══════════════════════════════════════
+           Game History + Replay
+           ═══════════════════════════════════════ -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Game History</h2>
+
+        {% if match_history %}
+        <div class="overflow-x-auto mb-4" style="max-height:320px;overflow-y:auto;">
+          <table class="stats-table text-xs w-full">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Opponent</th>
+                <th class="text-center">Result</th>
+                <th>Tournament</th>
+                <th class="text-center">Rd</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="historyBody">
+              {% for h in match_history %}
+              <tr class="history-row" data-match-id="{{ h.match_id }}">
+                <td class="text-gray-400">{{ h.date|date:"M j, Y" }}</td>
+                <td>
+                  <span class="mr-0.5">{{ h.opponent_flag }}</span>{{ h.opponent }}
+                </td>
+                <td class="text-center font-semibold
+                  {% if h.user_won %}text-green-400
+                  {% elif h.is_draw %}text-yellow-300
+                  {% else %}text-red-400{% endif %}">
+                  {% if h.user_won %}W{% elif h.is_draw %}D{% else %}L{% endif %}
+                  <span class="text-gray-500 font-normal ml-0.5">{{ h.result }}</span>
+                </td>
+                <td>
+                  <a href="{% url 'tournaments:detail' h.tournament_id %}"
+                     class="text-brand hover:underline"
+                     onclick="event.stopPropagation()">{{ h.tournament_name }}</a>
+                </td>
+                <td class="text-center text-gray-400">{{ h.round_num }}</td>
+                <td>
+                  <button class="text-brand text-xs hover:underline replay-btn"
+                          data-match-id="{{ h.match_id }}">
+                    Replay ▶
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Replay board -->
+        <div id="replaySection" class="hidden">
+          <hr class="divider">
+          <div class="flex flex-col sm:flex-row items-start gap-4">
+            <div>
+              <div id="replayBoard" class="replay-board"></div>
+              <!-- Controls -->
+              <div class="flex items-center justify-center gap-3 mt-2">
+                <button id="btnFirst" class="btn-outline text-xs py-1 px-3" title="First">⏮</button>
+                <button id="btnPrev"  class="btn-outline text-xs py-1 px-3" title="Previous">◀</button>
+                <span class="text-xs text-gray-400" id="replayMoveNum">0 / 0</span>
+                <button id="btnNext"  class="btn-outline text-xs py-1 px-3" title="Next">▶</button>
+                <button id="btnLast"  class="btn-outline text-xs py-1 px-3" title="Last">⏭</button>
+              </div>
+            </div>
+            <!-- Move list -->
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-gray-500 mb-1 font-semibold" id="replayHeader"></p>
+              <div id="replayMoves" class="move-list text-xs" style="max-height:300px;overflow-y:auto;"></div>
+            </div>
+          </div>
+        </div>
+        {% else %}
+          <p class="text-sm text-gray-500">No completed matches yet.</p>
+        {% endif %}
+      </div>
+
+      <!-- GDPR / Data & Privacy link -->
+      <div class="card text-center">
+        <a href="{% url 'users:gdpr' %}" class="text-brand hover:underline text-sm font-medium">
+          🔒 Data &amp; Privacy (GDPR)
+        </a>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Export your data, submit deletion requests, or view request history.
+        </p>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  /* ── Chessground: render static starting position ── */
+  let replayGround = null;
+  window.addEventListener('cg-ready', () => {
+    const el = document.getElementById('profileBoard');
+    if (!el || !window.Chessground) return;
+    window.Chessground(el, {
+      fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      viewOnly: true,
+      coordinates: false,
+      animation: { enabled: false },
+    });
+    /* Pre-init replay board */
+    const rEl = document.getElementById('replayBoard');
+    if (rEl) {
+      replayGround = window.Chessground(rEl, {
+        viewOnly: true,
+        coordinates: true,
+        animation: { enabled: true, duration: 200 },
+      });
+    }
+  });
+
+  /* ── Show rights checkbox when a new file is picked ── */
+  const fileIn = document.getElementById('id_ai_file');
+  const rightsG = document.getElementById('profileRightsGroup');
+  fileIn?.addEventListener('change', () => {
+    rightsG.style.display = fileIn.files.length > 0 ? '' : 'none';
+  });
+  if (fileIn?.value) rightsG.style.display = '';
+
+  /* ── Client‑side file extension check ── */
+  fileIn?.addEventListener('change', () => {
+    const allowed = ['.py', '.pth'];
+    const parent = fileIn.closest('.form-group');
+    let msg = parent.querySelector('.js-file-err');
+    if (fileIn.files.length > 0) {
+      const name = fileIn.files[0].name.toLowerCase();
+      const ext = name.substring(name.lastIndexOf('.'));
+      if (!allowed.includes(ext)) {
+        if (!msg) {
+          msg = document.createElement('p');
+          msg.className = 'js-file-err text-red-400 text-xs mt-1';
+          parent.appendChild(msg);
+        }
+        msg.textContent = 'Only .py and .pth files are allowed.';
+      } else {
+        msg?.remove();
+      }
+    } else {
+      msg?.remove();
+    }
+  });
+
+  /* ── Game History Replay ─────────────────── */
+  let replayFens = [];
+  let replayMoves = [];
+  let replayIdx = 0;
+
+  const replaySection = document.getElementById('replaySection');
+  const replayMovesEl = document.getElementById('replayMoves');
+  const replayNumEl   = document.getElementById('replayMoveNum');
+  const replayHeader  = document.getElementById('replayHeader');
+
+  function renderReplayPos() {
+    if (!replayGround || !replayFens.length) return;
+    replayGround.set({ fen: replayFens[replayIdx] });
+    replayNumEl.textContent = `${replayIdx} / ${replayFens.length - 1}`;
+    /* Highlight current move in list */
+    replayMovesEl.querySelectorAll('.replay-hl').forEach(e => e.classList.remove('replay-hl', 'text-brand', 'font-bold'));
+    if (replayIdx > 0) {
+      const el = replayMovesEl.querySelector(`[data-mi="${replayIdx - 1}"]`);
+      if (el) { el.classList.add('replay-hl', 'text-brand', 'font-bold'); el.scrollIntoView({ block: 'nearest' }); }
+    }
+  }
+
+  function buildMoveList(moves, result) {
+    replayMovesEl.innerHTML = '';
+    for (let i = 0; i < moves.length; i += 2) {
+      const num = Math.floor(i / 2) + 1;
+      const w = moves[i] || '';
+      const b = moves[i + 1] || '';
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      row.innerHTML =
+        `<span class="move-num">${num}.</span>` +
+        `<span class="move-white cursor-pointer hover:text-brand" data-mi="${i}">${esc(w)}</span>` +
+        (b ? `<span class="move-black cursor-pointer hover:text-brand" data-mi="${i+1}">${esc(b)}</span>` : `<span class="move-black"></span>`);
+      replayMovesEl.appendChild(row);
+    }
+    if (result) {
+      const r = document.createElement('div');
+      r.className = 'text-center text-gray-500 py-1 font-semibold';
+      r.textContent = result;
+      replayMovesEl.appendChild(r);
+    }
+    /* Click a move to jump */
+    replayMovesEl.addEventListener('click', e => {
+      const mi = e.target.dataset.mi;
+      if (mi !== undefined) { replayIdx = parseInt(mi) + 1; renderReplayPos(); }
+    });
+  }
+
+  function esc(s) { const d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
+
+  function loadReplay(matchId) {
+    fetch(`{% url 'users:match_moves' match_id=0 %}`.replace('/0/', `/${matchId}/`))
+      .then(r => r.json())
+      .then(data => {
+        replayFens = data.fens || [];
+        replayMoves = data.moves || [];
+        replayIdx = 0;
+        replaySection?.classList.remove('hidden');
+        replayHeader.textContent = `${data.white || '?'} vs ${data.black || '?'}`;
+        buildMoveList(replayMoves, data.result);
+        renderReplayPos();
+        /* Highlight active row */
+        document.querySelectorAll('.history-row').forEach(r => r.classList.remove('active'));
+        document.querySelector(`.history-row[data-match-id="${matchId}"]`)?.classList.add('active');
+      })
+      .catch(() => {});
+  }
+
+  /* Bind replay buttons */
+  document.querySelectorAll('.history-row, .replay-btn').forEach(el => {
+    el.addEventListener('click', e => {
+      const mid = el.dataset.matchId || el.closest('[data-match-id]')?.dataset.matchId;
+      if (mid) loadReplay(mid);
+    });
+  });
+  document.getElementById('btnFirst')?.addEventListener('click', () => { replayIdx = 0; renderReplayPos(); });
+  document.getElementById('btnPrev')?.addEventListener('click',  () => { if (replayIdx > 0) replayIdx--; renderReplayPos(); });
+  document.getElementById('btnNext')?.addEventListener('click',  () => { if (replayIdx < replayFens.length - 1) replayIdx++; renderReplayPos(); });
+  document.getElementById('btnLast')?.addEventListener('click',  () => { replayIdx = replayFens.length - 1; renderReplayPos(); });
+
+  /* Keyboard navigation */
+  document.addEventListener('keydown', e => {
+    if (!replayFens.length) return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); if (replayIdx > 0) replayIdx--; renderReplayPos(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); if (replayIdx < replayFens.length - 1) replayIdx++; renderReplayPos(); }
+    if (e.key === 'Home')       { e.preventDefault(); replayIdx = 0; renderReplayPos(); }
+    if (e.key === 'End')        { e.preventDefault(); replayIdx = replayFens.length - 1; renderReplayPos(); }
+  });
+})();
+</script>
+{% endblock %}

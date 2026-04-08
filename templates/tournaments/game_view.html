@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}{{ match.player1.username }} vs {{ match.player2.username }} — {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Match header
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+    <div>
+      <a href="{% url 'tournaments:detail' tournament.pk %}" class="text-xs text-gray-500 hover:text-brand transition">
+        ← {{ tournament.name }} · Round {{ match.round_num }}
+      </a>
+      <h1 class="text-xl font-bold mt-1 flex items-center gap-2">
+        {% fide_badge match.player1 %} {{ match.player1.username }} vs {% fide_badge match.player2 %} {{ match.player2.username }}
+        {% if match.is_armageddon %}<span class="armageddon-badge">⚡ Armageddon</span>{% endif %}
+      </h1>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if match.is_live %}
+        <span class="status-live">Live</span>
+      {% elif match.is_completed %}
+        <span class="status-completed">{{ match.result }}</span>
+      {% else %}
+        <span class="status-pending">Pending</span>
+      {% endif %}
+      <span class="flex items-center gap-1 text-xs text-gray-500">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel">Connecting…</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Board + sidebar
+       ═══════════════════════════════════════════ -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Board column -->
+    <div class="lg:col-span-2 flex flex-col items-center gap-3">
+
+      <!-- Top player bar (opponent for participants, black for spectators) -->
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        {% if is_black %}
+          <div class="flex items-center gap-2 text-sm">
+            {{ match.player1.country_flag|safe }}
+            {% fide_badge match.player1 %}
+            <span class="font-semibold">{{ match.player1.username }}</span>
+            <span class="text-gray-500 text-xs">({{ match.player1.elo }})</span>
+            <span class="text-gray-600 text-xs">{{ match.player1.ai_name|default:"" }}</span>
+          </div>
+          <div class="chess-clock white-clock" id="clockWhite">
+            <span id="clockWhiteTime">--:--</span>
+          </div>
+        {% else %}
+          <div class="flex items-center gap-2 text-sm">
+            {{ match.player2.country_flag|safe }}
+            {% fide_badge match.player2 %}
+            <span class="font-semibold">{{ match.player2.username }}</span>
+            <span class="text-gray-500 text-xs">({{ match.player2.elo }})</span>
+            <span class="text-gray-600 text-xs">{{ match.player2.ai_name|default:"" }}</span>
+          </div>
+          <div class="chess-clock black-clock" id="clockBlack">
+            <span id="clockBlackTime">--:--</span>
+          </div>
+        {% endif %}
+      </div>
+
+      <!-- Chessground board -->
+      <div class="game-board-wrap relative" id="boardContainer">
+        <div id="board" style="width:100%;height:100%;"></div>
+        <!-- Game-over overlay (hidden until game ends) -->
+        <div id="gameOverOverlay" class="game-over-overlay hidden">
+          <div class="text-center">
+            <p class="result-text" id="resultText"></p>
+            <p class="text-sm text-gray-300 mt-1" id="resultDetail"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom player bar (current user for participants, white for spectators) -->
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        {% if is_black %}
+          <div class="flex items-center gap-2 text-sm">
+            {{ match.player2.country_flag|safe }}
+            {% fide_badge match.player2 %}
+            <span class="font-semibold">{{ match.player2.username }}</span>
+            <span class="text-gray-500 text-xs">({{ match.player2.elo }})</span>
+            <span class="text-gray-600 text-xs">{{ match.player2.ai_name|default:"" }}</span>
+          </div>
+          <div class="chess-clock black-clock" id="clockBlack">
+            <span id="clockBlackTime">--:--</span>
+          </div>
+        {% else %}
+          <div class="flex items-center gap-2 text-sm">
+            {{ match.player1.country_flag|safe }}
+            {% fide_badge match.player1 %}
+            <span class="font-semibold">{{ match.player1.username }}</span>
+            <span class="text-gray-500 text-xs">({{ match.player1.elo }})</span>
+            <span class="text-gray-600 text-xs">{{ match.player1.ai_name|default:"" }}</span>
+          </div>
+          <div class="chess-clock white-clock" id="clockWhite">
+            <span id="clockWhiteTime">--:--</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Sidebar: move list + match info -->
+    <div class="space-y-4">
+
+      <!-- Match info card -->
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Match Info</h3>
+        <table class="text-xs w-full">
+          <tbody>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Tournament</td>
+              <td class="font-medium">{{ tournament.name }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Round</td>
+              <td class="font-medium">{{ match.round_num }} of {{ tournament.rounds_total }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Time Control</td>
+              <td class="font-medium">{{ match.time_control }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Game</td>
+              <td class="font-medium">{{ tournament.get_game_type_display }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Format</td>
+              <td class="font-medium">
+                {% if match.is_armageddon %}
+                  Armageddon (W 2min / B 1min, draw=Black wins)
+                {% else %}
+                  Rated · Random colours
+                {% endif %}
+              </td>
+            </tr>
+            {% if match.is_completed %}
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Result</td>
+              <td class="font-semibold text-brand">{{ match.result }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Winner</td>
+              <td class="font-semibold text-brand">{% fide_badge match.winner %} {{ match.winner.username|default:"—" }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">ELO Δ</td>
+              <td>
+                <span class="{% if match.elo_change_p1 > 0 %}text-green-400{% elif match.elo_change_p1 < 0 %}text-red-400{% endif %}">
+                  {{ match.player1.username }}: {% if match.elo_change_p1 > 0 %}+{% endif %}{{ match.elo_change_p1 }}
+                </span>
+                <span class="mx-1 text-gray-600">/</span>
+                <span class="{% if match.elo_change_p2 > 0 %}text-green-400{% elif match.elo_change_p2 < 0 %}text-red-400{% endif %}">
+                  {{ match.player2.username }}: {% if match.elo_change_p2 > 0 %}+{% endif %}{{ match.elo_change_p2 }}
+                </span>
+              </td>
+            </tr>
+            {% if match.duration %}
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Duration</td>
+              <td class="font-medium">{{ match.duration }}</td>
+            </tr>
+            {% endif %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Move list -->
+      <div class="card p-0">
+        <div class="px-3 py-2 border-b border-gray-700">
+          <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold flex items-center justify-between">
+            Moves
+            <span class="text-gray-600 font-normal" id="moveCount">0</span>
+          </h3>
+        </div>
+        <div class="move-list" id="moveList">
+          <div class="text-center text-xs text-gray-600 py-6" id="movePlaceholder">
+            {% if match.is_completed %}
+              Moves are not stored — only final results are persisted.
+            {% else %}
+              Waiting for moves…
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Back link -->
+      <a href="{% url 'tournaments:detail' tournament.pk %}" class="btn-outline text-xs py-2 w-full text-center">
+        ← Back to Bracket
+      </a>
+
+      {% if is_match_participant and match.is_live %}
+      <!-- Resign button (participants only) -->
+      <form method="post" action="{% url 'tournaments:resign' tournament.pk match.pk %}"
+            onsubmit="return confirm('Are you sure you want to resign?')">
+        {% csrf_token %}
+        <button type="submit" class="btn-danger text-xs py-2 w-full text-center" id="resignBtn">
+          Resign Game
+        </button>
+      </form>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+window.addEventListener('cg-ready', function () {
+  const Cg          = window.Chessground;
+  const boardEl     = document.getElementById('board');
+  const clockWhiteEl = document.getElementById('clockWhiteTime');
+  const clockBlackEl = document.getElementById('clockBlackTime');
+  const clockWhite  = document.getElementById('clockWhite');
+  const clockBlack  = document.getElementById('clockBlack');
+  const moveListEl  = document.getElementById('moveList');
+  const moveCountEl = document.getElementById('moveCount');
+  const movePlaceholder = document.getElementById('movePlaceholder');
+  const overlayEl   = document.getElementById('gameOverOverlay');
+  const resultText  = document.getElementById('resultText');
+  const resultDetail = document.getElementById('resultDetail');
+  const wsDot       = document.getElementById('wsDot');
+  const wsLabel     = document.getElementById('wsLabel');
+
+  const matchId     = {{ match.pk }};
+  const baseSec     = {{ base_seconds }};
+  const increment   = {{ increment }};
+  const isCompleted = {{ match.is_completed|yesno:"true,false" }};
+  const isBlack     = {{ is_black|yesno:"true,false" }};
+  const isParticipant = {{ is_match_participant|yesno:"true,false" }};
+  const gameType    = '{{ game_type|escapejs }}';
+
+  /* ── Breakthrough board renderer ─────────────── */
+  const BT_STARTING_FEN = 'BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w';
+
+  function parseBtFen(fen) {
+    const parts = fen.split(' ');
+    const ranks = parts[0].split('/');
+    const grid = [];
+    for (let r = 0; r < ranks.length; r++) {
+      const row = [];
+      for (let i = 0; i < ranks[r].length; i++) {
+        const ch = ranks[r][i];
+        if (ch >= '1' && ch <= '8') {
+          for (let j = 0; j < parseInt(ch); j++) row.push('.');
+        } else {
+          row.push(ch);
+        }
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  function renderBtBoard(fen, lastUci) {
+    const grid = parseBtFen(fen);
+    let fromSq = null, toSq = null;
+    if (lastUci && lastUci.length >= 4) {
+      fromSq = lastUci.substring(0, 2);
+      toSq = lastUci.substring(2, 4);
+    }
+    const files = 'abcdefgh';
+    const flipped = isBlack;
+    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;">';
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const displayR = flipped ? (7 - r) : r;
+        const displayC = flipped ? (7 - c) : c;
+        const dark = (displayR + displayC) % 2 === 1;
+        let bg = dark ? '#b58863' : '#f0d9b5';
+        const sq = files[displayC] + (8 - displayR);
+        if (sq === fromSq || sq === toSq) {
+          bg = dark ? '#aba23a' : '#cdd16a';
+        }
+        const piece = grid[displayR] ? (grid[displayR][displayC] || '.') : '.';
+        let pieceHtml = '';
+        if (piece === 'W') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#fff 60%,#ddd);border:2px solid #bbb;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+        else if (piece === 'B') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#333 60%,#111);border:2px solid #555;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>';
+        html += '<div style="background:' + bg + ';display:flex;align-items:center;justify-content:center;">' + pieceHtml + '</div>';
+      }
+    }
+    html += '</div>';
+    boardEl.innerHTML = html;
+  }
+
+  /* ── Board init (chess or breakthrough) ──────── */
+  let ground = null;
+
+  if (gameType === 'breakthrough') {
+    renderBtBoard(BT_STARTING_FEN, null);
+  } else {
+    ground = Cg(boardEl, {
+      orientation: isBlack ? 'black' : 'white',
+      viewOnly: true,
+      movable: { free: false },
+      highlight: { lastMove: true, check: true },
+      animation: { enabled: true, duration: 200 },
+      drawable: { enabled: true },
+      coordinates: true,
+    });
+  }
+
+  /* ── Clock state ─────────────────────────────── */
+  let whiteTime = baseSec;
+  let blackTime = baseSec;
+  let activeSide = null;
+  let clockInterval = null;
+  let moveNum = 0;
+  let moves = [];
+
+  function formatClock(sec) {
+    if (sec < 0) sec = 0;
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    const tenths = Math.floor((sec % 1) * 10);
+    if (sec < 20) return `${m}:${s.toString().padStart(2,'0')}.${tenths}`;
+    return `${m}:${s.toString().padStart(2,'0')}`;
+  }
+
+  function renderClocks() {
+    clockWhiteEl.textContent = formatClock(whiteTime);
+    clockBlackEl.textContent = formatClock(blackTime);
+    clockWhite.classList.toggle('active-clock', activeSide === 'white');
+    clockBlack.classList.toggle('active-clock', activeSide === 'black');
+    clockWhite.classList.toggle('low-time', whiteTime < 30);
+    clockBlack.classList.toggle('low-time', blackTime < 30);
+  }
+
+  function startClock() {
+    if (clockInterval) clearInterval(clockInterval);
+    clockInterval = setInterval(() => {
+      if (activeSide === 'white') whiteTime = Math.max(0, whiteTime - 0.1);
+      else if (activeSide === 'black') blackTime = Math.max(0, blackTime - 0.1);
+      renderClocks();
+    }, 100);
+  }
+
+  function stopClock() {
+    if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+  }
+
+  renderClocks();
+
+  /* ── Move list ───────────────────────────────── */
+  function addMove(san, color) {
+    if (movePlaceholder) movePlaceholder.remove();
+    /* Remove last-move highlight from previous */
+    moveListEl.querySelectorAll('.last-move').forEach(el => el.classList.remove('last-move'));
+
+    if (color === 'white') {
+      moveNum++;
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      row.innerHTML = `<span class="move-num">${moveNum}.</span>` +
+        `<span class="move-white last-move">${esc(san)}</span>` +
+        `<span class="move-black"></span>`;
+      moveListEl.appendChild(row);
+    } else {
+      const rows = moveListEl.querySelectorAll('.move-row');
+      if (rows.length) {
+        const last = rows[rows.length - 1];
+        const blackCell = last.querySelector('.move-black');
+        if (blackCell) {
+          blackCell.textContent = san;
+          blackCell.classList.add('last-move');
+        }
+      }
+    }
+    moves.push(san);
+    moveCountEl.textContent = moves.length;
+    moveListEl.scrollTop = moveListEl.scrollHeight;
+  }
+
+  function esc(s) {
+    const d = document.createElement('span');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  /* ── Game over ───────────────────────────────── */
+  function showGameOver(result, winner) {
+    stopClock();
+    overlayEl.classList.remove('hidden');
+    /* Hide resign button if present */
+    const resignBtn = document.getElementById('resignBtn');
+    if (resignBtn) resignBtn.closest('form').style.display = 'none';
+    if (result === '1-0') {
+      resultText.textContent = '1 – 0';
+      resultText.className = 'result-text text-white';
+      resultDetail.textContent = winner ? `${winner} wins` : 'White wins';
+    } else if (result === '0-1') {
+      resultText.textContent = '0 – 1';
+      resultText.className = 'result-text text-gray-300';
+      resultDetail.textContent = winner ? `${winner} wins` : 'Black wins';
+    } else {
+      resultText.textContent = '½ – ½';
+      resultText.className = 'result-text text-yellow-300';
+      resultDetail.textContent = 'Draw';
+    }
+  }
+
+  if (isCompleted) {
+    showGameOver('{{ match.result }}', '{{ match.winner.username|default:"" }}');
+  }
+
+  /* ── WebSocket ───────────────────────────────── */
+  let ws = null;
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/match/${matchId}/`);
+
+    ws.onopen = () => {
+      wsDot.className = 'ws-dot connected';
+      wsLabel.textContent = 'Live';
+    };
+    ws.onclose = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Reconnecting…';
+      if (!isCompleted) setTimeout(connectWS, 3000);
+    };
+    ws.onerror = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Error';
+    };
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      handleMessage(data);
+    };
+  }
+  if (!isCompleted) connectWS();
+  else {
+    wsDot.className = 'ws-dot disconnected';
+    wsLabel.textContent = 'Completed';
+  }
+
+  function handleMessage(data) {
+    switch (data.type) {
+      case 'match_info':
+        /* Initial state — set clocks if available */
+        if (data.time_control) {
+          const parts = data.time_control.split('+');
+          whiteTime = parseInt(parts[0]) * 60;
+          blackTime = parseInt(parts[0]) * 60;
+          renderClocks();
+        }
+        break;
+
+      case 'move':
+        /* data: {fen, lastMove:[from,to], san, color:'white'|'black', last_move} */
+        if (gameType === 'breakthrough') {
+          renderBtBoard(data.fen, data.last_move || (data.lastMove ? data.lastMove.join('') : null));
+        } else if (ground) {
+          ground.set({
+            fen: data.fen,
+            lastMove: data.lastMove || [],
+            check: data.check || false,
+            turnColor: data.color === 'white' ? 'black' : 'white',
+          });
+        }
+        if (data.san) addMove(data.san, data.color);
+        /* Switch active clock, add increment */
+        if (data.color === 'white') {
+          whiteTime += increment;
+          activeSide = 'black';
+        } else {
+          blackTime += increment;
+          activeSide = 'white';
+        }
+        renderClocks();
+        if (!clockInterval) startClock();
+        break;
+
+      case 'clock':
+        /* data: {white: seconds, black: seconds, active:'white'|'black'} */
+        if (data.white !== undefined) whiteTime = data.white;
+        if (data.black !== undefined) blackTime = data.black;
+        if (data.active) activeSide = data.active;
+        renderClocks();
+        break;
+
+      case 'game_over':
+        showGameOver(data.result || '', data.winner || '');
+        break;
+
+      case 'armageddon':
+        /* Reset board for Armageddon tiebreak */
+        if (gameType === 'breakthrough') {
+          renderBtBoard(BT_STARTING_FEN, null);
+        } else if (ground) {
+          ground.set({ fen: 'start', lastMove: [], check: false });
+        }
+        whiteTime = 120;  /* 2 min */
+        blackTime = 60;   /* 1 min */
+        activeSide = null;
+        moveNum = 0;
+        moves = [];
+        moveListEl.innerHTML = '<div class="text-center text-xs text-red-400 py-3 font-semibold">⚡ Armageddon Tiebreak — Black has draw odds</div>';
+        renderClocks();
+        break;
+    }
+  }
+});
+</script>
+{% endblock %}

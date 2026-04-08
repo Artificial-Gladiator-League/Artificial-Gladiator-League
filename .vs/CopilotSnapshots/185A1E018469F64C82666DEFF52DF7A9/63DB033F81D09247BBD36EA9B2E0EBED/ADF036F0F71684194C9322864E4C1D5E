@@ -1,0 +1,212 @@
+﻿<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Artificial Gladiator{% endblock %}</title>
+
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: '#77b255',
+            brandHover: '#5a9a3c',
+            surface: '#1a1a2e',
+            surfaceLight: '#22223a',
+          },
+          fontFamily: {
+            sans: ['Roboto', 'ui-sans-serif', 'system-ui'],
+          },
+        },
+      },
+    }
+  </script>
+
+  <!-- Restore theme before paint to prevent flash -->
+  <script>
+    (function(){
+      var t = localStorage.getItem('theme');
+      if (t === 'light') document.documentElement.classList.remove('dark');
+      else document.documentElement.classList.add('dark');
+    })();
+  </script>
+
+  <!-- Google Fonts: Roboto -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Chessground CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.base.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.brown.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chessground@9.1.1/assets/chessground.cburnett.css">
+
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="{% load static %}{% static 'css/custom.css' %}">
+
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-200">
+
+  <!-- ─── Navbar ───────────────────────────────── -->
+  <nav class="bg-white dark:bg-surface border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-14">
+
+        <!-- Logo -->
+        <a href="{% url 'core:home' %}" class="flex items-center gap-2 text-brand font-bold text-xl tracking-tight">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2
+                     M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+          </svg>
+          Artificial Gladiator
+        </a>
+
+        <!-- Nav links -->
+        <div class="hidden md:flex items-center gap-6 text-sm font-medium">
+          <a href="{% url 'games:lobby' %}" class="nav-link">Lobby</a>
+          <a href="{% url 'tournaments:list' %}" class="nav-link">Tournaments</a>
+          <a href="{% url 'core:leaderboard' %}" class="nav-link">Leaderboard</a>
+          <a href="{% url 'games:history' %}" class="nav-link">History</a>
+        </div>
+
+        <!-- Right: theme toggle + auth -->
+        <div class="flex items-center gap-3 text-sm">
+          <!-- Dark / Light toggle -->
+          <button id="themeToggle" type="button" aria-label="Toggle dark mode"
+                  class="theme-toggle" title="Toggle theme">
+            <!-- Sun (shown in dark mode) -->
+            <svg id="iconSun" class="h-5 w-5 hidden dark:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M12 3v1m0 16v1m8.66-13.66l-.71.71M4.05 19.95l-.71.71M21 12h-1M4 12H3m16.66 7.66l-.71-.71M4.05 4.05l-.71-.71M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+            </svg>
+            <!-- Moon (shown in light mode) -->
+            <svg id="iconMoon" class="h-5 w-5 block dark:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+          </button>
+
+          {% if user.is_authenticated %}
+            <a href="{% url 'users:profile' %}" class="nav-link" title="{{ user.username }}">{{ user.country_flag }}</a>
+            <span class="text-gray-300 font-medium">{{ user.username }}</span>
+            <form method="post" action="{% url 'users:logout' %}" class="inline">
+              {% csrf_token %}
+              <button type="submit"
+                      class="px-3 py-1.5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition cursor-pointer">Logout</button>
+            </form>
+          {% else %}
+            <a href="{% url 'users:login' %}" class="nav-link">Log in</a>
+            <a href="{% url 'users:register' %}"
+               class="px-3 py-1.5 rounded bg-brand hover:bg-brandHover text-gray-900 font-semibold transition">
+              Sign up
+            </a>
+          {% endif %}
+        </div>
+
+        <!-- Mobile hamburger -->
+        <button id="mobileMenuBtn" class="md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+          <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile menu -->
+    <div id="mobileMenu" class="hidden md:hidden bg-white dark:bg-surface border-t border-gray-200 dark:border-gray-700 px-4 pb-4 space-y-2 text-sm transition-colors">
+      <a href="{% url 'games:lobby' %}" class="block nav-link py-2">Lobby</a>
+      <a href="{% url 'tournaments:list' %}" class="block nav-link py-2">Tournaments</a>
+      <a href="{% url 'core:leaderboard' %}" class="block nav-link py-2">Leaderboard</a>
+      <a href="{% url 'games:history' %}" class="block nav-link py-2">History</a>
+      <hr class="border-gray-200 dark:border-gray-700">
+      {% if user.is_authenticated %}
+        <a href="{% url 'users:profile' %}" class="block nav-link py-2">{{ user.country_flag }} Profile</a>
+        <span class="block text-gray-300 font-medium py-1 px-1">{{ user.username }}</span>
+        <form method="post" action="{% url 'users:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="block w-full text-left nav-link py-2 text-red-400 cursor-pointer">Logout</button>
+        </form>
+      {% else %}
+        <a href="{% url 'users:login' %}" class="block nav-link py-2">Log in</a>
+        <a href="{% url 'users:register' %}" class="block nav-link py-2 text-brand font-semibold">Sign up</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- ─── Flash messages ──────────────────────── -->
+  {% if messages %}
+  <div class="max-w-7xl mx-auto px-4 mt-3 space-y-2">
+    {% for message in messages %}
+      <div class="rounded-lg px-4 py-2 text-sm
+        {% if message.tags == 'error' %}bg-red-800 text-red-100
+        {% elif message.tags == 'success' %}bg-green-800 text-green-100
+        {% else %}bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ─── Main content ────────────────────────── -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- ─── Footer ──────────────────────────────── -->
+  <footer class="bg-white dark:bg-surface border-t border-gray-200 dark:border-gray-700 py-6 text-center text-xs text-gray-500 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <span>&copy; {{ "now"|date:"Y" }} Artificial Gladiator — All rights reserved.</span>
+      <div class="flex gap-4">
+        <a href="{% url 'core:about' %}" class="hover:text-brand transition">About</a>
+        <a href="{% url 'core:privacy' %}" class="hover:text-brand transition">Privacy Policy</a>
+        <a href="{% url 'core:terms' %}" class="hover:text-brand transition">Terms of Use</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Chessground JS (ESM) -->
+  <script type="module">
+    import { Chessground } from 'https://cdn.jsdelivr.net/npm/chessground@9.1.1/+esm';
+    window.Chessground = Chessground;           // expose globally for page scripts
+    window.dispatchEvent(new Event('cg-ready')); // signal that CG is loaded
+  </script>
+
+  <!-- Mobile menu toggle + Theme toggle -->
+  <script>
+    // Mobile menu
+    document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
+      document.getElementById('mobileMenu')?.classList.toggle('hidden');
+    });
+
+    // Dark / Light mode toggle
+    (function () {
+      const btn = document.getElementById('themeToggle');
+      if (!btn) return;
+
+      function isDark() {
+        return document.documentElement.classList.contains('dark');
+      }
+
+      btn.addEventListener('click', () => {
+        if (isDark()) {
+          document.documentElement.classList.remove('dark');
+          localStorage.setItem('theme', 'light');
+        } else {
+          document.documentElement.classList.add('dark');
+          localStorage.setItem('theme', 'dark');
+        }
+      });
+    })();
+  </script>
+
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

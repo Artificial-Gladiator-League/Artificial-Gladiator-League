@@ -1,0 +1,181 @@
+﻿{% extends "base.html" %}
+{% block title %}Terms of Use — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in legal-page">
+
+  <!-- Header -->
+  <div class="legal-header">
+    <h1 class="text-brand">Terms of Use</h1>
+    <p class="subtitle">Last updated: {% now "F j, Y" %}</p>
+  </div>
+
+  <!-- Page navigation -->
+  <div class="legal-nav">
+    <a href="{% url 'core:about' %}">About</a>
+    <a href="{% url 'core:privacy' %}">Privacy Policy</a>
+    <a href="{% url 'core:terms' %}" class="active">Terms of Use</a>
+  </div>
+
+  <!-- Table of contents -->
+  <div class="toc">
+    <h3>Contents</h3>
+    <ol>
+      <li><a href="#tou-acceptance">Acceptance of Terms</a></li>
+      <li><a href="#tou-eligibility">Eligibility</a></li>
+      <li><a href="#tou-accounts">Account Rules</a></li>
+      <li><a href="#tou-skill">Skill‑Based Competition</a></li>
+      <li><a href="#tou-no-gambling">No Gambling, Wagering, or Betting</a></li>
+      <li><a href="#tou-conduct">Prohibited Conduct</a></li>
+      <li><a href="#tou-ai">AI Agent Requirements</a></li>
+      <li><a href="#tou-prizes">Prize Payouts</a></li>
+      <li><a href="#tou-ip">Intellectual Property</a></li>
+      <li><a href="#tou-termination">Account Termination</a></li>
+      <li><a href="#tou-liability">Limitation of Liability</a></li>
+      <li><a href="#tou-governing">Governing Law &amp; Jurisdiction</a></li>
+      <li><a href="#tou-changes">Changes to These Terms</a></li>
+    </ol>
+  </div>
+
+  <!-- ── 1. Acceptance ───────────────────────── -->
+  <h2 id="tou-acceptance"><span class="section-num">1</span> Acceptance of Terms</h2>
+  <p>
+    By creating an account, uploading an AI agent, or participating in any match or tournament on
+    Artificial Gladiator ("the Platform"), you agree to be bound by these Terms of Use, our
+    <a href="{% url 'core:privacy' %}">Privacy Policy</a>, and the
+    <a href="{% url 'core:about' %}">Platform Rules</a>. If you do not agree, do not use the Platform.
+  </p>
+
+  <!-- ── 2. Eligibility ─────────────────────── -->
+  <h2 id="tou-eligibility"><span class="section-num">2</span> Eligibility</h2>
+  <ul>
+    <li>You must be at least <strong>18 years of age</strong> to use the Platform.</li>
+    <li>You must not be a resident of a country where participation in online AI competitions or skill‑based contests is prohibited by law.</li>
+    <li>You must provide truthful and accurate information during registration.</li>
+  </ul>
+
+  <!-- ── 3. Accounts ─────────────────────────── -->
+  <h2 id="tou-accounts"><span class="section-num">3</span> Account Rules</h2>
+  <ul>
+    <li><strong>One account per person.</strong> Creating or using multiple accounts is strictly prohibited and will result in permanent bans of all associated accounts.</li>
+    <li>You are responsible for maintaining the security of your account credentials.</li>
+    <li>You must not share, sell, or transfer your account to another person.</li>
+    <li>Usernames and AI names must not contain offensive, discriminatory, or misleading content.</li>
+  </ul>
+
+  <!-- ── 4. Skill‑Based ─────────────────────── -->
+  <h2 id="tou-skill"><span class="section-num">4</span> Skill‑Based Competition</h2>
+  <p>
+    Artificial Gladiator is a <strong>skill‑based competition platform</strong>. Tournament outcomes are
+    determined entirely by the quality and performance of participants' AI chess engines. There is
+    no element of chance in determining match results — all games are played under standard
+    chess rules with deterministic AI decision‑making.
+  </p>
+  <div class="callout">
+    <p>All prizes are <strong>sponsor‑funded</strong>. Players never pay entry fees or stake any funds to participate.</p>
+  </div>
+
+  <!-- ── 5. No Gambling ──────────────────────── -->
+  <h2 id="tou-no-gambling"><span class="section-num">5</span> No Gambling, Wagering, or Betting</h2>
+  <p>The following activities are <strong>strictly prohibited</strong> on the Platform:</p>
+  <ul>
+    <li><strong>Wagering</strong> — Placing bets on match or tournament outcomes, whether using real money, cryptocurrency, or virtual currency.</li>
+    <li><strong>Betting</strong> — Offering or accepting bets from other users or third parties on Platform events.</li>
+    <li><strong>Staking</strong> — Putting up any form of collateral or stake tied to competition results.</li>
+    <li><strong>Side deals</strong> — Arranging unofficial financial agreements with other participants regarding match outcomes.</li>
+  </ul>
+  <p>
+    Artificial Gladiator is <strong>not a gambling service</strong>. We do not facilitate, endorse, or
+    condone any form of wagering or betting. Violations will result in immediate and permanent
+    account termination.
+  </p>
+
+  <!-- ── 6. Prohibited Conduct ───────────────── -->
+  <h2 id="tou-conduct"><span class="section-num">6</span> Prohibited Conduct</h2>
+  <p>You agree not to:</p>
+  <ul>
+    <li><strong>Cheat</strong> — Use external chess engines, cloud computing, human assistance, or any unauthorized tool to influence AI performance during matches.</li>
+    <li><strong>Submit plagiarized code</strong> — Your AI agent must be your own original work. Submitting another person's engine as your own is prohibited.</li>
+    <li><strong>Manipulate results</strong> — Intentionally lose, "throw" games, engage in ELO farming, match‑fixing, or any form of collusion with other players.</li>
+    <li><strong>Disrupt the platform</strong> — Attempt to hack, DDoS, exploit bugs, reverse‑engineer, or interfere with the platform infrastructure, other users' AI agents, or match scheduling systems.</li>
+    <li><strong>Create multiple accounts</strong> — Register or use more than one account, or help others do so.</li>
+    <li><strong>Harass others</strong> — Engage in abusive, threatening, or discriminatory behaviour toward other users.</li>
+    <li><strong>Circumvent restrictions</strong> — Use VPNs, proxies, or other tools to bypass country restrictions or bans.</li>
+  </ul>
+
+  <!-- ── 7. AI Requirements ──────────────────── -->
+  <h2 id="tou-ai"><span class="section-num">7</span> AI Agent Requirements</h2>
+  <ul>
+    <li>AI agents must comply with the UCI or compatible protocol.</li>
+    <li>Agents are executed in sandboxed Docker containers with <strong>no network access</strong>.</li>
+    <li>Agents must not attempt to access the filesystem, spawn external processes, or communicate with external services.</li>
+    <li>We reserve the right to inspect and disqualify any AI agent that violates these requirements.</li>
+    <li>AI agents must make moves within the allotted time control. Agents that time out forfeit the game.</li>
+  </ul>
+
+  <!-- ── 8. Prizes ───────────────────────────── -->
+  <h2 id="tou-prizes"><span class="section-num">8</span> Prize Payouts</h2>
+  <ul>
+    <li>Prizes are funded entirely by sponsors — <strong>not</strong> by player entry fees.</li>
+    <li>Prize payouts are processed via PayPal. You must provide a valid PayPal email to receive winnings.</li>
+    <li>We reserve the right to withhold prizes pending investigation of potential rule violations.</li>
+    <li>Unclaimed prizes after 90 days roll over to the next tournament's prize pool.</li>
+    <li>You are solely responsible for any tax obligations arising from prize winnings in your jurisdiction.</li>
+  </ul>
+
+  <!-- ── 9. IP ───────────────────────────────── -->
+  <h2 id="tou-ip"><span class="section-num">9</span> Intellectual Property</h2>
+  <p>
+    You retain full ownership and intellectual property rights to any AI agent code you upload.
+    By uploading, you grant Artificial Gladiator a limited, non‑exclusive licence to execute your code
+    solely for the purpose of running matches and tournaments on the Platform. We do not claim
+    ownership of your code, and your AI files are never shared with other users or third parties.
+  </p>
+
+  <!-- ── 10. Termination ─────────────────────── -->
+  <h2 id="tou-termination"><span class="section-num">10</span> Account Termination</h2>
+  <p>We may suspend or permanently terminate your account if you:</p>
+  <ul>
+    <li>Violate any of these Terms of Use.</li>
+    <li>Engage in cheating, multi‑accounting, or result manipulation.</li>
+    <li>Provide false information during registration.</li>
+    <li>Engage in any activity that harms the Platform or its users.</li>
+  </ul>
+  <p>
+    You may also voluntarily delete your account at any time. See our
+    <a href="{% url 'core:privacy' %}#pp-rights">Privacy Policy § 6</a> for details on data deletion.
+  </p>
+
+  <!-- ── 11. Liability ───────────────────────── -->
+  <h2 id="tou-liability"><span class="section-num">11</span> Limitation of Liability</h2>
+  <p>
+    Artificial Gladiator is provided "as is" without warranties of any kind, express or implied.
+    To the fullest extent permitted by law, we shall not be liable for any indirect, incidental,
+    consequential, or punitive damages arising from your use of the Platform, including but not
+    limited to loss of data, loss of revenue, or interruption of service.
+  </p>
+
+  <!-- ── 12. Governing Law ───────────────────── -->
+  <h2 id="tou-governing"><span class="section-num">12</span> Governing Law &amp; Jurisdiction</h2>
+  <p>
+    These Terms of Use are governed by and construed in accordance with the laws of the
+    <strong>State of Israel</strong>, without regard to conflict‑of‑law provisions. Any disputes
+    arising from or relating to these Terms or the use of the Platform shall be resolved
+    exclusively in the competent courts of <strong>Tel Aviv, Israel</strong>.
+  </p>
+
+  <!-- ── 13. Changes ─────────────────────────── -->
+  <h2 id="tou-changes"><span class="section-num">13</span> Changes to These Terms</h2>
+  <p>
+    We reserve the right to modify these Terms of Use at any time. Material changes will be
+    communicated via email and/or a prominent notice on the Platform at least 14 days before
+    taking effect. Continued use of the Platform after changes constitutes acceptance of the
+    updated Terms.
+  </p>
+  <p>
+    For questions about these Terms, contact us at
+    <a href="mailto:support@aichessarena.com">support@aichessarena.com</a>.
+  </p>
+
+</div>
+{% endblock %}

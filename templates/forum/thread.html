@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% load static forum_tags %}
+{% block title %}{{ thread.title }} — Forum — Artificial Gladiator{% endblock %}
+
+{% block main_class %}max-w-4xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-10{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  {# BREADCRUMB  –  Forum > Category > Thread title #}
+  <nav class="flex items-center gap-1.5 text-xs text-gray-500 mb-6 overflow-x-auto" aria-label="Breadcrumb">
+    <a href="{% url 'forum:home' %}" class="hover:text-purple transition-colors whitespace-nowrap">Forum</a>
+    <svg class="w-3 h-3 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    <a href="{{ thread.category.get_absolute_url }}" class="hover:text-purple transition-colors whitespace-nowrap">
+      {{ thread.category.icon }} {{ thread.category.name }}
+    </a>
+    <svg class="w-3 h-3 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    <span class="text-gray-400 truncate">{{ thread.title|truncatewords:8 }}</span>
+  </nav>
+
+  {# THREAD HEADER  –  Title + badges + stats bar #}
+  <header class="mb-6">
+    {# Badges row #}
+    {% if thread.is_pinned or thread.is_locked %}
+    <div class="flex items-center gap-2 mb-2">
+      {% if thread.is_pinned %}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gold/15 text-gold border border-gold/20">
+        📌 Pinned
+      </span>
+      {% endif %}
+      {% if thread.is_locked %}
+      <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/10 text-red-400 border border-red-500/20">
+        🔒 Locked
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# Thread title #}
+    <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-white leading-tight mb-3">
+      {{ thread.title }}
+    </h1>
+
+    {# Stats bar #}
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+      <span class="inline-flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+        {{ thread.views_count }} views
+      </span>
+      <span class="inline-flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+        {{ total_replies }} repl{{ total_replies|pluralize:"y,ies" }}
+      </span>
+      <span>
+        <time class="text-gray-500" datetime="{{ thread.created_at|date:'c' }}">{{ thread.created_at|timesince }} ago</time>
+      </span>
+    </div>
+  </header>
+
+  {# ORIGINAL POST #}
+  <section class="forum-op-section mb-8">
+    {% with post=thread is_op=True %}
+      {% include "forum/partials/_post.html" %}
+    {% endwith %}
+  </section>
+
+  <hr class="border-borderDark/50 mb-8">
+
+  {# REPLIES SECTION #}
+  <section class="mb-8">
+    <h2 class="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-gray-500 mb-5">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a2 2 0 01-2-2v-1"/><path d="M15 4H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l4-4h4a2 2 0 002-2V6a2 2 0 00-2-2z"/></svg>
+      Replies ({{ total_replies }})
+    </h2>
+
+    <div class="forum-replies-list">
+      {% for post in posts_page %}
+        {% with is_op=False %}
+          {% include "forum/partials/_post.html" %}
+        {% endwith %}
+      {% empty %}
+        <div class="text-center py-12">
+          <p class="text-gray-500 text-sm">No replies yet. Be the first to respond!</p>
+        </div>
+      {% endfor %}
+    </div>
+
+    {# ── Pagination ── #}
+    {% if posts_page.has_other_pages %}
+    <nav class="flex justify-center items-center mt-8 gap-1" aria-label="Post pagination">
+      {% if posts_page.has_previous %}
+        <a href="?page={{ posts_page.previous_page_number }}"
+           class="forum-page-link">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M15 19l-7-7 7-7"/></svg>
+          Prev
+        </a>
+      {% endif %}
+
+      {% for num in posts_page.paginator.page_range %}
+        {% if posts_page.number == num %}
+          <span class="forum-page-link forum-page-link--active">{{ num }}</span>
+        {% elif num > posts_page.number|add:"-3" and num < posts_page.number|add:"3" %}
+          <a href="?page={{ num }}" class="forum-page-link">{{ num }}</a>
+        {% endif %}
+      {% endfor %}
+
+      {% if posts_page.has_next %}
+        <a href="?page={{ posts_page.next_page_number }}"
+           class="forum-page-link">
+          Next
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+        </a>
+      {% endif %}
+    </nav>
+    {% endif %}
+  </section>
+
+  {# REPLY COMPOSER / LOCKED / LOGIN #}
+  <section>
+    {% include "forum/partials/_reply_form.html" %}
+  </section>
+
+</div>
+{% endblock %}

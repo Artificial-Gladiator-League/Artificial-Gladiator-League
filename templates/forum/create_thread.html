@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}New Thread in {{ category.name }} — Forum — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto animate-fade-in">
+
+  <!-- Breadcrumb -->
+  <div class="flex items-center gap-2 text-xs text-gray-500 mb-4">
+    <a href="{% url 'forum:home' %}" class="hover:text-brand transition">Forum</a>
+    <span>/</span>
+    <a href="{{ category.get_absolute_url }}" class="hover:text-brand transition">
+      {{ category.icon }} {{ category.name }}
+    </a>
+    <span>/</span>
+    <span class="text-gray-400">New Thread</span>
+  </div>
+
+  <h1 class="text-2xl font-extrabold mb-6 flex items-center gap-3">
+    <span class="text-2xl">✏️</span> New Thread in {{ category.name }}
+  </h1>
+
+  <div class="card">
+    <form method="post">
+      {% csrf_token %}
+
+      <!-- Title -->
+      <div class="mb-4">
+        <label for="id_title" class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+          Title <span class="text-red-400">*</span>
+        </label>
+        {{ form.title }}
+        {% if form.title.errors %}
+          <p class="text-xs text-red-400 mt-1">{{ form.title.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <!-- Body -->
+      <div class="mb-4">
+        <label for="id_body" class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+          Content <span class="text-red-400">*</span>
+        </label>
+        {{ form.body }}
+        {% if form.body.errors %}
+          <p class="text-xs text-red-400 mt-1">{{ form.body.errors.0 }}</p>
+        {% endif %}
+        <p class="text-xs text-gray-500 mt-1">
+          Markdown supported: **bold**, *italic*, `code`, ```code blocks```, [links](url)
+        </p>
+      </div>
+
+      <!-- Optional links -->
+      <div class="grid sm:grid-cols-2 gap-4 mb-6">
+        <div>
+          <label for="id_linked_game" class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+            Link a Replay (Game ID)
+          </label>
+          {{ form.linked_game }}
+        </div>
+        <div>
+          <label for="id_linked_tournament" class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1.5">
+            Link a Tournament
+          </label>
+          {{ form.linked_tournament }}
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center justify-between">
+        <a href="{{ category.get_absolute_url }}" class="text-sm text-gray-500 hover:text-gray-300 transition">← Cancel</a>
+        <button type="submit" class="btn-gold cursor-pointer">Create Thread</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

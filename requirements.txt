@@ -1,0 +1,47 @@
+﻿# ──────────────────────────────────────────────
+# requirements.txt — Artificial Gladiator
+# ──────────────────────────────────────────────
+
+# Core framework
+Django>=5.0,<6.0
+
+# ASGI / WebSockets
+channels[daphne]>=4.0,<5.0
+channels-redis>=4.1,<5.0
+
+# Database
+mysqlclient>=2.2,<3.0
+
+# Redis (channel layer backend)
+redis>=5.0,<6.0
+
+# Chess engine & rules
+python-chess>=1.10,<2.0
+
+# AI / deep learning — models run in Docker sandbox on the VPS.
+# torch is not required on the server.
+
+# Hugging Face model hub (gated-repo validation & download)
+huggingface-hub>=0.20,<1.0
+
+# SafeTensors format (mandatory model format)
+safetensors>=0.4,<1.0
+
+# Security scanning tools for model verification
+bandit>=1.7,<2.0
+modelscan>=0.8,<1.0
+fickling>=0.1,<1.0
+picklescan>=0.0.14,<1.0
+
+# Production WSGI server (Heroku / AWS / VPS)
+gunicorn>=21.0,<23.0
+
+# Environment variable management
+python-decouple>=3.8,<4.0
+python-dotenv
+
+# ISO country dataset (registration country list)
+pycountry>=24.6.1,<25.0
+
+# WhiteNoise for static files in production
+whitenoise>=6.5,<7.0

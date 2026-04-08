@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\apps",
+    "\\apps\\core",
+    "\\apps\\tournaments",
+    "\\apps\\tournaments\\management",
+    "\\apps\\tournaments\\management\\commands",
+    "\\templates",
+    "\\templates\\tournaments",
+    "\\templates\\users"
+  ],
+  "PreviewInSolutionExplorer": false
+}

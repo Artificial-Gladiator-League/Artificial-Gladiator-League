@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}Messages{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Messages</h1>
+  </div>
+
+  {% if conversations %}
+  <div class="space-y-2">
+    {% for c in conversations %}
+    <a href="{% url 'chat:chat' c.friend.username %}"
+       class="card flex items-center gap-3 hover:bg-surfaceLight transition p-4 no-underline">
+      <div class="w-10 h-10 rounded-full bg-purple flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+        {{ c.friend.username|make_list|first|upper }}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between">
+          <span class="font-semibold text-sm">{% fide_badge c.friend %} {{ c.friend.username }}</span>
+          {% if c.last_message %}
+          <span class="text-xs text-gray-500">{{ c.last_message.created_at|timesince }} ago</span>
+          {% endif %}
+        </div>
+        {% if c.last_message %}
+        <p class="text-xs text-gray-400 truncate mt-0.5">
+          {% if c.last_message.sender == request.user %}You: {% endif %}{{ c.last_message.text|truncatewords:12 }}
+        </p>
+        {% else %}
+        <p class="text-xs text-gray-500 italic mt-0.5">No messages yet</p>
+        {% endif %}
+      </div>
+      {% if c.unread_count %}
+      <span class="bg-brand text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+        {{ c.unread_count }}
+      </span>
+      {% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card text-center py-12">
+    <p class="text-gray-500 mb-2">No conversations yet.</p>
+    <p class="text-sm text-gray-400">Add friends from their profile pages to start chatting!</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

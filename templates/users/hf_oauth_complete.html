@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Complete Registration — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto animate-fade-in py-12">
+
+  <div class="text-center mb-8">
+    <div class="text-5xl mb-3">🤗</div>
+    <h1 class="text-2xl font-bold">Complete Your Registration</h1>
+    <p class="text-gray-400 mt-2 text-sm leading-relaxed">
+      Signed in as <strong class="text-gray-200">{{ hf_username }}</strong> on Hugging Face.<br>
+      Choose a username and link your AI model to get started.
+    </p>
+  </div>
+
+  <div class="card">
+
+    {% if errors %}
+      <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-3 mb-5 text-sm text-red-300">
+        {% for field, msg in errors.items %}
+          <p><strong>{{ field }}:</strong> {{ msg }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="rounded-lg bg-green-900/30 border border-green-700 px-4 py-2 mb-5 text-sm text-green-300">
+      <strong>🔒 No token needed.</strong> Your Hugging Face identity was verified via OAuth.
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="form-group mb-4">
+        <label for="id_username" class="block text-sm font-medium text-gray-300 mb-1">Username</label>
+        <input type="text" name="username" id="id_username" required autofocus
+               value="{{ form_data.username|default:'' }}"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition"
+               placeholder="Choose a username">
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="id_email" class="block text-sm font-medium text-gray-300 mb-1">Email (optional)</label>
+        <input type="email" name="email" id="id_email"
+               value="{{ form_data.email|default:'' }}"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition"
+               placeholder="you@example.com">
+        <span class="text-xs text-gray-500 mt-1 block">For password recovery if you add one later.</span>
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="id_ai_name" class="block text-sm font-medium text-gray-300 mb-1">AI Bot Name</label>
+        <input type="text" name="ai_name" id="id_ai_name" required
+               value="{{ form_data.ai_name|default:'' }}"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition"
+               placeholder="e.g. DeepPawn-v3">
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="id_repo" class="block text-sm font-medium text-gray-300 mb-1">Hugging Face Model Repo ID</label>
+        <input type="text" name="hf_model_repo_id" id="id_repo" required
+               value="{{ form_data.hf_model_repo_id|default:'' }}"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition"
+               placeholder="e.g. {{ hf_username }}/MyChessBot">
+        <span class="text-xs text-gray-500 mt-1 block">
+          Only gated (access-request enabled) repositories are accepted.
+        </span>
+      </div>
+
+      <button type="submit" class="btn-brand w-full text-base py-3 mt-2">
+        Create Account
+      </button>
+    </form>
+
+    <div class="text-center mt-5">
+      <p class="text-gray-500 text-xs">
+        Or <a href="{% url 'users:register' %}" class="text-brand hover:underline">register with email &amp; password</a> instead.
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

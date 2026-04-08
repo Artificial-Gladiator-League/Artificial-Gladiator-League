@@ -1,0 +1,112 @@
+﻿{% extends "base.html" %}
+{% block title %}Data &amp; Privacy — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto animate-fade-in">
+
+  <!-- Header -->
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold mb-1">Data &amp; Privacy</h1>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">
+      Manage your personal data under GDPR.
+      <a href="{% url 'core:privacy' %}" class="text-brand hover:underline">Read our Privacy Policy</a>.
+    </p>
+  </div>
+
+  <!-- Quick actions -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+    <a href="{% url 'users:gdpr_export' %}"
+       class="card text-center hover:border-brand transition group">
+      <span class="text-3xl">📥</span>
+      <p class="text-brand font-semibold mt-2 group-hover:underline">Export My Data</p>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        Download a full JSON copy of everything we store about you.
+      </p>
+    </a>
+
+    <form method="post" action="{% url 'users:gdpr_delete' %}" id="deleteForm">
+      {% csrf_token %}
+      <button type="button" onclick="confirmDelete()"
+              class="card w-full text-center hover:border-red-500 transition group cursor-pointer">
+        <span class="text-3xl">🗑️</span>
+        <p class="text-red-400 font-semibold mt-2 group-hover:underline">Delete My Account</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Permanently erase your account, stats, ELO, history, and AI files.
+        </p>
+      </button>
+    </form>
+  </div>
+
+  <!-- Submit a formal request -->
+  <div class="card mb-8">
+    <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Submit a Formal Request</h2>
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% if form.non_field_errors %}
+        <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-4 text-sm text-red-300">
+          {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="id_request_type">Request type</label>
+        {{ form.request_type }}
+      </div>
+
+      <div class="form-group">
+        <label for="id_reason">Reason (optional)</label>
+        {{ form.reason }}
+      </div>
+
+      <button type="submit" class="btn-brand w-full py-2.5 mt-1">Submit Request</button>
+    </form>
+  </div>
+
+  <!-- History -->
+  {% if requests %}
+  <div class="card">
+    <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Your Requests</h2>
+    <table class="stats-table text-sm w-full">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requests %}
+        <tr>
+          <td>{{ r.get_request_type_display }}</td>
+          <td>
+            <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold
+              {% if r.status == 'completed' %}bg-green-900/40 text-green-400
+              {% elif r.status == 'pending' %}bg-yellow-900/40 text-yellow-400
+              {% elif r.status == 'processing' %}bg-blue-900/40 text-blue-400
+              {% else %}bg-red-900/40 text-red-400{% endif %}">
+              {{ r.get_status_display }}
+            </span>
+          </td>
+          <td class="text-gray-500">{{ r.created_at|date:"M j, Y" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function confirmDelete() {
+  if (confirm('Are you absolutely sure? This will PERMANENTLY delete your account, all stats, ELO history, match records, and uploaded AI files. This action cannot be undone.')) {
+    document.getElementById('deleteForm').submit();
+  }
+}
+</script>
+{% endblock %}

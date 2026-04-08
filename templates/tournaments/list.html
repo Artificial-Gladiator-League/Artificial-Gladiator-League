@@ -1,0 +1,105 @@
+﻿{% extends "base.html" %}
+{% block title %}Tournaments — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <h1 class="text-2xl sm:text-3xl font-bold mb-6">Tournaments</h1>
+
+  {% if tournaments %}
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {% for tournament in tournaments %}
+    <div class="rounded-lg border border-gray-700 bg-gray-800 hover:border-brand transition">
+      <a href="{% url 'tournaments:detail' tournament.pk %}" class="block p-5">
+
+        <div class="flex items-center gap-2 mb-2">
+          {% with meta=tournament.CATEGORY_META %}
+            {% if tournament.category and tournament.category in meta %}
+              <span class="text-xs font-bold px-2 py-0.5 rounded {{ meta|dictsort:'key' }}"
+                    style="background:rgba(0,0,0,.25)">
+                {{ meta.icon }} {{ meta.label }}
+              </span>
+            {% endif %}
+          {% endwith %}
+          <span class="text-xs text-gray-500 uppercase font-semibold">
+            {{ tournament.get_type_display }}
+          </span>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded {% if tournament.game_type == 'breakthrough' %}bg-orange-900/40 text-orange-300{% else %}bg-blue-900/40 text-blue-300{% endif %}">
+            {{ tournament.get_game_type_display }}
+          </span>
+        </div>
+
+        <h2 class="text-lg font-semibold mb-1">{{ tournament.name }}</h2>
+
+        {% if tournament.description %}
+          <p class="text-gray-400 text-sm mb-3 line-clamp-2">{{ tournament.description }}</p>
+        {% endif %}
+
+        <div class="flex items-center gap-4 text-sm text-gray-400">
+          <span class="text-brand font-semibold">${{ tournament.prize_pool }}</span>
+          <span>{{ tournament.time_control_display }}</span>
+          <span>{{ tournament.participant_count }} / {{ tournament.capacity }}</span>
+          <span class="text-green-500 text-xs font-semibold">Free</span>
+          {% if tournament.status == 'open' %}
+            <span class="ml-auto text-xs font-bold text-green-400 uppercase">Open</span>
+          {% elif tournament.status == 'ongoing' %}
+            <span class="ml-auto text-xs font-bold text-yellow-400 uppercase">Ongoing</span>
+          {% elif tournament.status == 'completed' %}
+            <span class="ml-auto text-xs font-bold text-gray-500 uppercase">Completed</span>
+          {% else %}
+            <span class="ml-auto text-xs font-bold text-red-400 uppercase">Full</span>
+          {% endif %}
+        </div>
+      </a>
+
+      <!-- Spectate button for tournaments with active games -->
+      {% if tournament.active_game %}
+        <div class="px-5 pb-3">
+          <a href="{% url 'games:spectate' tournament.active_game.pk %}"
+             class="flex items-center justify-center gap-2 text-xs py-1.5 w-full text-center rounded-lg bg-purple-900/30 border border-purple-700 text-purple-300 hover:bg-purple-900/50 transition font-semibold">
+            👁️ Spectate Live Game
+          </a>
+        </div>
+      {% endif %}
+
+      <!-- Action buttons -->
+      {% if user.is_authenticated %}
+        {% if tournament.pk in joined_tournament_ids %}
+          {% if tournament.status == 'open' or tournament.status == 'full' %}
+            <div class="px-5 pb-4">
+              <form method="post" action="{% url 'tournaments:leave' tournament.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn-danger text-xs py-1.5 w-full">Leave Tournament</button>
+              </form>
+            </div>
+          {% endif %}
+        {% elif tournament.status == 'open' %}
+          {% if tournament.join_blocked %}
+            <div class="px-5 pb-4">
+              <span class="flex items-center gap-1.5 text-xs py-1.5 w-full rounded-lg bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 px-3 cursor-not-allowed"
+                    title="{{ tournament.join_blocked_reason }}">
+                ⚠️ {{ tournament.join_blocked_reason }}
+              </span>
+              {% if tournament.games_remaining > 0 %}
+              <div class="text-xs text-center mt-1.5 text-yellow-400 font-semibold">
+                🎮 {{ tournament.games_remaining }} game{{ tournament.games_remaining|pluralize }} remaining to unlock tournaments
+              </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="px-5 pb-4">
+              <a href="{% url 'tournaments:join' tournament.pk %}"
+                 class="btn-brand text-xs py-1.5 w-full text-center block">Join — Free</a>
+            </div>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+    <p class="text-gray-400">No tournaments available yet.</p>
+  {% endif %}
+
+</div>
+{% endblock %}

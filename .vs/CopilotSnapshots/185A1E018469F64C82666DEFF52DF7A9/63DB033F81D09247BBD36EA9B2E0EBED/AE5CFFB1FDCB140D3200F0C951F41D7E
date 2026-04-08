@@ -1,0 +1,93 @@
+﻿{% extends "base.html" %}
+{% block title %}Game History — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold">Game History</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+        All completed casual games on the platform.
+      </p>
+    </div>
+  </div>
+
+  {% if games %}
+  <div class="card overflow-x-auto">
+    <table class="stats-table text-sm w-full">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>White</th>
+          <th>Black</th>
+          <th>Result</th>
+          <th>Time</th>
+          <th class="text-right">ELO Δ</th>
+          <th class="text-right">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for game in games %}
+        <tr>
+          <td class="text-gray-500">{{ game.pk }}</td>
+          <td>
+            <span class="mr-0.5">{{ game.white.country_flag_emoji }}</span>
+            <span class="font-medium">{{ game.white.username }}</span>
+            <span class="text-xs text-gray-500">({{ game.white.elo }})</span>
+          </td>
+          <td>
+            {% if game.black %}
+              <span class="mr-0.5">{{ game.black.country_flag_emoji }}</span>
+              <span class="font-medium">{{ game.black.username }}</span>
+              <span class="text-xs text-gray-500">({{ game.black.elo }})</span>
+            {% else %}
+              <span class="text-gray-500 italic">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if game.result == "1-0" %}
+              <span class="text-green-400 font-semibold">1-0</span>
+            {% elif game.result == "0-1" %}
+              <span class="text-red-400 font-semibold">0-1</span>
+            {% elif game.result == "1/2-1/2" %}
+              <span class="text-yellow-400 font-semibold">½-½</span>
+            {% else %}
+              <span class="text-gray-500">{{ game.result }}</span>
+            {% endif %}
+          </td>
+          <td class="text-gray-400">{{ game.time_control }}</td>
+          <td class="text-right">
+            {% if game.elo_change_white > 0 %}
+              <span class="text-green-400">+{{ game.elo_change_white }}</span>
+            {% elif game.elo_change_white < 0 %}
+              <span class="text-red-400">{{ game.elo_change_white }}</span>
+            {% else %}
+              <span class="text-gray-500">0</span>
+            {% endif %}
+            /
+            {% if game.elo_change_black > 0 %}
+              <span class="text-green-400">+{{ game.elo_change_black }}</span>
+            {% elif game.elo_change_black < 0 %}
+              <span class="text-red-400">{{ game.elo_change_black }}</span>
+            {% else %}
+              <span class="text-gray-500">0</span>
+            {% endif %}
+          </td>
+          <td class="text-right text-gray-500">{{ game.timestamp|date:"M j, Y H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card text-center py-12">
+    <p class="text-gray-500 dark:text-gray-400 text-lg">No completed games yet.</p>
+    <p class="text-sm text-gray-500 mt-2">
+      Head to the <a href="{% url 'games:lobby' %}" class="text-brand hover:underline">Lobby</a> to play a game!
+    </p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

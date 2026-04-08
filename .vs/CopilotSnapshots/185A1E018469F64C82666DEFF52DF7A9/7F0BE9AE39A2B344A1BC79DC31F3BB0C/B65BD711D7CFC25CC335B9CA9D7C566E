@@ -1,0 +1,205 @@
+﻿import os
+
+from django.conf import settings
+from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils import timezone
+
+
+# ── Prohibited countries (ISO‑3166‑1 alpha‑2) ─
+# Adjust to match applicable sanctions / export‑control lists.
+PROHIBITED_COUNTRIES = getattr(settings, "PROHIBITED_COUNTRIES", [
+    "KP", "IR", "SY", "CU", "SD",
+])
+
+
+def ai_upload_path(instance, filename):
+    """Store uploads under media/ai_bots/<user_id>/<filename>."""
+    return f"ai_bots/{instance.id}/{filename}"
+
+
+def validate_ai_file_extension(value):
+    ext = os.path.splitext(value.name)[1].lower()
+    allowed = getattr(settings, "AI_UPLOAD_ALLOWED_EXTENSIONS", [".py", ".pth"])
+    if ext not in allowed:
+        raise ValidationError(f"Only {', '.join(allowed)} files are allowed.")
+
+
+def validate_min_age(value):
+    """Ensure the user is at least 18 years old."""
+    today = timezone.now().date()
+    age = (
+        today.year - value.year
+        - ((today.month, today.day) < (value.month, value.day))
+    )
+    if age < 18:
+        raise ValidationError("You must be at least 18 years old to register.")
+
+
+class CustomUser(AbstractUser):
+    """Extended user model with AI bot info, ELO, and aggregated stats."""
+
+    # ── Personal ────────────────────────────────
+    email = models.EmailField(unique=True)
+    date_of_birth = models.DateField(
+        null=True,
+        blank=True,
+        validators=[validate_min_age],
+        help_text="Must be 18+.",
+    )
+    country = models.CharField(
+        max_length=2,
+        blank=True,
+        help_text="ISO 3166‑1 alpha‑2 country code (e.g. US, DE, JP).",
+    )
+
+    # ── AI Bot ──────────────────────────────────
+    ai_name = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="Display name for this user's AI bot.",
+    )
+    ai_date_of_birth = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Date the AI bot was first created / trained.",
+    )
+    ai_file = models.FileField(
+        upload_to=ai_upload_path,
+        blank=True,
+        null=True,
+        validators=[validate_ai_file_extension],
+        help_text="Upload .py or .pth — you confirm you hold all rights to this file.",
+    )
+
+    # ── Rating & Stats (aggregated) ─────────────
+    elo = models.IntegerField(default=1200)
+    wins = models.IntegerField(default=0)
+    losses = models.IntegerField(default=0)
+    draws = models.IntegerField(default=0)
+    total_games = models.IntegerField(default=0)
+    current_streak = models.IntegerField(
+        default=0,
+        help_text="Positive = win streak, negative = loss streak.",
+    )
+
+    class Meta:
+        ordering = ["-elo"]
+        db_table = "users_user"
+
+    def __str__(self):
+        return f"{self.username} (ELO {self.elo})"
+
+    # ── Computed properties ─────────────────────
+    @property
+    def win_rate(self) -> float:
+        """Win rate as a float between 0.0 and 1.0."""
+        if self.total_games == 0:
+            return 0.0
+        return round(self.wins / self.total_games, 4)
+
+    @property
+    def country_flag(self) -> str:
+        """Return a Unicode flag emoji for the country code."""
+        if not self.country or len(self.country) != 2:
+            return "🏳️"
+        return "".join(chr(0x1F1E6 + ord(c) - ord("A")) for c in self.country.upper())
+
+    @property
+    def has_tournament_history(self) -> bool:
+        """True once the user has joined at least one tournament.
+
+        Used to lock the country field after first participation.
+        """
+        from apps.tournaments.models import TournamentParticipant
+        return TournamentParticipant.objects.filter(user=self).exists()
+
+    def get_category(self) -> dict:
+        """Return a dict with category label, tier name, and icon class.
+
+        Ranges:
+            ≤ 1200  → Beginner  / Novice   / 🥉 Bronze
+            1201‑1600 → Intermediate / Club Player / 🥈 Silver
+            1601‑2000 → Advanced / Expert  / 🥇 Gold
+            2001+   → Expert  / Master  / 🏆 Platinum
+        """
+        if self.elo <= 1200:
+            return {
+                "category": "Beginner",
+                "tier": "Novice",
+                "icon": "🥉",
+                "css": "text-amber-600",
+            }
+        elif self.elo <= 1600:
+            return {
+                "category": "Intermediate",
+                "tier": "Club Player",
+                "icon": "🥈",
+                "css": "text-gray-300",
+            }
+        elif self.elo <= 2000:
+            return {
+                "category": "Advanced",
+                "tier": "Expert",
+                "icon": "🥇",
+                "css": "text-yellow-400",
+            }
+        else:
+            return {
+                "category": "Expert",
+                "tier": "Master",
+                "icon": "🏆",
+                "css": "text-purple-400",
+            }
+
+    def clean(self):
+        super().clean()
+        if self.country and self.country.upper() in PROHIBITED_COUNTRIES:
+            raise ValidationError(
+                {"country": "Registration from this country is currently restricted."}
+            )
+
+
+class GDPRRequest(models.Model):
+    """User request for data access (export) or account deletion (GDPR Art. 15 / 17)."""
+
+    class RequestType(models.TextChoices):
+        ACCESS = "access", "Data Access (Export)"
+        DELETION = "deletion", "Account Deletion"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
+        COMPLETED = "completed", "Completed"
+        DENIED = "denied", "Denied"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="gdpr_requests",
+    )
+    request_type = models.CharField(
+        max_length=10,
+        choices=RequestType.choices,
+    )
+    status = models.CharField(
+        max_length=12,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+    reason = models.TextField(
+        blank=True,
+        help_text="Optional reason or notes.",
+    )
+    admin_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "GDPR Request"
+        verbose_name_plural = "GDPR Requests"
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} — {self.user.username} ({self.status})"

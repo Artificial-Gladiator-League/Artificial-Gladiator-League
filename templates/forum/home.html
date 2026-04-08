@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Forum — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-8">
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-extrabold flex items-center gap-3">
+        <span class="text-3xl">💬</span> Community Forum
+      </h1>
+      <p class="text-sm text-gray-400 mt-1">
+        {{ total_threads }} threads · {{ total_posts }} replies
+      </p>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-6">
+
+    <!-- ═══ Left: Categories ═══ -->
+    <div class="lg:col-span-2 space-y-3">
+      {% for cat in categories %}
+      <a href="{{ cat.get_absolute_url }}"
+         class="card flex items-start gap-4 hover:border-purple/40 transition-all group">
+        <!-- Icon -->
+        <div class="w-12 h-12 rounded-xl bg-surfaceLight flex items-center justify-center text-2xl flex-shrink-0 group-hover:scale-110 transition-transform">
+          {{ cat.icon|default:"💬" }}
+        </div>
+        <!-- Info -->
+        <div class="flex-1 min-w-0">
+          <h2 class="text-base font-semibold group-hover:text-purple transition">
+            {{ cat.name }}
+          </h2>
+          {% if cat.description %}
+            <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">{{ cat.description }}</p>
+          {% endif %}
+          <div class="flex items-center gap-4 mt-1.5 text-xs text-gray-500">
+            <span>{{ cat.num_threads }} thread{{ cat.num_threads|pluralize }}</span>
+            <span>{{ cat.num_posts }} repl{{ cat.num_posts|pluralize:"y,ies" }}</span>
+            {% if cat.last_thread_activity %}
+              <span>Latest: {{ cat.last_thread_activity|timesince }} ago</span>
+            {% endif %}
+          </div>
+        </div>
+        <!-- Arrow -->
+        <div class="hidden sm:flex items-center text-gray-600 group-hover:text-purple transition">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/>
+          </svg>
+        </div>
+      </a>
+      {% empty %}
+      <div class="card text-center py-12 text-gray-500">
+        <div class="text-4xl mb-3">🏗️</div>
+        <p>No categories yet. Check back soon!</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- ═══ Right: Sidebar ═══ -->
+    <div class="space-y-4">
+
+      <!-- Recent Threads -->
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">🔥 Recent Activity</h3>
+        <div class="space-y-3">
+          {% for t in latest_threads %}
+          <a href="{{ t.get_absolute_url }}" class="block group">
+            <div class="text-sm font-medium group-hover:text-purple transition line-clamp-1">{{ t.title }}</div>
+            <div class="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+              <span>{{ t.category.icon }} {{ t.category.name }}</span>
+              <span>·</span>
+              <span>{{ t.last_activity|timesince }} ago</span>
+            </div>
+          </a>
+          {% empty %}
+          <p class="text-sm text-gray-500">No threads yet.</p>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Forum Guidelines -->
+      <div class="card card-glow-purple">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">📋 Guidelines</h3>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li>✅ Be respectful and constructive</li>
+          <li>✅ Use code blocks for AI code snippets</li>
+          <li>✅ Tag the right category for your thread</li>
+          <li>✅ Search before creating a duplicate thread</li>
+          <li>❌ No spam, self-promotion only in "Show Your AI"</li>
+          <li>❌ No sharing of exploits or cheats</li>
+        </ul>
+      </div>
+
+      <!-- Quick Links -->
+      <div class="space-y-2">
+        <a href="{% url 'core:home' %}" class="btn-outline text-xs py-2 w-full text-center">🏠 Home</a>
+        <a href="{% url 'tournaments:list' %}" class="btn-outline text-xs py-2 w-full text-center">⚔️ Arenas</a>
+        <a href="{% url 'core:leaderboard' %}" class="btn-outline text-xs py-2 w-full text-center">🏆 Leaderboards</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

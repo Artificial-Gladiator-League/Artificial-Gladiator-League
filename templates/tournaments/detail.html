@@ -1,0 +1,496 @@
+﻿{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}{{ tournament.name }} — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Header
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        {% if cat_meta %}
+          <span class="text-xs font-bold px-2 py-0.5 rounded {{ cat_meta.css }}"
+                style="background:rgba(0,0,0,.25)">
+            {{ cat_meta.icon }} {{ cat_meta.label }}
+          </span>
+        {% endif %}
+        <span class="text-xs text-gray-500 uppercase font-semibold">
+          {{ tournament.get_type_display }} · {{ tournament.get_game_type_display }} · {{ tournament.rounds_total }} rounds · {{ tournament.time_control_display }}
+        </span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-bold">{{ tournament.name }}</h1>
+      {% if tournament.description %}
+        <p class="text-gray-400 text-sm mt-0.5">{{ tournament.description }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex items-center gap-4 shrink-0">
+      <!-- Stats pills -->
+      <div class="stat-pill">
+        <span class="stat-value text-brand">${{ tournament.prize_pool }}</span>
+        <span class="stat-label">Prize</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-value text-gray-100" id="playerCount">{{ tournament.participant_count }}</span>
+        <span class="stat-label">/ {{ tournament.capacity }}</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-value text-gray-100">{{ tournament.current_round }}</span>
+        <span class="stat-label">Round</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="flex flex-wrap items-center gap-3 mb-6">
+    {% if tournament.status == 'open' %}
+      <span class="status-live">Open for Registration</span>
+      {% if user.is_authenticated %}
+        {% if is_participant %}
+          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger text-xs py-1.5 px-4">Leave Tournament</button>
+          </form>
+        {% else %}
+          {% if can_join %}
+            <a href="{% url 'tournaments:join' tournament.pk %}" class="btn-brand text-xs py-1.5 px-4">Join — Free</a>
+          {% else %}
+            <span class="inline-flex items-center gap-1.5 text-xs py-1.5 px-4 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 cursor-not-allowed"
+                  title="{{ join_blocked_reason }}">
+              ⚠️ {{ join_blocked_reason }}
+            </span>
+          {% endif %}
+        {% endif %}
+      {% endif %}
+    {% elif tournament.status == 'full' %}
+      {% if tournament.type == 'qa' %}
+        <span class="text-xs font-semibold text-yellow-400 uppercase">Waiting for players to ready up</span>
+      {% else %}
+        <span class="text-xs font-semibold text-yellow-400 uppercase">Full — Starting Soon</span>
+      {% endif %}
+      {% if user.is_authenticated and is_participant %}
+        <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
+          {% csrf_token %}
+          <button type="submit" class="btn-danger text-xs py-1.5 px-4">Leave Tournament</button>
+        </form>
+      {% endif %}
+    {% elif tournament.status == 'ongoing' %}
+      <span class="status-live">Live — Round {{ tournament.current_round }}</span>
+    {% elif tournament.status == 'completed' %}
+      <span class="status-completed">Completed</span>
+      {% if tournament.champion %}
+        <span class="text-brand font-semibold text-sm">🏆 Champion: {{ tournament.champion.country_flag|safe }} {% fide_badge tournament.champion %} {{ tournament.champion.username }}</span>
+      {% endif %}
+    {% endif %}
+
+    <!-- WS status -->
+    <span class="ml-auto flex items-center gap-1.5 text-xs text-gray-500">
+      <span id="wsDot" class="ws-dot connecting"></span>
+      <span id="wsLabel">Connecting…</span>
+    </span>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       QA Lobby — Ready-up section
+       ═══════════════════════════════════════════ -->
+  {% if tournament.type == 'qa' and tournament.status != 'completed' and tournament.status != 'ongoing' %}
+  <div class="card mb-6" id="qaLobby">
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Player Lobby</h2>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5" id="qaPlayerSlots">
+      {% for p in qa_participants %}
+        <div class="flex items-center justify-between p-3 rounded-lg border
+                    {% if p.ready %}border-green-500 bg-green-900/20{% else %}border-gray-700 bg-gray-800/50{% endif %}"
+             data-qa-player="{{ p.username }}">
+          <div class="flex items-center gap-2">
+            <span>{{ p.flag|safe }}</span>
+            {% if p.fide_abbr %}<span class="{{ p.fide_css }} font-bold text-xs" title="{{ p.fide_title }}">{{ p.fide_abbr }}</span>{% endif %}
+            <span class="font-semibold text-sm">{{ p.username }}</span>
+            <span class="text-gray-500 text-xs">({{ p.elo }})</span>
+          </div>
+          <span class="text-xs font-semibold {% if p.ready %}text-green-400{% else %}text-gray-500{% endif %}"
+                data-qa-status="{{ p.username }}">
+            {% if p.ready %}✓ Ready{% else %}Waiting…{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+
+      {% if qa_participants|length == 0 %}
+        <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
+          Waiting for player…
+        </div>
+        <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
+          Waiting for player…
+        </div>
+      {% elif qa_participants|length == 1 %}
+        <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
+          Waiting for opponent…
+        </div>
+      {% endif %}
+    </div>
+
+    {% if user.is_authenticated %}
+      {% if not is_participant and tournament.status == 'open' %}
+        {% if can_join %}
+          <a href="{% url 'tournaments:join' tournament.pk %}"
+             class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
+            ♟ Register
+          </a>
+        {% else %}
+          <span class="inline-flex items-center gap-1.5 text-sm py-2.5 px-8 rounded-lg bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 cursor-not-allowed"
+                title="{{ join_blocked_reason }}">
+            ⚠️ {{ join_blocked_reason }}
+          </span>
+        {% endif %}
+      {% elif is_participant and tournament.status == 'full' and not user_ready %}
+        <div class="flex flex-wrap items-center gap-3">
+          <form method="post" action="{% url 'tournaments:ready' tournament.pk %}" class="inline" id="readyForm">
+            {% csrf_token %}
+            <button type="submit" class="btn-brand text-sm py-2.5 px-8" id="readyBtn">
+              ✓ Ready
+            </button>
+          </form>
+          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
+          </form>
+        </div>
+        <p class="text-xs text-gray-500 mt-2">Press Ready when you want to start. Game begins when both players are ready.</p>
+      {% elif is_participant and tournament.status == 'full' and user_ready %}
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-3 text-sm text-green-400">
+            <span class="spinner"></span>
+            <span>You are ready — waiting for opponent…</span>
+          </div>
+          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
+          </form>
+        </div>
+      {% elif is_participant and tournament.status == 'open' %}
+        <div class="flex flex-wrap items-center gap-3">
+          <p class="text-sm text-gray-400">Waiting for another player to join…</p>
+          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
+            {% csrf_token %}
+            <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
+          </form>
+        </div>
+      {% elif not is_participant and tournament.status == 'full' %}
+        <p class="text-sm text-gray-500">This tournament is full. Waiting for players to ready up.</p>
+      {% endif %}
+    {% else %}
+      <p class="text-sm text-gray-500">Log in to join this tournament.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ═══════════════════════════════════════════
+       QA Live / Completed Game
+       ═══════════════════════════════════════════ -->
+  {% if tournament.type == 'qa' and tournament.status == 'ongoing' or tournament.type == 'qa' and tournament.status == 'completed' %}
+  <div class="card mb-6">
+    {% if tournament.status == 'ongoing' %}
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Live Game</h2>
+      {% if live_matches %}
+        {% for m in live_matches %}
+          <div class="flex items-center justify-between p-4 rounded-lg border border-brand bg-gray-800/60">
+            <div class="flex items-center gap-3">
+              <span class="status-live">Live</span>
+              <span class="text-sm font-semibold">
+                {{ m.player1.country_flag|safe }} {% fide_badge m.player1 %} {{ m.player1.username }}
+                <span class="text-gray-500">vs</span>
+                {{ m.player2.country_flag|safe }} {% fide_badge m.player2 %} {{ m.player2.username }}
+              </span>
+            </div>
+            <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
+               class="btn-brand text-sm py-2 px-6">Watch Game →</a>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-sm text-gray-400">Waiting for the match to start…</p>
+      {% endif %}
+    {% elif tournament.status == 'completed' %}
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Game Result</h2>
+      {% if qa_match %}
+        <div class="flex items-center justify-between p-4 rounded-lg border border-gray-700 bg-gray-800/60">
+          <div class="flex items-center gap-3">
+            <span class="status-completed">{{ qa_match.result }}</span>
+            <span class="text-sm font-semibold">
+              {{ qa_match.player1.country_flag|safe }} {% fide_badge qa_match.player1 %} {{ qa_match.player1.username }}
+              <span class="text-gray-500">vs</span>
+              {{ qa_match.player2.country_flag|safe }} {% fide_badge qa_match.player2 %} {{ qa_match.player2.username }}
+            </span>
+            {% if qa_match.winner %}
+              <span class="text-brand text-xs font-semibold">🏆 {% fide_badge qa_match.winner %} {{ qa_match.winner.username }} wins</span>
+            {% endif %}
+          </div>
+          <a href="{% url 'tournaments:live_match' tournament.pk qa_match.pk %}"
+             class="btn-brand text-sm py-2 px-6">View Board →</a>
+        </div>
+      {% endif %}
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ═══════════════════════════════════════════
+       Bracket Tree
+       ═══════════════════════════════════════════ -->
+  <div class="card overflow-hidden p-0">
+    <div class="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+      <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Bracket</h2>
+      {% if live_matches %}
+        <span class="text-xs text-brand font-semibold">{{ live_matches|length }} match{{ live_matches|pluralize:"es" }} live</span>
+      {% endif %}
+    </div>
+
+    <div class="bracket-container p-4" id="bracketContainer">
+      {% for round in bracket_rounds %}
+        {% if not forloop.first %}
+          <div class="bracket-connector"></div>
+        {% endif %}
+        <div class="bracket-round" data-round="{{ round.round_num }}">
+          <div class="bracket-round-label {% if round.is_current %}active{% endif %}">
+            {{ round.label }}
+            {% if round.is_current %}<span class="text-brand ml-1">●</span>{% endif %}
+          </div>
+          <div class="bracket-matches">
+            {% for m in round.matches %}
+              <div class="bracket-match {% if m.is_live %}live{% elif m.is_completed %}completed{% endif %}"
+                   id="bm-{{ m.pk }}"
+                   data-match-id="{{ m.pk }}">
+                <!-- Player 1 (white) -->
+                <div class="bracket-player {% if m.winner == m.player1 %}winner{% elif m.is_completed and m.winner != m.player1 %}loser{% endif %}">
+                  <span class="player-name" title="{{ m.player1.username }}">
+                    {{ m.player1.country_flag|safe }} {% fide_badge m.player1 %} {{ m.player1.username }}
+                  </span>
+                  <span class="player-elo">{{ m.player1.elo }}</span>
+                  <span class="player-result">
+                    {% if m.result == '1-0' %}1{% elif m.result == '0-1' %}0{% elif m.result == '1/2-1/2' %}½{% endif %}
+                  </span>
+                </div>
+                <!-- Player 2 (black) -->
+                <div class="bracket-player {% if m.winner == m.player2 %}winner{% elif m.is_completed and m.winner != m.player2 %}loser{% endif %}">
+                  <span class="player-name" title="{{ m.player2.username }}">
+                    {{ m.player2.country_flag|safe }} {% fide_badge m.player2 %} {{ m.player2.username }}
+                  </span>
+                  <span class="player-elo">{{ m.player2.elo }}</span>
+                  <span class="player-result">
+                    {% if m.result == '0-1' %}1{% elif m.result == '1-0' %}0{% elif m.result == '1/2-1/2' %}½{% endif %}
+                  </span>
+                </div>
+                <!-- Match footer -->
+                <div class="flex items-center justify-between px-2 py-1 bg-gray-900/40 text-[0.6rem]">
+                  <span>
+                    {% if m.is_armageddon %}<span class="armageddon-badge">⚡ ARM</span>{% endif %}
+                    {% if m.is_live %}
+                      <span class="status-live">Live</span>
+                    {% elif m.is_completed %}
+                      <span class="status-completed">{{ m.result }}</span>
+                    {% else %}
+                      <span class="status-pending">Pending</span>
+                    {% endif %}
+                  </span>
+                  {% if m.is_live %}
+                    <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
+                       class="text-brand hover:underline font-semibold">Watch →</a>
+                  {% elif m.is_completed %}
+                    <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
+                       class="text-gray-500 hover:text-gray-300 font-semibold">Details →</a>
+                  {% endif %}
+                </div>
+              </div>
+            {% endfor %}
+
+            {% if not round.matches %}
+              <div class="text-center text-xs text-gray-600 py-8">
+                {% if round.is_future %}Awaiting previous round{% else %}No matches{% endif %}
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+
+      {% if not bracket_rounds %}
+        <div class="text-center text-gray-500 py-12 w-full">
+          Tournament hasn't started yet. Bracket will appear here once all players have joined.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Tournament Rules / Info
+       ═══════════════════════════════════════════ -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Format</p>
+      <p class="font-medium">Single Elimination</p>
+      <p class="text-xs text-gray-400 mt-0.5">{{ tournament.rounds_total }} rounds · {{ tournament.capacity }} players</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Time Control</p>
+      <p class="font-medium">{{ tournament.time_control_display }}</p>
+      <p class="text-xs text-gray-400 mt-0.5">Random colours · Queen auto‑promote</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Tiebreak</p>
+      <p class="font-medium">Armageddon</p>
+      <p class="text-xs text-gray-400 mt-0.5">White 2 min / Black 1 min draw odds</p>
+    </div>
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Entry</p>
+      <p class="font-medium text-green-400">Free</p>
+      <p class="text-xs text-gray-400 mt-0.5">No entry fee</p>
+    </div>
+  </div>
+
+  <!-- Prize structure -->
+  <div class="card mt-4">
+    <h3 class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">Prize Structure</h3>
+    {% if tournament.type == 'large' %}
+      <div class="flex flex-wrap gap-4 text-sm">
+        <span>🥇 1st — <strong class="text-brand">$30</strong></span>
+        <span>🥈 2nd — <strong class="text-gray-300">$20</strong></span>
+        <span>🥉 3rd — <strong class="text-amber-500">$10</strong></span>
+      </div>
+    {% else %}
+      <div class="text-sm">
+        🥇 1st — <strong class="text-brand">${{ tournament.prize_pool }}</strong>
+      </div>
+    {% endif %}
+    <p class="text-xs text-gray-500 mt-2">No entry fee. Unclaimed prizes roll over to the next tournament.</p>
+  </div>
+
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const wsDot   = document.getElementById('wsDot');
+  const wsLabel  = document.getElementById('wsLabel');
+  const tournamentId = {{ tournament.pk }};
+  let ws = null;
+
+  {% if qa_live_match_id %}
+    /* QA tournament is already live — redirect participants to the game */
+    {% if is_participant %}
+      window.location.href = '{% url "tournaments:live_match" tournament.pk qa_live_match_id %}';
+    {% endif %}
+  {% endif %}
+
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/tournaments/${tournamentId}/`);
+
+    ws.onopen = () => {
+      wsDot.className = 'ws-dot connected';
+      wsLabel.textContent = 'Live';
+    };
+    ws.onclose = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Reconnecting…';
+      setTimeout(connectWS, 3000);
+    };
+    ws.onerror = () => {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Error';
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      handleMessage(data);
+    };
+  }
+  connectWS();
+
+  function handleMessage(data) {
+    switch (data.type) {
+      case 'bracket_state':
+        /* Full bracket refresh — reload the page for simplicity */
+        break;
+
+      case 'match_result': {
+        const card = document.getElementById(`bm-${data.match_id}`);
+        if (card) {
+          card.classList.remove('live');
+          card.classList.add('completed');
+          /* Flash effect */
+          card.style.borderColor = '#77b255';
+          setTimeout(() => { card.style.borderColor = ''; }, 2000);
+        }
+        /* Refresh bracket after result */
+        setTimeout(() => location.reload(), 1500);
+        break;
+      }
+
+      case 'round_started':
+        /* New round — reload to get new matches */
+        setTimeout(() => location.reload(), 500);
+        break;
+
+      case 'tournament_count': {
+        const el = document.getElementById('playerCount');
+        if (el && data.count !== undefined) el.textContent = data.count;
+        break;
+      }
+
+      case 'qa_ready_update':
+        updateQAReadyState(data.participants || [], data.status, data.count);
+        break;
+
+      case 'qa_game_start':
+        /* Both players ready — redirect to the live game */
+        if (data.match_id) {
+          window.location.href = `/tournaments/${data.tournament_id}/match/${data.match_id}/`;
+        }
+        break;
+    }
+  }
+
+  /* ── QA ready-state UI updates via WebSocket ─── */
+  function updateQAReadyState(participants, status, count) {
+    const slotsContainer = document.getElementById('qaPlayerSlots');
+    if (!slotsContainer) return;
+
+    /* Rebuild the player slot cards */
+    slotsContainer.innerHTML = '';
+    participants.forEach(p => {
+      const borderCls = p.ready
+        ? 'border-green-500 bg-green-900/20'
+        : 'border-gray-700 bg-gray-800/50';
+      const statusCls = p.ready ? 'text-green-400' : 'text-gray-500';
+      const statusTxt = p.ready ? '✓ Ready' : 'Waiting…';
+      slotsContainer.innerHTML += `
+        <div class="flex items-center justify-between p-3 rounded-lg border ${borderCls}"
+             data-qa-player="${p.username}">
+          <div class="flex items-center gap-2">
+            <span>${p.flag}</span>
+            <span class="font-semibold text-sm">${p.username}</span>
+            <span class="text-gray-500 text-xs">(${p.elo})</span>
+          </div>
+          <span class="text-xs font-semibold ${statusCls}">${statusTxt}</span>
+        </div>`;
+    });
+
+    /* Add empty slot if only one player */
+    if (participants.length < 2) {
+      slotsContainer.innerHTML += `
+        <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
+          Waiting for opponent…
+        </div>`;
+    }
+
+    /* Refresh the page to update buttons when status changes */
+    /* (e.g. someone left and the status went from full → open) */
+    if (status && status !== '{{ tournament.status }}') {
+      location.reload();
+    }
+  }
+})();
+</script>
+{% endblock %}

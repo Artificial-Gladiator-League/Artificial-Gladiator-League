@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Daily Model Verification — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto animate-fade-in py-12">
+
+  <div class="text-center mb-8">
+    <div class="text-5xl mb-3">🔒</div>
+    <h1 class="text-2xl font-bold">Daily Model Verification</h1>
+    <p class="text-gray-400 mt-2 text-sm leading-relaxed">
+      To ensure fair play, we verify your AI model once per day.<br>
+      Paste your Hugging Face <strong class="text-gray-200">read</strong> token below.
+    </p>
+  </div>
+
+  <div class="card">
+
+    {% if error %}
+      <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-3 mb-5 text-sm text-red-300">
+        {{ error }}
+      </div>
+    {% endif %}
+
+    <!-- Security notice -->
+    <div class="rounded-lg bg-green-900/30 border border-green-700 px-4 py-2 mb-5 text-sm text-green-300">
+      <strong>🔒 Privacy:</strong> Your token is used <strong>once</strong> to verify your model
+      and is <strong>never stored</strong> on our servers.
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label for="id_hf_token">Hugging Face Access Token</label>
+        <input type="password" name="hf_token" id="id_hf_token" required autofocus
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition"
+               placeholder="hf_abc123…">
+        <span class="help-text text-xs text-gray-500 mt-1 block">
+          Get your token at
+          <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener"
+             class="text-brand hover:underline">huggingface.co/settings/tokens</a>
+        </span>
+      </div>
+
+      <button type="submit" class="btn-brand w-full text-base py-3 mt-2">
+        Verify Model
+      </button>
+    </form>
+
+    <div class="text-center mt-4">
+      <p class="text-gray-500 text-xs">
+        Your model: <strong class="text-gray-300">{{ request.user.hf_model_repo_id }}</strong>
+      </p>
+    </div>
+
+    <!-- Model card reminder -->
+    <div class="rounded-lg bg-blue-900/30 border border-blue-700 px-4 py-3 mt-5 text-sm text-blue-300">
+      <strong>📄 Model Card Tip:</strong>
+      Every submitted AI agent should have a model card (README.md) documenting:
+      <strong>Game Supported</strong>, <strong>Interface Version</strong>,
+      <strong>Intended Use</strong>, <strong>Limitations</strong>,
+      <strong>Training Method</strong>, and <strong>Release Notes</strong>.
+      <a href="https://huggingface.co/docs/hub/model-cards" target="_blank" rel="noopener"
+         class="text-brand hover:underline">Learn how to create one →</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

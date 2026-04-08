@@ -1,0 +1,51 @@
+﻿{% extends "base.html" %}
+{% block title %}Log In — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto animate-fade-in">
+
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-bold">Welcome back</h1>
+    <p class="text-gray-400 mt-1 text-sm">
+      New here?
+      <a href="{% url 'users:register' %}" class="text-brand hover:underline">Create an account</a>
+    </p>
+  </div>
+
+  <!-- Form card -->
+  <div class="card">
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      <!-- Non‑field errors (bad credentials, etc.) -->
+      {% if form.non_field_errors %}
+        <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-5 text-sm text-red-300">
+          {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="id_username">Username</label>
+        {{ form.username }}
+        {% if form.username.errors %}<ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="id_password">Password</label>
+        {{ form.password }}
+        {% if form.password.errors %}<ul class="errorlist">{% for e in form.password.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        <p class="text-right mt-1">
+          <a href="{% url 'password_reset' %}" class="text-xs text-gray-400 hover:text-brand hover:underline transition">Forgot your password?</a>
+        </p>
+      </div>
+
+      <button type="submit" class="btn-brand w-full text-base py-3 mt-2">
+        Log In
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,563 @@
+﻿{% extends "base.html" %}
+{% block title %}{{ game.white.username|default:"???" }} vs {{ game.black.username|default:"???" }} — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+    <div>
+      <a href="{% url 'games:lobby' %}" class="text-xs text-gray-500 hover:text-brand transition">← Back to Lobby</a>
+      <h1 class="text-xl font-bold mt-1">
+        {{ game.white.username|default:"???" }} vs {{ game.black.username|default:"Waiting…" }}
+      </h1>
+      <p class="text-xs text-gray-500">{{ game.time_control }} · Casual rated game</p>
+    </div>
+    <div class="flex items-center gap-2">
+      {% if game.result == '*' %}
+        <span class="status-live">Live</span>
+      {% else %}
+        <span class="status-completed">{{ game.result }}</span>
+      {% endif %}
+      <span class="flex items-center gap-1 text-xs text-gray-500">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel">Connecting…</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- Board + sidebar -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Board column -->
+    <div class="lg:col-span-2 flex flex-col items-center gap-3">
+      <!-- Top player (opponent's side) -->
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        <div class="flex items-center gap-2 text-sm">
+          <span id="topFlag"></span>
+          <span class="font-semibold" id="topName">???</span>
+          <span class="text-gray-500 text-xs" id="topElo"></span>
+        </div>
+        <div class="chess-clock" id="topClock">
+          <span id="topClockTime">--:--</span>
+        </div>
+      </div>
+
+      <!-- Board -->
+      <div class="game-board-wrap relative" id="boardContainer">
+        <div id="board" style="width:100%;height:100%;"></div>
+        <div id="gameOverOverlay" class="game-over-overlay hidden">
+          <div class="text-center">
+            <p class="result-text" id="resultText"></p>
+            <p class="text-sm text-gray-300 mt-1" id="resultDetail"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottom player (viewer's side) -->
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        <div class="flex items-center gap-2 text-sm">
+          <span id="bottomFlag"></span>
+          <span class="font-semibold" id="bottomName">???</span>
+          <span class="text-gray-500 text-xs" id="bottomElo"></span>
+        </div>
+        <div class="chess-clock" id="bottomClock">
+          <span id="bottomClockTime">--:--</span>
+        </div>
+      </div>
+
+      <!-- Resign button (only shown to active players) -->
+      <div id="resignWrap" class="hidden w-full max-w-[560px]">
+        <button id="resignBtn" class="btn-danger text-xs py-2 px-4">⚑ Resign</button>
+      </div>
+
+      <!-- Start Match button (shown to white player when game is waiting) -->
+      <div id="startWrap" class="hidden w-full max-w-[560px] text-center">
+        <button id="startBtn" class="btn-brand text-lg px-10 py-3">♟ Start Match</button>
+        <p class="text-xs text-gray-500 mt-2">Press to begin the game and start the clocks.</p>
+      </div>
+
+      <!-- Waiting for white to start (shown to black player) -->
+      <div id="waitStartWrap" class="hidden w-full max-w-[560px] text-center">
+        <p class="text-sm text-gray-400 py-3">Waiting for white to start the match…</p>
+      </div>
+
+      <!-- Turn indicator (visible to players only) -->
+      <div id="turnBanner" class="hidden w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg transition-all"></div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-4">
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Game Info</h3>
+        <table class="text-xs w-full">
+          <tbody>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Time Control</td>
+              <td class="font-medium">{{ game.time_control }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Type</td>
+              <td class="font-medium">Casual Rated</td>
+            </tr>
+            {% if game.result != '*' %}
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Result</td>
+              <td class="font-semibold text-brand">{{ game.result }}</td>
+            </tr>
+            {% if game.winner %}
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Winner</td>
+              <td class="font-semibold text-brand">{{ game.winner.username }}</td>
+            </tr>
+            {% endif %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Move list -->
+      <div class="card p-0">
+        <div class="px-3 py-2 border-b border-gray-700">
+          <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold flex items-center justify-between">
+            Moves <span class="text-gray-600 font-normal" id="moveCount">0</span>
+          </h3>
+        </div>
+        <div class="move-list" id="moveList">
+          <div class="text-center text-xs text-gray-600 py-6" id="movePlaceholder">
+            {% if game.result != '*' %}
+              Game completed.
+            {% else %}
+              Waiting for moves…
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <a href="{% url 'games:lobby' %}" class="btn-outline text-xs py-2 w-full text-center">← Lobby</a>
+        <a href="{% url 'games:history' %}" class="btn-outline text-xs py-2 w-full text-center">Game History</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // ── DOM elements ───────────────────────────
+  var boardEl     = document.getElementById('board');
+  var topClockEl  = document.getElementById('topClockTime');
+  var bottomClockEl = document.getElementById('bottomClockTime');
+  var topClock    = document.getElementById('topClock');
+  var bottomClock = document.getElementById('bottomClock');
+  var moveListEl  = document.getElementById('moveList');
+  var moveCountEl = document.getElementById('moveCount');
+  var movePlaceholder = document.getElementById('movePlaceholder');
+  var overlayEl   = document.getElementById('gameOverOverlay');
+  var resultTextEl = document.getElementById('resultText');
+  var resultDetail = document.getElementById('resultDetail');
+  var wsDot       = document.getElementById('wsDot');
+  var wsLabel     = document.getElementById('wsLabel');
+  var resignBtn   = document.getElementById('resignBtn');
+  var resignWrap  = document.getElementById('resignWrap');
+  var startBtn    = document.getElementById('startBtn');
+  var startWrap   = document.getElementById('startWrap');
+  var waitStartWrap = document.getElementById('waitStartWrap');
+  var turnBanner  = document.getElementById('turnBanner');
+
+  // ── Game constants ─────────────────────────
+  var gameId      = {{ game.pk }};
+  var baseSec     = {{ base_seconds }};
+  var increment   = {{ increment }};
+  var currentResult = '{{ game.result }}';
+  var currentStatus = '{{ game.status }}';
+  var isFinished  = currentResult !== '*';
+  var isWaiting   = currentStatus === 'waiting';
+
+  // Detect which side the current user is playing (if any)
+  var currentUser = '{{ request.user.username|default:"" }}';
+  var whiteUser   = '{{ game.white.username|default:"" }}';
+  var blackUser   = '{{ game.black.username|default:"" }}';
+  var whiteFlag   = '{{ game.white.country_flag|default:"" }}';
+  var blackFlag   = '{{ game.black.country_flag|default:"" }}';
+  var whiteElo    = '{{ game.white.elo|default:"—" }}';
+  var blackElo    = '{{ game.black.elo|default:"—" }}';
+  var myColor     = null;
+  if (currentUser && currentUser === whiteUser) myColor = 'white';
+  else if (currentUser && currentUser === blackUser) myColor = 'black';
+
+  var orientation = myColor || 'white';
+
+  // ── Set up player labels based on board orientation ──
+  // Top = the side whose pieces are at the top; Bottom = the side at the bottom
+  // orientation 'white' → white at bottom, black at top
+  // orientation 'black' → black at bottom, white at top
+  if (orientation === 'black') {
+    document.getElementById('topFlag').textContent = whiteFlag;
+    document.getElementById('topName').textContent = whiteUser || '???';
+    document.getElementById('topElo').textContent = '(' + whiteElo + ')';
+    topClock.className = 'chess-clock white-clock';
+    document.getElementById('bottomFlag').textContent = blackFlag;
+    document.getElementById('bottomName').textContent = blackUser || '???';
+    document.getElementById('bottomElo').textContent = '(' + blackElo + ')';
+    bottomClock.className = 'chess-clock black-clock';
+  } else {
+    document.getElementById('topFlag').textContent = blackFlag;
+    document.getElementById('topName').textContent = blackUser || '???';
+    document.getElementById('topElo').textContent = '(' + blackElo + ')';
+    topClock.className = 'chess-clock black-clock';
+    document.getElementById('bottomFlag').textContent = whiteFlag;
+    document.getElementById('bottomName').textContent = whiteUser || '???';
+    document.getElementById('bottomElo').textContent = '(' + whiteElo + ')';
+    bottomClock.className = 'chess-clock white-clock';
+  }
+
+  // Show resign button for players in an ongoing game (not while waiting)
+  if (myColor && !isFinished && !isWaiting && resignWrap) {
+    resignWrap.classList.remove('hidden');
+  }
+
+  // ── Clock state ────────────────────────────
+  var whiteTime = baseSec, blackTime = baseSec;
+  var activeSide = null, clockInterval = null;
+  var moveNum = 0, moves = [];
+
+  function formatClock(sec) {
+    if (sec < 0) sec = 0;
+    var m = Math.floor(sec / 60);
+    var s = Math.floor(sec % 60);
+    var t = Math.floor((sec % 1) * 10);
+    if (sec < 20) return m + ':' + String(s).padStart(2, '0') + '.' + t;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  // Map top/bottom to white/black based on orientation
+  // Top clock shows the side at the top of the board
+  var topIsBlack = (orientation === 'white');
+
+  function renderClocks() {
+    var topTime    = topIsBlack ? blackTime : whiteTime;
+    var bottomTime = topIsBlack ? whiteTime : blackTime;
+    var topSide    = topIsBlack ? 'black' : 'white';
+    var bottomSide = topIsBlack ? 'white' : 'black';
+
+    topClockEl.textContent = formatClock(topTime);
+    bottomClockEl.textContent = formatClock(bottomTime);
+    topClock.classList.toggle('active-clock', activeSide === topSide);
+    bottomClock.classList.toggle('active-clock', activeSide === bottomSide);
+    topClock.classList.toggle('low-time', topTime < 30);
+    bottomClock.classList.toggle('low-time', bottomTime < 30);
+  }
+
+  function startClock() {
+    if (clockInterval) clearInterval(clockInterval);
+    clockInterval = setInterval(function () {
+      if (activeSide === 'white') whiteTime = Math.max(0, whiteTime - 0.1);
+      else if (activeSide === 'black') blackTime = Math.max(0, blackTime - 0.1);
+      renderClocks();
+    }, 100);
+  }
+
+  function stopClock() {
+    if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+  }
+
+  renderClocks();
+
+  // ── Chessground helpers ────────────────────
+  var ground = null;
+  var pendingState = null;   // buffered state until CG loads
+  var lastTurn = 'white';    // tracks current turn from server
+
+  // Build a permissive dests map — server validates legality
+  function allDests() {
+    var files = 'abcdefgh';
+    var allSquares = [];
+    for (var f = 0; f < 8; f++)
+      for (var r = 1; r <= 8; r++)
+        allSquares.push(files[f] + r);
+    var dests = new Map();
+    allSquares.forEach(function (sq) { dests.set(sq, allSquares.slice()); });
+    return dests;
+  }
+
+  // Called when the player drags a piece to a new square
+  function onUserMove(orig, dest) {
+    var uci = orig + dest;
+    // Auto-queen promotion
+    var isPromo = (
+      (dest[1] === '8' && myColor === 'white') ||
+      (dest[1] === '1' && myColor === 'black')
+    );
+    if (isPromo) uci += 'q';
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'move',
+        uci: uci,
+        clock: myColor === 'white' ? whiteTime : blackTime
+      }));
+    }
+  }
+
+  // Apply a game_state payload to the board
+  function updateBoard(state) {
+    if (!ground) { pendingState = state; return; }
+
+    var fen  = state.fen;
+    var turn = state.turn;   // 'white' or 'black'
+    lastTurn = turn;
+
+    // Highlight squares from last UCI move
+    var lm;
+    if (state.last_move && state.last_move.length >= 4) {
+      lm = [state.last_move.substring(0, 2), state.last_move.substring(2, 4)];
+    }
+
+    ground.set({
+      fen: fen,
+      turnColor: turn,
+      lastMove: lm,
+      viewOnly: true,
+      movable: {
+        free: false,
+        color: undefined,
+        dests: new Map()
+      }
+    });
+  }
+
+  // ── Chessground init ───────────────────────
+  function initGround() {
+    if (ground) return;
+    var Cg = window.Chessground;
+    if (!Cg) return;
+
+    ground = Cg(boardEl, {
+      orientation: orientation,
+      fen: '{{ game.current_fen }}',
+      turnColor: lastTurn,
+      viewOnly: true,
+      movable: {
+        free: false,
+        color: undefined,
+        dests: new Map()
+      },
+      highlight: { lastMove: true, check: true },
+      animation: { enabled: true, duration: 200 },
+      drawable: { enabled: true },
+      coordinates: true
+    });
+
+    // If a game_state arrived before CG loaded, apply it now
+    if (pendingState) {
+      updateBoard(pendingState);
+      pendingState = null;
+    }
+  }
+
+  // Attach — Chessground may already be loaded
+  if (window.Chessground) {
+    initGround();
+  } else {
+    window.addEventListener('cg-ready', initGround);
+  }
+
+  // ── Move list ──────────────────────────────
+  function addMoveFromUCI(uci, turn) {
+    if (movePlaceholder) { movePlaceholder.remove(); movePlaceholder = null; }
+    moveListEl.querySelectorAll('.last-move').forEach(function (el) {
+      el.classList.remove('last-move');
+    });
+    if (turn === 'white') {
+      moveNum++;
+      var row = document.createElement('div');
+      row.className = 'move-row';
+      row.innerHTML =
+        '<span class="move-num">' + moveNum + '.</span>' +
+        '<span class="move-white last-move">' + uci + '</span>' +
+        '<span class="move-black"></span>';
+      moveListEl.appendChild(row);
+    } else {
+      var rows = moveListEl.querySelectorAll('.move-row');
+      if (rows.length) {
+        var blackCell = rows[rows.length - 1].querySelector('.move-black');
+        if (blackCell) {
+          blackCell.textContent = uci;
+          blackCell.classList.add('last-move');
+        }
+      }
+    }
+    moves.push(uci);
+    moveCountEl.textContent = moves.length;
+    moveListEl.scrollTop = moveListEl.scrollHeight;
+  }
+
+  // ── Game over ──────────────────────────────
+  function showGameOver(result, winner, reason) {
+    isFinished = true;
+    stopClock();
+    if (resignWrap) resignWrap.classList.add('hidden');
+    if (startWrap) startWrap.classList.add('hidden');
+    if (waitStartWrap) waitStartWrap.classList.add('hidden');
+    if (turnBanner) turnBanner.classList.add('hidden');
+    overlayEl.classList.remove('hidden');
+    if (result === '1-0') {
+      resultTextEl.textContent = '1 – 0';
+      resultTextEl.className = 'result-text text-white';
+      resultDetail.textContent = winner ? winner + ' wins' : 'White wins';
+    } else if (result === '0-1') {
+      resultTextEl.textContent = '0 – 1';
+      resultTextEl.className = 'result-text text-gray-300';
+      resultDetail.textContent = winner ? winner + ' wins' : 'Black wins';
+    } else {
+      resultTextEl.textContent = '½ – ½';
+      resultTextEl.className = 'result-text text-yellow-300';
+      resultDetail.textContent = 'Draw';
+    }
+    if (reason) resultDetail.textContent += ' (' + reason + ')';
+    if (ground) {
+      ground.set({
+        viewOnly: true,
+        movable: { color: undefined, dests: new Map() }
+      });
+    }
+  }
+
+  if (isFinished) showGameOver(currentResult, '{{ game.winner.username|default:"" }}', '');
+
+  // ── WebSocket ──────────────────────────────
+  var ws = null;
+
+  function connectWS() {
+    var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + '/ws/games/' + gameId + '/');
+
+    ws.onopen = function () {
+      wsDot.className = 'ws-dot connected';
+      wsLabel.textContent = 'Live';
+    };
+
+    ws.onclose = function () {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Reconnecting…';
+      if (!isFinished) setTimeout(connectWS, 3000);
+    };
+
+    ws.onerror = function () {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Error';
+    };
+
+    ws.onmessage = function (e) {
+      var data = JSON.parse(e.data);
+
+      if (data.type === 'game_state') {
+        // Sync clocks from authoritative server state
+        whiteTime = data.white_time;
+        blackTime = data.black_time;
+        activeSide = data.turn;
+        renderClocks();
+
+        // Update the board (buffered if CG not loaded yet)
+        updateBoard(data);
+
+        // Rebuild move list from server state
+        var serverMoves = data.move_list || [];
+        while (moves.length < serverMoves.length) {
+          var idx = moves.length;
+          var moveTurn = (idx % 2 === 0) ? 'white' : 'black';
+          addMoveFromUCI(serverMoves[idx], moveTurn);
+        }
+
+        // Handle waiting → ongoing transition
+        if (data.status === 'waiting') {
+          isWaiting = true;
+          if (myColor === 'white' && startWrap) {
+            startWrap.classList.remove('hidden');
+          } else if (myColor === 'black' && waitStartWrap) {
+            waitStartWrap.classList.remove('hidden');
+          }
+          if (turnBanner) turnBanner.classList.add('hidden');
+          if (resignWrap) resignWrap.classList.add('hidden');
+        } else if (data.status === 'ongoing') {
+          if (isWaiting) {
+            // Game just transitioned from waiting to ongoing
+            isWaiting = false;
+            if (startWrap) startWrap.classList.add('hidden');
+            if (waitStartWrap) waitStartWrap.classList.add('hidden');
+          }
+          // Show resign button for active players
+          if (myColor && !isFinished && resignWrap) {
+            resignWrap.classList.remove('hidden');
+          }
+
+          // Start client-side clock ticking once the first move is made
+          if (serverMoves.length > 0) {
+            startClock();
+          }
+
+          // Update turn indicator
+          if (!isFinished && turnBanner) {
+            turnBanner.classList.remove('hidden');
+            if (data.turn === 'white') {
+              turnBanner.textContent = '♟ White\'s AI is thinking…';
+              turnBanner.className = 'w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg bg-green-900/40 text-green-300 border border-green-700';
+            } else {
+              turnBanner.textContent = '♟ Black\'s AI is thinking…';
+              turnBanner.className = 'w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg bg-gray-800/60 text-gray-400 border border-gray-700';
+            }
+          }
+        }
+
+      } else if (data.type === 'game_over') {
+        showGameOver(data.result || '', data.winner || '', data.reason || '');
+
+      } else if (data.type === 'armageddon') {
+        var msg = data.message || 'Armageddon tiebreak!';
+        if (resultDetail) resultDetail.textContent = msg;
+        setTimeout(function () {
+          window.location.href = '/games/' + data.game_id + '/';
+        }, 2000);
+
+      } else if (data.type === 'error') {
+        console.warn('Server error:', data.message);
+        // Re-sync after error — request fresh state
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'request_state' }));
+        }
+      }
+    };
+  }
+
+  // ── Start button ──────────────────────────
+  if (startBtn) {
+    startBtn.addEventListener('click', function () {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'start' }));
+      }
+    });
+  }
+
+  // ── Resign button ──────────────────────────
+  if (resignBtn) {
+    resignBtn.addEventListener('click', function () {
+      if (!confirm('Are you sure you want to resign?')) return;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resign' }));
+      }
+    });
+  }
+
+  // ── Connect immediately (don't wait for CG) ──
+  if (!isFinished) {
+    connectWS();
+  } else {
+    wsDot.className = 'ws-dot disconnected';
+    wsLabel.textContent = 'Completed';
+  }
+
+})();
+</script>
+{% endblock %}

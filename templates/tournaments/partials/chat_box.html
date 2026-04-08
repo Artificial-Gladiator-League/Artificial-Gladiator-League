@@ -1,0 +1,40 @@
+<!-- Tournament Live Chat Box -->
+<div class="card mt-6">
+  <div class="flex items-center gap-2 mb-3">
+    <span class="text-lg">💬</span>
+    <h3 class="text-xs uppercase tracking-wider text-gray-500 font-semibold">Live Chat</h3>
+    <span class="ml-auto inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+  </div>
+
+  <!-- Scrollable message area -->
+  <div id="chat-messages"
+       class="h-64 overflow-y-auto space-y-0 px-1 mb-3 border border-borderDark rounded-lg bg-black/20 scroll-smooth"
+       hx-get="{% url 'tournaments:chat_messages' tournament.pk %}"
+       hx-trigger="load, every 8s"
+       hx-swap="innerHTML scroll:bottom">
+    <p class="text-center text-xs text-gray-500 py-4">Loading chat…</p>
+  </div>
+
+  <!-- Message input -->
+  {% if user.is_authenticated %}
+  <form hx-post="{% url 'tournaments:chat_send' tournament.pk %}"
+        hx-target="#chat-messages"
+        hx-swap="innerHTML scroll:bottom"
+        class="flex gap-2">
+    {% csrf_token %}
+    <input type="text" name="content" maxlength="500"
+           placeholder="Type a message…"
+           autocomplete="off"
+           class="flex-1 bg-surface border border-borderDark rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-brand"
+           required>
+    <button type="submit"
+            class="btn-primary text-xs px-4 py-2 rounded-lg whitespace-nowrap">
+      Send
+    </button>
+  </form>
+  {% else %}
+  <p class="text-xs text-gray-500 text-center">
+    <a href="{% url 'users:login' %}" class="text-brand hover:underline">Log in</a> to chat.
+  </p>
+  {% endif %}
+</div>

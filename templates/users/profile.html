@@ -1,0 +1,1325 @@
+{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}{{ user_profile.username }} — Profile{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* profile chessground board size */
+  .profile-board { width: 280px; height: 280px; }
+  @media (min-width: 640px) { .profile-board { width: 320px; height: 320px; } }
+  .locked-hint { color: #f59e0b; font-size: .7rem; margin-top: .15rem; }
+  /* Profile tabs */
+  .profile-tab {
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #9ca3af;
+    border-bottom: 2px solid transparent;
+    background: none;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .profile-tab:hover { color: #77b255; }
+  .profile-tab.active { color: #77b255; border-color: #77b255; }
+  html:not(.dark) .profile-tab { color: #6b7280; }
+  html:not(.dark) .profile-tab:hover { color: #5a9a3c; }
+  html:not(.dark) .profile-tab.active { color: #5a9a3c; border-color: #5a9a3c; }
+  /* Format stats sub-card */
+  .format-section { border-left: 3px solid #77b255; padding-left: 1rem; margin-bottom: 1.5rem; }
+  .tc-badge {
+    display: inline-block; font-size: 0.65rem; font-weight: 700;
+    padding: 0.15rem 0.5rem; border-radius: 9999px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .tc-bullet { background: rgba(239,68,68,.15); color: #f87171; }
+  .tc-blitz  { background: rgba(251,191,36,.15); color: #fbbf24; }
+  .tc-rapid  { background: rgba(96,165,250,.15); color: #60a5fa; }
+
+  /* ── Activity Heatmap ──────────────────────── */
+  .heatmap-scroll { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+  .heatmap-grid {
+    display: grid;
+    grid-template-rows: repeat(7, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    gap: 3px;
+  }
+  .heatmap-cell {
+    width: 13px; height: 13px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: outline 0.1s;
+    outline: 1px solid transparent;
+  }
+  .heatmap-cell:hover { outline: 1px solid #77b255; }
+  .heatmap-cell.selected { outline: 2px solid #77b255; }
+
+  /* 5-level green scale (dark theme) */
+  .hm-0 { background-color: #1e1e2e; }
+  .hm-1 { background-color: rgba(119,178,85,.20); }
+  .hm-2 { background-color: rgba(119,178,85,.40); }
+  .hm-3 { background-color: rgba(119,178,85,.65); }
+  .hm-4 { background-color: #77b255; }
+  /* Light theme override */
+  html:not(.dark) .hm-0 { background-color: #ebedf0; }
+  html:not(.dark) .hm-1 { background-color: #c6e48b; }
+  html:not(.dark) .hm-2 { background-color: #7bc96f; }
+  html:not(.dark) .hm-3 { background-color: #449e48; }
+  html:not(.dark) .hm-4 { background-color: #196127; }
+
+  .heatmap-months { display: flex; font-size: 0.6rem; color: #6b7280; margin-bottom: 2px; }
+  .heatmap-months span { flex: none; text-align: center; }
+  .heatmap-dow { display: grid; grid-template-rows: repeat(7,1fr); gap: 3px; font-size: 0.55rem; color: #6b7280; margin-right: 4px; align-items: center; }
+  .heatmap-dow span:nth-child(even) { visibility: hidden; }
+
+  .hm-legend { display: flex; align-items: center; gap: 3px; font-size: 0.65rem; color: #6b7280; margin-top: 6px; }
+  .hm-legend-cell { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  /* Tooltip */
+  .hm-tooltip {
+    position: absolute; z-index: 50; pointer-events: none;
+    background: #1a1a2e; border: 1px solid #374151; border-radius: 6px;
+    padding: 4px 8px; font-size: 0.7rem; color: #d1d5db;
+    white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  }
+  html:not(.dark) .hm-tooltip { background: #fff; border-color: #e5e7eb; color: #374151; }
+
+  /* Day detail panel */
+  .day-detail-row { cursor: pointer; transition: background 0.1s; }
+  .day-detail-row:hover { background: rgba(119,178,85,.08); }
+
+  @media (max-width: 639px) {
+    .heatmap-cell { width: 10px; height: 10px; }
+    .heatmap-grid { gap: 2px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- ═══════════════════════════════════════════
+       Top: identity bar
+       ═══════════════════════════════════════════ -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold flex items-center gap-2">
+        {% fide_badge user_profile %} {{ user_profile.username }}
+      </h1>
+      <p class="text-sm text-gray-400 mt-1">
+        <span class="{{ category.css }} font-semibold">{{ category.icon }} {{ category.tier }}</span>
+        &nbsp;·&nbsp; {{ category.category }}
+      </p>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="stat-pill">
+        <span class="stat-value text-brand">{{ user_profile.elo }}</span>
+        <span class="stat-label">ELO</span>
+      </div>
+
+      {% if not is_own_profile %}
+        {# ── Social buttons for other users ── #}
+        {% if friendship_status == 'friends' %}
+          <a href="{% url 'chat:chat' user_profile.username %}"
+             class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 no-underline">
+            💬 Message
+          </a>
+          <button id="unfriendBtn" class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 text-red-400 hover:text-red-300 hover:border-red-400 transition">
+            ✕ Unfriend
+          </button>
+          <!-- Unfriend confirmation modal -->
+          <div id="unfriendConfirmModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
+            <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="unfriendConfirmOverlay"></div>
+            <div class="relative bg-white dark:bg-surface border border-gray-200 dark:border-borderDark rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-fade-in">
+              <h3 class="text-base font-bold mb-1">Unfriend {{ user_profile.username }}?</h3>
+              <p class="text-sm text-gray-400 mb-5">This will remove them from your friends list. You won’t be able to message each other until a new request is accepted.</p>
+              <div class="flex items-center justify-end gap-2">
+                <button id="unfriendConfirmCancel" class="btn-outline text-sm py-2 px-5 rounded-lg">Cancel</button>
+                <button id="unfriendConfirmYes" class="text-sm py-2 px-5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold transition">✕ Unfriend</button>
+              </div>
+            </div>
+          </div>
+        {% elif friendship_status == 'request_sent' %}
+          <span class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 opacity-60 cursor-default">
+            ⏳ Request Sent
+          </span>
+        {% elif friendship_status == 'request_received' %}
+          <form method="post" action="{% url 'chat:respond_friend_request' friend_request_id %}" class="inline-flex gap-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="accept">
+            <button type="submit" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5">
+              ✓ Accept
+            </button>
+          </form>
+          <form method="post" action="{% url 'chat:respond_friend_request' friend_request_id %}" class="inline-flex">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="decline">
+            <button type="submit" class="btn-outline text-sm py-2 px-4 rounded-lg text-red-400 hover:text-red-300 inline-flex items-center gap-1.5">
+              ✕ Decline
+            </button>
+          </form>
+        {% else %}
+          <button id="addFriendBtn" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5">
+            👤+ Add Friend
+          </button>
+          <!-- Confirmation modal -->
+          <div id="friendConfirmModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
+            <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="friendConfirmOverlay"></div>
+            <div class="relative bg-white dark:bg-surface border border-gray-200 dark:border-borderDark rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-fade-in">
+              <h3 class="text-base font-bold mb-1">Send friend request?</h3>
+              <p class="text-sm text-gray-400 mb-5">Send a friend request to <span class="text-gray-200 font-semibold">{{ user_profile.username }}</span>. They’ll need to accept before you can chat.</p>
+              <div class="flex items-center justify-end gap-2">
+                <button id="friendConfirmCancel" class="btn-outline text-sm py-2 px-5 rounded-lg">Cancel</button>
+                <button id="friendConfirmSend" class="btn-brand text-sm py-2 px-5 rounded-lg inline-flex items-center gap-1.5">👤+ Send Request</button>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+    <!-- ═══════════════════════════════════════
+         Left col: Global Stats
+         ═══════════════════════════════════════ -->
+    <div class="lg:col-span-1 space-y-6">
+
+      <!-- TODO Backend CRITICAL fix: Prevent double-loss on game end.
+           ROOT CAUSE: apps/users/signals.py update_stats_after_game()
+           Lines ~121-122:
+              w_won = instance.winner == white if not is_draw else False
+              b_won = instance.winner == black if not is_draw else False
+           If instance.winner is None and result is NOT '1/2-1/2' (e.g. a
+           bot_error / timeout edge case where winner was not set), BOTH
+           w_won and b_won are False, so _update_player_stats() increments
+           losses for BOTH players.
+
+           FIX in signals.py update_stats_after_game():
+              1) Add a guard after the is_draw check:
+                 if not is_draw and instance.winner is None:
+                     log.error('Game %s finished with result=%s but no winner set!', instance.pk, instance.result)
+                     return  # refuse to update stats with corrupt data
+              2) Or, derive winner from result string:
+                 if instance.result == '1-0':   winner = white
+                 elif instance.result == '0-1': winner = black
+                 elif instance.result == '1/2-1/2': is_draw = True
+              3) Ensure _bot_forfeit(), _process_resign(), and apply_time_spent()
+                 ALWAYS set game.winner when they set a non-draw result.
+
+           Also check apps/games/engine.py apply_time_spent(): when the clock
+           reaches 0 it sets result to BLACK_WIN or WHITE_WIN but verify it also
+           sets game.winner = game.black / game.white respectively.
+
+           The aggregated user.wins / user.losses / user.total_games on the model
+           are incremented ONLY via this signal, so fixing it here fixes all stats. -->
+
+      <!-- Stats pills row -->
+      <div class="grid grid-cols-3 gap-3">
+        <div class="stat-pill">
+          <span class="stat-value text-green-400">{{ user_profile.wins }}</span>
+          <span class="stat-label">Wins</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value text-red-400">{{ user_profile.losses }}</span>
+          <span class="stat-label">Losses</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value text-yellow-300">{{ user_profile.draws }}</span>
+          <span class="stat-label">Draws</span>
+        </div>
+      </div>
+
+      <!-- Full stats table -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Statistics</h2>
+        <table class="stats-table text-sm">
+          <tbody>
+            <tr>
+              <td class="text-gray-400">Total Games</td>
+              <td class="text-right font-medium">{{ user_profile.total_games }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Win Rate</td>
+              <td class="text-right font-medium">
+                {% widthratio user_profile.win_rate 1 100 %}%
+              </td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Current Streak</td>
+              <td class="text-right font-medium
+                {% if user_profile.current_streak > 0 %}text-green-400
+                {% elif user_profile.current_streak < 0 %}text-red-400
+                {% else %}text-gray-400{% endif %}">
+                {% if user_profile.current_streak > 0 %}+{% endif %}{{ user_profile.current_streak }}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Category</td>
+              <td class="text-right font-medium {{ category.css }}">
+                {{ category.icon }} {{ category.tier }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Chessground board (also used for replay) -->
+      <div class="card flex flex-col items-center justify-center">
+        <div id="profileBoard" class="profile-board"></div>
+      </div>
+
+      <!-- Replay controls (hidden until a game is selected) -->
+      <div id="replaySection" class="card hidden">
+        <p class="text-xs text-gray-500 mb-2 font-semibold" id="replayHeader"></p>
+        <div class="flex items-center justify-center gap-3 mb-3">
+          <button id="btnFirst" class="btn-outline text-xs py-1 px-3" title="First">⏮</button>
+          <button id="btnPrev"  class="btn-outline text-xs py-1 px-3" title="Previous">◀</button>
+          <span class="text-xs text-gray-400" id="replayMoveNum">0 / 0</span>
+          <button id="btnNext"  class="btn-outline text-xs py-1 px-3" title="Next">▶</button>
+          <button id="btnLast"  class="btn-outline text-xs py-1 px-3" title="Last">⏭</button>
+        </div>
+        <div id="replayMoves" class="move-list text-xs" style="max-height:260px;overflow-y:auto;"></div>
+      </div>
+
+    </div>
+
+    <!-- ═══════════════════════════════════════
+         Right col: Tabbed interface
+         ═══════════════════════════════════════ -->
+    <div class="lg:col-span-2 space-y-0">
+
+      <!-- Tab bar -->
+      <div class="flex border-b border-gray-700 mb-6">
+        {% if is_own_profile %}
+        <button class="profile-tab active" data-tab="edit">✏️ Edit Profile</button>
+        <button class="profile-tab" data-tab="ai-models">🤖 AI Models</button>
+        <button class="profile-tab" data-tab="friends">👥 Friends</button>
+        <button class="profile-tab" data-tab="stats">📊 Stats &amp; History</button>
+        {% else %}
+        <button class="profile-tab active" data-tab="stats">📊 Stats &amp; History</button>
+        <button class="profile-tab" data-tab="friends">👥 Friends</button>
+        {% endif %}
+      </div>
+
+      <!-- ═══════════════════════════════════════
+           TAB 1: Edit Profile (own profile only)
+           ═══════════════════════════════════════ -->
+      {% if is_own_profile %}
+      <div id="tab-edit" class="tab-panel space-y-6">
+
+        <!-- AI Bot info card -->
+        <div class="card">
+          <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">AI Bot</h2>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            <div>
+              <span class="text-gray-400 block">Name</span>
+              <span class="font-medium">{{ user_profile.ai_name|default:"—" }}</span>
+            </div>
+            <div class="sm:col-span-2">
+              <span class="text-gray-400 block">HF Repo</span>
+              {% if user_profile.hf_model_repo_id %}
+                <span class="font-medium text-brand">{{ user_profile.hf_model_repo_id }}</span>
+              {% else %}
+                <span class="text-gray-500 italic">No model connected yet.</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit profile form -->
+        <div class="card">
+          <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Edit Profile</h2>
+
+          <div class="rounded-lg bg-gray-800/60 border border-gray-700 px-4 py-2 mb-4 text-sm text-gray-400">
+            🔒 Username and AI name cannot be changed after registration.
+          </div>
+
+          <form method="post" enctype="multipart/form-data" id="profileForm" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+              <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-4 text-sm text-red-300">
+                {% for error in form.non_field_errors %}
+                  <p>{{ error }}</p>
+                {% endfor %}
+              </div>
+            {% endif %}
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="form-group">
+                <label for="id_username">Username</label>
+                {{ form.username }}
+                {% if form.username.help_text %}<p class="locked-hint">🔒 {{ form.username.help_text }}</p>{% endif %}
+                {% if form.username.errors %}<ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+              </div>
+            </div>
+
+            <hr class="divider">
+            <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">AI Bot</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="form-group">
+                <label for="id_ai_name">AI Name</label>
+                {{ form.ai_name }}
+                {% if form.ai_name.help_text %}<p class="locked-hint">🔒 {{ form.ai_name.help_text }}</p>{% endif %}
+                {% if form.ai_name.errors %}<ul class="errorlist">{% for e in form.ai_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+              </div>
+            </div>
+
+            <button type="submit" class="btn-brand w-full sm:w-auto text-base py-2.5 px-8 mt-2">
+              Save Changes
+            </button>
+          </form>
+        </div>
+
+        <!-- GDPR / Data & Privacy link -->
+        <div class="card text-center">
+          <a href="{% url 'users:gdpr' %}" class="text-brand hover:underline text-sm font-medium">
+            🔒 Data &amp; Privacy (GDPR)
+          </a>
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Export your data, submit deletion requests, or view request history.
+          </p>
+        </div>
+
+      </div>{# /tab-edit #}
+
+      <!-- ═══════════════════════════════════════
+           TAB: AI Models (own profile only)
+           ═══════════════════════════════════════ -->
+      <div id="tab-ai-models" class="tab-panel hidden space-y-6">
+
+        <div class="rounded-lg bg-green-900/30 border border-green-700 px-4 py-2 mb-2 text-sm text-green-300">
+          <strong>&#x1f512; Privacy:</strong> Your Hugging Face token is used only for
+          verification and is <strong>never stored</strong> on our servers.
+        </div>
+
+        {% for game in game_configs %}
+        <div class="card">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold">{{ game.label }}</h2>
+            {% if game.model %}
+              {% if game.model.model_integrity_ok %}
+                <span class="inline-flex items-center gap-1 text-sm text-green-400">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                  Verified
+                </span>
+              {% else %}
+                <span class="inline-flex items-center gap-1 text-sm text-yellow-400">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                  Needs re-verification
+                </span>
+              {% endif %}
+            {% else %}
+              <span class="text-sm text-gray-500">Not connected</span>
+            {% endif %}
+          </div>
+
+          {% if game.model %}
+          <div class="text-sm text-gray-300 mb-4 space-y-1">
+            <p><span class="text-gray-500">Repo:</span> <code class="text-gray-200">{{ game.model.hf_model_repo_id }}</code></p>
+            {% if game.model.approved_full_sha %}
+            <p><span class="text-gray-500">Pinned SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
+            {% endif %}
+            <p><span class="text-gray-500">Rated games:</span> {{ game.model.rated_games_played }}</p>
+            {% if game.model.last_model_validation_date %}
+            <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          <form method="post" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="ai_model_form" value="1">
+            <input type="hidden" name="game_type" value="{{ game.type }}">
+
+            <div class="form-group">
+              <label for="id_repo_{{ game.type }}">Hugging Face Model Repo</label>
+              <input type="text"
+                     id="id_repo_{{ game.type }}"
+                     name="hf_model_repo_id"
+                     value="{{ game.model.hf_model_repo_id|default:'' }}"
+                     placeholder="{% if game.type == 'breakthrough' %}e.g. YourUsername/breakthrough-model{% else %}e.g. YourUsername/MyModel{% endif %}"
+                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+              <span class="text-xs text-gray-500 mt-1 block">
+                Only gated (access-request enabled) repos are accepted. Must output UCI moves.
+              </span>
+              {% if game.type == 'breakthrough' %}
+              <span class="text-xs text-yellow-400 mt-1 block">
+                Your model repo must be named <strong>YourUsername/breakthrough-model</strong> and set to <strong>gated</strong> on Hugging Face.
+              </span>
+              {% endif %}
+            </div>
+
+            {% if game.type == 'breakthrough' %}
+            <div class="form-group">
+              <label for="id_data_repo_breakthrough">Hugging Face Data Repo</label>
+              <input type="text"
+                     id="id_data_repo_breakthrough"
+                     name="hf_data_repo_id"
+                     value="{{ game.model.hf_data_repo_id|default:'' }}"
+                     placeholder="e.g. YourUsername/breakthrough-data"
+                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+              <span class="text-xs text-gray-500 mt-1 block">
+                Your data repo must be named <strong>YourUsername/breakthrough-data</strong> and set to <strong>public</strong> on Hugging Face.
+                It must contain the file <code>breakthrough_zone_db.npz</code>.
+              </span>
+            </div>
+            {% endif %}
+
+            <div class="form-group">
+              <label for="id_token_{{ game.type }}">Hugging Face Access Token</label>
+              <input type="password"
+                     id="id_token_{{ game.type }}"
+                     name="hf_token"
+                     placeholder="hf_abc123…"
+                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+              <span class="text-xs text-gray-500 mt-1 block">
+                Used once to verify &mdash; <strong>never stored</strong>. Create one at
+                <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener"
+                   class="text-brand hover:underline">huggingface.co/settings/tokens</a>.
+              </span>
+            </div>
+
+            <button type="submit" class="btn-brand w-full py-2.5">
+              {% if game.model %}Re-verify &amp; Update{% else %}Connect Model{% endif %}
+            </button>
+          </form>
+
+          {% if game.type == 'breakthrough' %}
+          <div class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">
+            <h3 class="text-lg font-semibold text-gray-200">Repo File Status</h3>
+            {% if game.model_files_status %}
+              {% if game.model_files_status.revision_used %}
+              <p class="text-xs text-gray-500 mb-2">Revision: <code class="text-gray-400">{{ game.model_files_status.revision_used|truncatechars:16 }}</code></p>
+              {% endif %}
+              <div>
+                <h4 class="text-sm font-medium text-gray-400 mb-2">Model Repo (gated) — <code class="text-gray-300">{{ game.model.hf_model_repo_id }}</code></h4>
+                {% if game.model_files_status.model_files %}
+                <ul class="space-y-1 text-sm">
+                  {% for f in game.model_files_status.model_files %}
+                  <li class="flex items-center gap-2">
+                    {% if f.present %}<span class="text-green-400">✅</span>{% else %}<span class="text-red-400">❌</span>{% endif %}
+                    <code class="text-gray-300">{{ f.name }}</code>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% elif game.model_files_status.model_error %}
+                <p class="text-sm text-yellow-400">{{ game.model_files_status.model_error }}</p>
+                {% else %}
+                <p class="text-sm text-yellow-400">Could not read config_model.json from model repo.</p>
+                {% endif %}
+              </div>
+              <div>
+                <h4 class="text-sm font-medium text-gray-400 mb-2">Data Repo (public) — <code class="text-gray-300">{{ game.model.hf_data_repo_id|default:game.model.hf_model_repo_id }}</code></h4>
+                {% if game.model_files_status.data_files %}
+                <ul class="space-y-1 text-sm">
+                  {% for f in game.model_files_status.data_files %}
+                  <li class="flex items-center gap-2">
+                    {% if f.present %}<span class="text-green-400">✅</span>{% else %}<span class="text-red-400">❌</span>{% endif %}
+                    <code class="text-gray-300">{{ f.name }}</code>
+                  </li>
+                  {% endfor %}
+                </ul>
+                {% elif game.model_files_status.data_error %}
+                <p class="text-sm text-yellow-400">{{ game.model_files_status.data_error }}</p>
+                {% else %}
+                <p class="text-sm text-yellow-400">Could not read config_data.json from data repo.</p>
+                {% endif %}
+              </div>
+            {% else %}
+              <p class="text-sm text-gray-500">Save your repos above to check file status.</p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+        </div>
+        {% endfor %}
+
+        <script>
+        (function () {
+          const modelInput = document.getElementById('id_repo_breakthrough');
+          const dataInput  = document.getElementById('id_data_repo_breakthrough');
+          if (!modelInput || !dataInput) return;
+          let autoFilled = !dataInput.value;
+          dataInput.addEventListener('input', function () { autoFilled = false; });
+          modelInput.addEventListener('input', function () {
+            if (!autoFilled) return;
+            const val = modelInput.value;
+            const slash = val.indexOf('/');
+            if (slash > 0) {
+              dataInput.value = val.substring(0, slash) + '/breakthrough-data';
+            } else {
+              dataInput.value = '';
+            }
+          });
+        })();
+        </script>
+
+      </div>{# /tab-ai-models #}
+      {% endif %}
+
+      <!-- ═══════════════════════════════════════
+           TAB: Friends
+           ═══════════════════════════════════════ -->
+      <div id="tab-friends" class="tab-panel hidden space-y-4">
+        {% if friends_list %}
+        <div class="space-y-2">
+          {% for friend in friends_list %}
+          <div class="card flex items-center gap-3 p-4">
+            <!-- Avatar -->
+            <div class="w-10 h-10 rounded-full bg-purple flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+              {{ friend.username|make_list|first|upper }}
+            </div>
+            <!-- Info -->
+            <div class="flex-1 min-w-0">
+              <a href="{% url 'users:public_profile' friend.username %}" class="font-semibold text-sm hover:text-brand transition no-underline">
+                {% fide_badge friend %} {{ friend.username }}
+              </a>
+              <div class="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
+                <span>ELO <span class="text-brand font-medium">{{ friend.elo }}</span></span>
+                {% if friend.last_login %}
+                <span>Last seen {{ friend.last_login|timesince }} ago</span>
+                {% endif %}
+              </div>
+            </div>
+            <!-- Action buttons -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+              {% if is_own_profile %}
+              <a href="{% url 'chat:chat' friend.username %}" class="btn-brand text-xs py-1.5 px-3 rounded-lg inline-flex items-center gap-1 no-underline">💬 Message</a>
+              <form method="post" action="{% url 'chat:unfriend' %}" class="inline"
+                    onsubmit="return confirm('Remove {{ friend.username }} from your friends?');">
+                {% csrf_token %}
+                <input type="hidden" name="username" value="{{ friend.username }}">
+                <button type="submit" class="btn-outline text-xs py-1.5 px-3 rounded-lg text-red-400 hover:text-red-300 hover:border-red-400 transition">✕</button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="card text-center py-12">
+          <p class="text-4xl mb-3">👥</p>
+          <p class="text-gray-400 mb-2 font-medium">
+            {% if is_own_profile %}You don't have any friends yet.{% else %}{{ user_profile.username }} hasn't added any friends yet.{% endif %}
+          </p>
+          {% if is_own_profile %}
+          <p class="text-sm text-gray-500">Use the search bar to find other players and send friend requests!</p>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>{# /tab-friends #}
+
+      <!-- ═══════════════════════════════════════
+           TAB 2: Stats & History
+           ═══════════════════════════════════════ -->
+      <div id="tab-stats" class="tab-panel {% if is_own_profile %}hidden{% endif %} space-y-6">
+
+        <!-- ── Format statistics ─────────────── -->
+        <!-- TODO Backend fix: Format stats use _compute_stats() on entries built
+             from as_p1 + as_p2 / as_white + as_black queries. These are CORRECT
+             (no double-counting) as long as the underlying user_won / is_draw
+             flags are accurate. However, those flags come from game.winner_id
+             comparisons — if game.winner is None on a non-draw game (see the
+             double-loss signal bug above), fmt.overall.losses will be inflated.
+             Fix the signal and the format stats will be correct automatically. -->
+        {% for fmt in format_stats %}
+        <div class="card">
+          <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">
+            {{ fmt.icon }} {{ fmt.label }}
+          </h2>
+
+          <!-- Overall stats pills for this format -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+            <div class="stat-pill">
+              <span class="stat-value text-green-400">{{ fmt.overall.wins }}</span>
+              <span class="stat-label">Wins</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-value text-red-400">{{ fmt.overall.losses }}</span>
+              <span class="stat-label">Losses</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-value text-yellow-300">{{ fmt.overall.draws }}</span>
+              <span class="stat-label">Draws</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-value text-gray-300">{{ fmt.overall.total }}</span>
+              <span class="stat-label">Total</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-value text-brand">{{ fmt.overall.win_rate_pct }}%</span>
+              <span class="stat-label">Win Rate</span>
+            </div>
+            <div class="stat-pill">
+              <span class="stat-value {% if fmt.overall.streak > 0 %}text-green-400{% elif fmt.overall.streak < 0 %}text-red-400{% else %}text-gray-400{% endif %}">
+                {% if fmt.overall.streak > 0 %}+{% endif %}{{ fmt.overall.streak }}
+              </span>
+              <span class="stat-label">Streak</span>
+            </div>
+          </div>
+
+          <!-- Sub-sections by time control -->
+          {% if fmt.time_controls %}
+          <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">By Time Control</p>
+          <div class="overflow-x-auto">
+            <table class="stats-table text-xs w-full">
+              <thead>
+                <tr>
+                  <th>Format</th>
+                  <th class="text-center">W</th>
+                  <th class="text-center">L</th>
+                  <th class="text-center">D</th>
+                  <th class="text-center">Total</th>
+                  <th class="text-center">Win%</th>
+                  <th class="text-center">Streak</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for tc in fmt.time_controls %}
+                <tr>
+                  <td>
+                    <span class="tc-badge tc-{{ tc.css }}">{{ tc.icon }} {{ tc.label }}</span>
+                  </td>
+                  <td class="text-center text-green-400 font-medium">{{ tc.wins }}</td>
+                  <td class="text-center text-red-400 font-medium">{{ tc.losses }}</td>
+                  <td class="text-center text-yellow-300 font-medium">{{ tc.draws }}</td>
+                  <td class="text-center font-medium">{{ tc.total }}</td>
+                  <td class="text-center text-brand font-medium">{{ tc.win_rate_pct }}%</td>
+                  <td class="text-center font-medium
+                    {% if tc.streak > 0 %}text-green-400
+                    {% elif tc.streak < 0 %}text-red-400
+                    {% else %}text-gray-400{% endif %}">
+                    {% if tc.streak > 0 %}+{% endif %}{{ tc.streak }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+
+        <!-- ── Activity Calendar Heatmap ───────── -->
+        <div class="card" id="heatmap-card">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold">
+              📅 Activity Calendar
+            </h2>
+            <span class="text-xs text-gray-500" id="heatmap-total"></span>
+          </div>
+
+          <!-- Loading placeholder -->
+          <div id="heatmap-loading" class="text-center py-6 text-sm text-gray-500">
+            Loading activity data…
+          </div>
+
+          <!-- Calendar container (populated by JS) -->
+          <div id="heatmap-container" class="hidden">
+            <!-- Month labels row -->
+            <div id="heatmap-months" class="heatmap-months"></div>
+
+            <div class="flex">
+              <!-- Day-of-week labels -->
+              <div class="heatmap-dow">
+                <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+              </div>
+              <!-- Scrollable grid -->
+              <div class="heatmap-scroll flex-1">
+                <div id="heatmap-grid" class="heatmap-grid"></div>
+              </div>
+            </div>
+
+            <!-- Legend -->
+            <div class="flex items-center justify-between flex-wrap gap-2 mt-1">
+              <div class="hm-legend">
+                <span>Less</span>
+                <span class="hm-legend-cell hm-0"></span>
+                <span class="hm-legend-cell hm-1"></span>
+                <span class="hm-legend-cell hm-2"></span>
+                <span class="hm-legend-cell hm-3"></span>
+                <span class="hm-legend-cell hm-4"></span>
+                <span>More</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Empty state (no games at all) -->
+          <div id="heatmap-empty" class="hidden text-center py-6">
+            <p class="text-sm text-gray-500">No games played yet. Start playing to see your activity!</p>
+          </div>
+        </div>
+
+        <!-- Day detail panel (shown when a day is clicked) -->
+        <div id="day-detail" class="card hidden">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-gray-300" id="day-detail-title">—</h3>
+            <button id="day-detail-close" class="text-gray-500 hover:text-gray-300 text-lg leading-none" title="Close">&times;</button>
+          </div>
+          <div class="overflow-x-auto" style="max-height:280px;overflow-y:auto;">
+            <table class="stats-table text-xs w-full">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Opponent</th>
+                  <th class="text-center">Played as</th>
+                  <th class="text-center">Result</th>
+                  <th class="text-center">TC</th>
+                  <th>Game</th>
+                  <th>Type</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="day-detail-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>{# /tab-stats #}
+
+    </div>{# /right col #}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  /* ── Add Friend button → styled confirmation modal ── */
+  const addBtn = document.getElementById('addFriendBtn');
+  const modal = document.getElementById('friendConfirmModal');
+  if (addBtn && modal) {
+    const overlay = document.getElementById('friendConfirmOverlay');
+    const cancelBtn = document.getElementById('friendConfirmCancel');
+    const sendBtn = document.getElementById('friendConfirmSend');
+
+    function openModal()  { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+    function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+
+    addBtn.addEventListener('click', openModal);
+    overlay.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+
+    sendBtn.addEventListener('click', () => {
+      sendBtn.disabled = true;
+      sendBtn.textContent = 'Sending…';
+      const form = new FormData();
+      form.append('username', '{{ user_profile.username|escapejs }}');
+      fetch('{% url "chat:send_friend_request" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}'},
+        body: form,
+      })
+      .then(r => r.json())
+      .then(data => {
+        closeModal();
+        if (data.status === 'accepted') {
+          addBtn.outerHTML = '<a href="/chat/@{{ user_profile.username|escapejs }}/" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 no-underline">💬 Message</a>';
+        } else if (data.status === 'sent') {
+          addBtn.outerHTML = '<span class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 opacity-60 cursor-default">⏳ Request Sent</span>';
+        } else if (data.error) {
+          alert(data.error);
+          sendBtn.disabled = false;
+          sendBtn.textContent = '👤+ Send Request';
+        }
+      });
+    });
+  }
+
+  /* ── Unfriend button → styled confirmation modal ── */
+  const unfriendBtn = document.getElementById('unfriendBtn');
+  const unfriendModal = document.getElementById('unfriendConfirmModal');
+  if (unfriendBtn && unfriendModal) {
+    const ufOverlay = document.getElementById('unfriendConfirmOverlay');
+    const ufCancel  = document.getElementById('unfriendConfirmCancel');
+    const ufConfirm = document.getElementById('unfriendConfirmYes');
+
+    function openUfModal()  { unfriendModal.classList.remove('hidden'); unfriendModal.classList.add('flex'); }
+    function closeUfModal() { unfriendModal.classList.add('hidden'); unfriendModal.classList.remove('flex'); }
+
+    unfriendBtn.addEventListener('click', openUfModal);
+    ufOverlay.addEventListener('click', closeUfModal);
+    ufCancel.addEventListener('click', closeUfModal);
+
+    ufConfirm.addEventListener('click', () => {
+      ufConfirm.disabled = true;
+      ufConfirm.textContent = 'Removing…';
+      const form = new FormData();
+      form.append('username', '{{ user_profile.username|escapejs }}');
+      fetch('{% url "chat:unfriend" %}', {
+        method: 'POST',
+        headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'},
+        body: form,
+      })
+      .then(r => r.json())
+      .then(data => {
+        closeUfModal();
+        if (data.status === 'unfriended') {
+          location.reload();
+        } else if (data.error) {
+          alert(data.error);
+          ufConfirm.disabled = false;
+          ufConfirm.textContent = '✕ Unfriend';
+        }
+      });
+    });
+  }
+
+  /* ── Tab switching ───────────────────────── */
+  document.querySelectorAll('.profile-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+      btn.classList.add('active');
+      const panel = document.getElementById('tab-' + btn.dataset.tab);
+      if (panel) panel.classList.remove('hidden');
+      /* Lazy-load heatmap when Stats tab first opened */
+      if (btn.dataset.tab === 'stats' && !heatmapLoaded) loadHeatmap();
+    });
+  });
+
+  /* ══════════════════════════════════════════
+     Activity Calendar Heatmap
+     ══════════════════════════════════════════ */
+  const HEATMAP_URL = `{% url 'users:activity_heatmap' %}`;
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  let heatmapLoaded = false;
+  let heatmapData = null;  // {days: [...], max_count, start_date}
+
+  function heatLevel(count) {
+    if (count === 0) return 0;
+    if (count <= 3)  return 1;
+    if (count <= 7)  return 2;
+    if (count <= 14) return 3;
+    return 4;
+  }
+
+  function loadHeatmap() {
+    heatmapLoaded = true;
+    console.log('[profile] loadHeatmap: fetching', HEATMAP_URL);
+    fetch(HEATMAP_URL)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        console.log('[profile] loadHeatmap: received data, days=', data.days?.length, 'max_count=', data.max_count);
+        heatmapData = data;
+        document.getElementById('heatmap-loading').classList.add('hidden');
+        if (!data.days || data.days.length === 0 || data.max_count === 0) {
+          document.getElementById('heatmap-empty').classList.remove('hidden');
+          document.getElementById('heatmap-total').textContent = '0 games in the last year';
+          return;
+        }
+        const totalGames = data.days.reduce((s, d) => s + d.count, 0);
+        const activeDays = data.days.filter(d => d.count > 0).length;
+        document.getElementById('heatmap-total').textContent =
+          `${totalGames} game${totalGames !== 1 ? 's' : ''} in ${activeDays} day${activeDays !== 1 ? 's' : ''}`;
+        document.getElementById('heatmap-container').classList.remove('hidden');
+        console.log('[profile] heatmap-container shown, rendering grid');
+        renderHeatmap(data);
+      })
+      .catch(err => {
+        console.error('[profile] loadHeatmap failed:', err);
+        document.getElementById('heatmap-loading').textContent = 'Failed to load activity data.';
+      });
+  }
+
+  function renderHeatmap(data) {
+    const grid = document.getElementById('heatmap-grid');
+    const monthsRow = document.getElementById('heatmap-months');
+    grid.innerHTML = '';
+    monthsRow.innerHTML = '';
+
+    const days = data.days;
+    if (!days.length) return;
+
+    /* Pad leading empty cells so first day lands on correct weekday row
+       JS getDay(): 0=Sun..6=Sat  →  We want Mon=0..Sun=6 */
+    const firstDate = new Date(days[0].date + 'T00:00:00');
+    const startDow = (firstDate.getDay() + 6) % 7; // Mon=0
+    for (let i = 0; i < startDow; i++) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'width:13px;height:13px;';
+      grid.appendChild(empty);
+    }
+
+    /* Track columns for month labels */
+    let currentMonth = -1;
+    let colIndex = 0;
+    const monthMarkers = []; // [{month, col}]
+
+    days.forEach((day, idx) => {
+      const dt = new Date(day.date + 'T00:00:00');
+      const cellDow = (dt.getDay() + 6) % 7;
+      const cellCol = Math.floor((startDow + idx) / 7);
+
+      /* Detect new month */
+      if (dt.getMonth() !== currentMonth) {
+        currentMonth = dt.getMonth();
+        monthMarkers.push({ month: currentMonth, col: cellCol });
+      }
+
+      const cell = document.createElement('div');
+      cell.className = `heatmap-cell hm-${heatLevel(day.count)}`;
+      cell.dataset.idx = idx;
+      cell.title = '';  // we'll use custom tooltip
+      grid.appendChild(cell);
+
+      /* Hover tooltip */
+      cell.addEventListener('mouseenter', e => showTooltip(e, day));
+      cell.addEventListener('mouseleave', hideTooltip);
+
+      /* Click → day detail */
+      cell.addEventListener('click', () => selectDay(idx, cell));
+    });
+
+    /* Render month labels using absolute positioning over the scroll area */
+    const cellSize = 13 + 3; // cell width + gap
+    const totalCols = Math.ceil((startDow + days.length) / 7);
+    monthsRow.style.position = 'relative';
+    monthsRow.style.height = '14px';
+    monthsRow.style.marginLeft = '0';
+    /* account for DOW label column width */
+    monthMarkers.forEach(m => {
+      const span = document.createElement('span');
+      span.textContent = MONTH_NAMES[m.month];
+      span.style.position = 'absolute';
+      span.style.left = (m.col * cellSize) + 'px';
+      monthsRow.appendChild(span);
+    });
+    monthsRow.style.width = (totalCols * cellSize) + 'px';
+
+    /* Set grid width to match */
+    grid.style.width = (totalCols * cellSize) + 'px';
+  }
+
+  /* ── Tooltip ─────────────────────────────── */
+  let tooltipEl = null;
+  function showTooltip(e, day) {
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'hm-tooltip';
+      document.body.appendChild(tooltipEl);
+    }
+    const dt = new Date(day.date + 'T00:00:00');
+    const dateStr = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    const label = day.count === 0
+      ? `No games on ${dateStr}`
+      : `${day.count} game${day.count > 1 ? 's' : ''} on ${dateStr}`;
+    tooltipEl.textContent = label;
+    tooltipEl.style.display = 'block';
+    const rect = e.target.getBoundingClientRect();
+    tooltipEl.style.left = (rect.left + rect.width / 2 - tooltipEl.offsetWidth / 2) + 'px';
+    tooltipEl.style.top = (rect.top - 28 + window.scrollY) + 'px';
+  }
+  function hideTooltip() {
+    if (tooltipEl) tooltipEl.style.display = 'none';
+  }
+
+  /* ── Day detail panel ────────────────────── */
+  let selectedCell = null;
+
+  function selectDay(idx, cell) {
+    console.log('[profile] selectDay: idx=', idx);
+    const day = heatmapData.days[idx];
+    if (!day || day.count === 0) {
+      console.log('[profile] selectDay: no games on this day');
+      document.getElementById('day-detail').classList.add('hidden');
+      if (selectedCell) selectedCell.classList.remove('selected');
+      selectedCell = null;
+      return;
+    }
+    /* Highlight cell */
+    if (selectedCell) selectedCell.classList.remove('selected');
+    cell.classList.add('selected');
+    selectedCell = cell;
+
+    const panel = document.getElementById('day-detail');
+    const dt = new Date(day.date + 'T00:00:00');
+    const dateStr = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    document.getElementById('day-detail-title').textContent =
+      `${day.count} game${day.count > 1 ? 's' : ''} — ${dateStr}`;
+
+    const tbody = document.getElementById('day-detail-body');
+    tbody.innerHTML = '';
+
+    day.games.forEach(g => {
+      const tr = document.createElement('tr');
+      tr.className = 'day-detail-row';
+      const resultCls = g.user_won ? 'text-green-400' : (g.is_draw ? 'text-yellow-300' : 'text-red-400');
+      const resultLetter = g.user_won ? 'W' : (g.is_draw ? 'D' : 'L');
+      const typeLabel = g.tournament
+        ? `<span class="text-brand">${esc(g.tournament)}</span> R${g.round}`
+        : '<span class="text-gray-500 italic">One-on-One</span>';
+      const playedAs = g.played_as === 'white'
+        ? '<span class="text-gray-100">♙ White</span>'
+        : '<span class="text-gray-400">♟ Black</span>';
+      const gameTypeLabel = g.game_type === 'breakthrough'
+        ? '<span class="text-yellow-400 font-semibold">BT</span>'
+        : '<span class="text-blue-400 font-semibold">Chess</span>';
+      tr.innerHTML =
+        `<td class="text-gray-400">${esc(g.time)}</td>` +
+        `<td>${g.opponent_flag || ''}${esc(g.opponent)}</td>` +
+        `<td class="text-center">${playedAs}</td>` +
+        `<td class="text-center font-semibold ${resultCls}">${resultLetter} <span class="text-gray-500 font-normal ml-0.5">${esc(g.result)}</span></td>` +
+        `<td class="text-center"><span class="tc-badge tc-${g.tc_css}">${esc(g.tc)}</span></td>` +
+        `<td class="text-center">${gameTypeLabel}</td>` +
+        `<td>${typeLabel}</td>` +
+        `<td><button class="text-brand text-xs hover:underline hm-replay-btn" data-rid="${g.id}" data-rtype="${g.type}" data-played-as="${g.played_as || ''}">Replay ▶</button></td>`;
+      tbody.appendChild(tr);
+    });
+
+    panel.classList.remove('hidden');
+    console.log('[profile] day-detail panel shown with', day.games.length, 'games');
+
+    /* Bind replay buttons in day detail */
+    panel.querySelectorAll('.hm-replay-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        loadReplay(btn.dataset.rid, btn.dataset.rtype, btn.dataset.playedAs);
+      });
+    });
+
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  document.getElementById('day-detail-close')?.addEventListener('click', () => {
+    document.getElementById('day-detail').classList.add('hidden');
+    if (selectedCell) { selectedCell.classList.remove('selected'); selectedCell = null; }
+  });
+
+  /* ── Breakthrough board renderer (profile) ── */
+  function parseBtFen(fen) {
+    const parts = fen.split(' ');
+    const ranks = parts[0].split('/');
+    const grid = [];
+    for (let r = 0; r < ranks.length; r++) {
+      const row = [];
+      for (let i = 0; i < ranks[r].length; i++) {
+        const ch = ranks[r][i];
+        if (ch >= '1' && ch <= '8') {
+          for (let j = 0; j < parseInt(ch); j++) row.push('.');
+        } else {
+          row.push(ch);
+        }
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  function renderBtBoardHtml(fen, lastUci, flipped) {
+    const grid = parseBtFen(fen);
+    let fromSq = null, toSq = null;
+    if (lastUci && lastUci.length >= 4) {
+      fromSq = lastUci.substring(0, 2);
+      toSq = lastUci.substring(2, 4);
+    }
+    const files = 'abcdefgh';
+    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;">';
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const displayR = flipped ? (7 - r) : r;
+        const displayC = flipped ? (7 - c) : c;
+        const dark = (displayR + displayC) % 2 === 1;
+        let bg = dark ? '#b58863' : '#f0d9b5';
+        const sq = files[displayC] + (8 - displayR);
+        if (sq === fromSq || sq === toSq) bg = dark ? '#aba23a' : '#cdd16a';
+        const piece = grid[displayR] ? (grid[displayR][displayC] || '.') : '.';
+        let pieceHtml = '';
+        if (piece === 'W') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#fff 60%,#ddd);border:2px solid #bbb;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+        else if (piece === 'B') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#333 60%,#111);border:2px solid #555;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>';
+        html += '<div style="background:' + bg + ';display:flex;align-items:center;justify-content:center;">' + pieceHtml + '</div>';
+      }
+    }
+    html += '</div>';
+    return html;
+  }
+
+  /* ── Chessground: single board for static + replay ── */
+  let boardInstance = null;
+  let currentReplayGameType = 'chess';  // track which game type is being replayed
+
+  function initBoard() {
+    if (currentReplayGameType === 'breakthrough') {
+      // BT boards don't need Chessground
+      const el = document.getElementById('profileBoard');
+      if (el) {
+        const flipped = (replayUserColor === 'black');
+        el.innerHTML = renderBtBoardHtml('BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w', null, flipped);
+      }
+      return;
+    }
+    if (boardInstance) return;  // already initialised
+    const el = document.getElementById('profileBoard');
+    if (!el || !window.Chessground) return;
+    console.log('[profile] Initialising Chessground board');
+    boardInstance = window.Chessground(el, {
+      fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+      viewOnly: true,
+      coordinates: true,
+      animation: { enabled: true, duration: 200 },
+    });
+  }
+  /* Handle race condition: cg-ready may fire before or after this script */
+  if (window.Chessground) {
+    initBoard();
+  } else {
+    window.addEventListener('cg-ready', initBoard);
+  }
+
+  /* ── Game History Replay ─────────────────── */
+  let replayFens = [];
+  let replayMoves = [];
+  let replayIdx = 0;
+  let replayUserColor = null;  // 'white' or 'black'
+  let replayUciMoves = [];     // raw UCI moves for BT highlight
+
+  const replaySection = document.getElementById('replaySection');
+  const replayMovesEl = document.getElementById('replayMoves');
+  const replayNumEl   = document.getElementById('replayMoveNum');
+  const replayHeader  = document.getElementById('replayHeader');
+
+  function renderReplayPos() {
+    if (currentReplayGameType === 'breakthrough') {
+      const el = document.getElementById('profileBoard');
+      if (!el || !replayFens.length) return;
+      const lastUci = replayIdx > 0 ? (replayUciMoves[replayIdx - 1] || null) : null;
+      const flipped = (replayUserColor === 'black');
+      el.innerHTML = renderBtBoardHtml(replayFens[replayIdx], lastUci, flipped);
+      replayNumEl.textContent = `${replayIdx} / ${replayFens.length - 1}`;
+      replayMovesEl.querySelectorAll('.replay-hl').forEach(e => e.classList.remove('replay-hl', 'text-brand', 'font-bold'));
+      if (replayIdx > 0) {
+        const hl = replayMovesEl.querySelector(`[data-mi="${replayIdx - 1}"]`);
+        if (hl) { hl.classList.add('replay-hl', 'text-brand', 'font-bold'); hl.scrollIntoView({ block: 'nearest' }); }
+      }
+      return;
+    }
+    if (!boardInstance) initBoard();  // ensure board exists
+    if (!boardInstance || !replayFens.length) {
+      console.warn('[profile] renderReplayPos: boardInstance=', !!boardInstance, 'fens=', replayFens.length);
+      return;
+    }
+    boardInstance.set({ fen: replayFens[replayIdx] });
+    replayNumEl.textContent = `${replayIdx} / ${replayFens.length - 1}`;
+    /* Highlight current move in list */
+    replayMovesEl.querySelectorAll('.replay-hl').forEach(e => e.classList.remove('replay-hl', 'text-brand', 'font-bold'));
+    if (replayIdx > 0) {
+      const el = replayMovesEl.querySelector(`[data-mi="${replayIdx - 1}"]`);
+      if (el) { el.classList.add('replay-hl', 'text-brand', 'font-bold'); el.scrollIntoView({ block: 'nearest' }); }
+    }
+  }
+
+  function buildMoveList(moves, result) {
+    replayMovesEl.innerHTML = '';
+    for (let i = 0; i < moves.length; i += 2) {
+      const num = Math.floor(i / 2) + 1;
+      const w = moves[i] || '';
+      const b = moves[i + 1] || '';
+      const row = document.createElement('div');
+      row.className = 'move-row';
+      /* Highlight moves by the user's AI bot */
+      const wCls = replayUserColor === 'white' ? 'text-brand font-semibold' : '';
+      const bCls = replayUserColor === 'black' ? 'text-brand font-semibold' : '';
+      row.innerHTML =
+        `<span class="move-num">${num}.</span>` +
+        `<span class="move-white cursor-pointer hover:text-brand ${wCls}" data-mi="${i}">${esc(w)}</span>` +
+        (b ? `<span class="move-black cursor-pointer hover:text-brand ${bCls}" data-mi="${i+1}">${esc(b)}</span>` : `<span class="move-black"></span>`);
+      replayMovesEl.appendChild(row);
+    }
+    if (result) {
+      const r = document.createElement('div');
+      r.className = 'text-center py-1 font-semibold';
+      if (result === '1-0') {
+        r.innerHTML = '<span class="text-green-400">1-0</span> <span class="text-gray-500">— White wins</span>';
+      } else if (result === '0-1') {
+        r.innerHTML = '<span class="text-green-400">0-1</span> <span class="text-gray-500">— Black wins</span>';
+      } else {
+        r.innerHTML = `<span class="text-yellow-300">${esc(result)}</span> <span class="text-gray-500">— Draw</span>`;
+      }
+      replayMovesEl.appendChild(r);
+    }
+    /* Click a move to jump */
+    replayMovesEl.addEventListener('click', e => {
+      const mi = e.target.dataset.mi;
+      if (mi !== undefined) { replayIdx = parseInt(mi) + 1; renderReplayPos(); }
+    });
+  }
+
+  function esc(s) { const d = document.createElement('span'); d.textContent = s; return d.innerHTML; }
+
+  /* Build replay URL based on type (match vs game) */
+  const MATCH_MOVES_URL = `{% url 'users:match_moves' match_id=0 %}`;
+  const GAME_MOVES_URL  = `{% url 'users:game_moves' game_id=0 %}`;
+
+  function loadReplay(replayId, replayType, playedAs) {
+    console.log('[profile] loadReplay: id=', replayId, 'type=', replayType, 'playedAs=', playedAs);
+    let url;
+    if (replayType === 'game') {
+      url = GAME_MOVES_URL.replace('/0/', `/${replayId}/`);
+    } else {
+      url = MATCH_MOVES_URL.replace('/0/', `/${replayId}/`);
+    }
+    fetch(url)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then(data => {
+        console.log('[profile] loadReplay: received', data.moves?.length, 'moves,', data.fens?.length, 'fens');
+        currentReplayGameType = data.game_type || 'chess';
+        replayFens = data.fens || [];
+        replayMoves = data.moves || [];
+        replayUciMoves = currentReplayGameType === 'breakthrough' ? (data.moves || []) : [];
+        replayIdx = 0;
+        replayUserColor = data.user_color || playedAs || null;
+        if (replaySection) {
+          replaySection.classList.remove('hidden');
+          console.log('[profile] replaySection shown');
+        }
+        /* Enhanced header: "Your Bot vs Opponent" with date/time */
+        const whiteName = data.white || '?';
+        const blackName = data.black || '?';
+        const dateStr = data.date ? ` — ${data.date}` : '';
+        const gameTypeBadge = currentReplayGameType === 'breakthrough' ? ' [Breakthrough]' : '';
+        replayHeader.textContent = `${whiteName} vs ${blackName}${dateStr}${gameTypeBadge}`;
+
+        if (currentReplayGameType === 'breakthrough') {
+          // Destroy Chessground instance if it exists — we need the raw element
+          if (boardInstance) {
+            boardInstance.destroy();
+            boardInstance = null;
+          }
+        }
+        buildMoveList(replayMoves, data.result);
+        initBoard();  // ensure board is ready before first render
+        renderReplayPos();
+        /* Scroll board into view on mobile */
+        document.getElementById('profileBoard')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      })
+      .catch(err => {
+        console.error('[profile] loadReplay failed:', err);
+      });
+  }
+
+  document.getElementById('btnFirst')?.addEventListener('click', () => { replayIdx = 0; renderReplayPos(); });
+  document.getElementById('btnPrev')?.addEventListener('click',  () => { if (replayIdx > 0) replayIdx--; renderReplayPos(); });
+  document.getElementById('btnNext')?.addEventListener('click',  () => { if (replayIdx < replayFens.length - 1) replayIdx++; renderReplayPos(); });
+  document.getElementById('btnLast')?.addEventListener('click',  () => { replayIdx = replayFens.length - 1; renderReplayPos(); });
+
+  /* Keyboard navigation */
+  document.addEventListener('keydown', e => {
+    if (!replayFens.length) return;
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); if (replayIdx > 0) replayIdx--; renderReplayPos(); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); if (replayIdx < replayFens.length - 1) replayIdx++; renderReplayPos(); }
+    if (e.key === 'Home')       { e.preventDefault(); replayIdx = 0; renderReplayPos(); }
+    if (e.key === 'End')        { e.preventDefault(); replayIdx = replayFens.length - 1; renderReplayPos(); }
+  });
+})();
+</script>
+{% endblock %}

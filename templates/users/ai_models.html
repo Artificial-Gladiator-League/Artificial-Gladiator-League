@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}AI Models — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto animate-fade-in">
+
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-bold">Your AI Models</h1>
+    <p class="text-gray-400 mt-1 text-sm">
+      Configure a Hugging Face model for each game you want to compete in.
+    </p>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="rounded-lg px-4 py-2 mb-4 text-sm border
+        {% if message.tags == 'success' %}bg-green-900/40 border-green-700 text-green-300
+        {% elif message.tags == 'error' %}bg-red-900/40 border-red-700 text-red-300
+        {% else %}bg-yellow-900/40 border-yellow-700 text-yellow-300{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  <!-- Security notice -->
+  <div class="rounded-lg bg-green-900/30 border border-green-700 px-4 py-2 mb-6 text-sm text-green-300">
+    <strong>&#x1f512; Privacy:</strong> Your Hugging Face token is used only for
+    verification and is <strong>never stored</strong> on our servers.
+  </div>
+
+  {% for game in game_configs %}
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-semibold">{{ game.label }}</h2>
+      {% if game.model %}
+        {% if game.model.model_integrity_ok %}
+          <span class="inline-flex items-center gap-1 text-sm text-green-400">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+            Verified
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 text-sm text-yellow-400">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            Needs re-verification
+          </span>
+        {% endif %}
+      {% else %}
+        <span class="text-sm text-gray-500">Not connected</span>
+      {% endif %}
+    </div>
+
+    {% if game.model %}
+      <div class="text-sm text-gray-300 mb-4 space-y-1">
+        <p><span class="text-gray-500">Repo:</span> <code class="text-gray-200">{{ game.model.hf_model_repo_id }}</code></p>
+        {% if game.model.approved_full_sha %}
+          <p><span class="text-gray-500">Pinned SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
+        {% endif %}
+        <p><span class="text-gray-500">Rated games:</span> {{ game.model.rated_games_played }}</p>
+        {% if game.model.last_model_validation_date %}
+          <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="game_type" value="{{ game.type }}">
+
+      <div class="form-group">
+        <label for="id_repo_{{ game.type }}">Hugging Face Model Repo</label>
+        <input type="text"
+               id="id_repo_{{ game.type }}"
+               name="hf_model_repo_id"
+               value="{{ game.model.hf_model_repo_id|default:'' }}"
+               placeholder="e.g. YourUsername/MyModel"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+        <span class="help-text text-xs text-gray-500 mt-1 block">
+          Only gated (access-request enabled) repos are accepted. Must output UCI moves.
+        </span>
+      </div>
+
+      {% if game.type == 'breakthrough' %}
+      <div class="form-group">
+        <label for="id_data_repo_{{ game.type }}">Hugging Face Data Repo</label>
+        <input type="text"
+               id="id_data_repo_{{ game.type }}"
+               name="hf_data_repo_id"
+               value="{{ game.model.hf_data_repo_id|default:'' }}"
+               placeholder="e.g. YourUsername/breakthrough-data"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+        <span class="text-xs text-gray-500 mt-1 block">
+          Your data repo must be set to <strong>public</strong> on Hugging Face.
+          It must contain the file <code>breakthrough_zone_db.npz</code>.
+        </span>
+      </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label for="id_token_{{ game.type }}">Hugging Face Access Token</label>
+        <input type="password"
+               id="id_token_{{ game.type }}"
+               name="hf_token"
+               placeholder="hf_abc123…"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+        <span class="help-text text-xs text-gray-500 mt-1 block">
+          Used once to verify &mdash; <strong>never stored</strong>. Create one at
+          <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener"
+             class="text-brand hover:underline">huggingface.co/settings/tokens</a>.
+        </span>
+      </div>
+
+      <button type="submit" class="btn-brand w-full py-2.5">
+        {% if game.model %}Re-verify &amp; Update{% else %}Connect Model{% endif %}
+      </button>
+    </form>
+  </div>
+  {% endfor %}
+
+  <div class="text-center mt-4">
+    <a href="{% url 'users:profile' %}" class="text-brand hover:underline text-sm">&larr; Back to Profile</a>
+  </div>
+</div>
+{% endblock %}

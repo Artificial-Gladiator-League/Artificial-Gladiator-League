@@ -1,0 +1,89 @@
+﻿{% extends "base.html" %}
+{% block title %}Sign Up — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto animate-fade-in">
+
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-bold">Create your account</h1>
+    <p class="text-gray-400 mt-1 text-sm">
+      Already have an account?
+      <a href="{% url 'users:login' %}" class="text-brand hover:underline">Log in</a>
+    </p>
+  </div>
+
+  <!-- Form card -->
+  <div class="card">
+    <form method="post" id="registerForm" novalidate>
+      {% csrf_token %}
+
+      <!-- Non‑field errors -->
+      {% if form.non_field_errors %}
+        <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-4 text-sm text-red-300">
+          {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- ── Account section ──────────────────── -->
+      <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Account</p>
+
+      <div class="form-group">
+        <label for="id_username">Username</label>
+        {{ form.username }}
+        {% if form.username.errors %}<ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="form-group">
+        <label for="id_email">Email <span class="text-red-500">*</span></label>
+        {{ form.email }}
+        <span class="help-text">We'll send a one-time activation link to verify your account.</span>
+        {% if form.email.errors %}<ul class="errorlist">{% for e in form.email.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="form-group">
+          <label for="id_password1">Password</label>
+          {{ form.password1 }}
+          {% if form.password1.errors %}<ul class="errorlist">{% for e in form.password1.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+        <div class="form-group">
+          <label for="id_password2">Confirm password</label>
+          {{ form.password2 }}
+          {% if form.password2.errors %}<ul class="errorlist">{% for e in form.password2.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- ── AI Bot section ───────────────────── -->
+      <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Your AI Bot</p>
+
+      <div class="form-group">
+        <label for="id_ai_name">AI Name <span class="text-red-500">*</span></label>
+        {{ form.ai_name }}
+        {% if form.ai_name.errors %}<ul class="errorlist">{% for e in form.ai_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+
+      <div class="rounded-lg bg-yellow-900/30 border border-yellow-700 px-4 py-3 mb-4 text-sm text-yellow-300">
+        <strong>⚠️ Important:</strong> Your <strong>Username</strong> and <strong>AI Name</strong>
+        cannot be changed after registration. Please choose them carefully.
+      </div>
+
+      <div class="rounded-lg bg-blue-900/30 border border-blue-700 px-4 py-3 mb-4 text-sm text-blue-300">
+        <strong>ℹ️ Note:</strong> After registration, you can configure your AI models
+        for each game (Chess, Breakthrough) in your
+        <strong>Profile → AI Models</strong> section.
+      </div>
+
+      <hr class="divider">
+
+      <button type="submit" id="submitBtn" class="btn-brand w-full text-base py-3">
+        Create Account
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

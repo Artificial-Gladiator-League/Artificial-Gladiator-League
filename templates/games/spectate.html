@@ -1,0 +1,462 @@
+{% extends "base.html" %}
+{% load core_tags %}
+{% block title %}Spectate — {{ game.white.username }} vs {{ game.black.username }} — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <h1 class="text-2xl font-bold">
+        {% fide_badge game.white %} {{ game.white.username|default:"???" }} vs {% fide_badge game.black %} {{ game.black.username|default:"???" }}
+      </h1>
+      <p class="text-sm text-gray-400 mt-0.5">
+        {{ game.time_control }} · Game #{{ game.pk }}
+        {% if game.is_tournament_game %} · Tournament{% endif %}
+      </p>
+    </div>
+    <div class="flex items-center gap-4">
+      <!-- Live spectator count -->
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-800 border border-gray-700">
+        <span class="text-lg">👁️</span>
+        <span id="spectatorCount" class="text-brand font-bold">0</span>
+        <span class="text-gray-400 text-sm">spectators watching</span>
+      </div>
+      {% if game.status == 'ongoing' %}
+        <span class="status-live">Live</span>
+      {% elif game.is_finished %}
+        <span class="status-completed">{{ game.get_status_display }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Left: Board -->
+    <div class="lg:col-span-2">
+      <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+
+        <!-- Top player (Black) -->
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded bg-gray-900 flex items-center justify-center text-xs font-bold text-white border border-gray-600">B</div>
+            {% fide_badge game.black %}
+            <span class="font-semibold text-sm">{{ game.black.username|default:"???" }}</span>
+            <span class="text-xs text-gray-500">({{ game.black.elo|default:"1200" }})</span>
+          </div>
+          <div id="clockBlack" class="font-mono text-lg px-3 py-1 rounded bg-gray-900 border border-gray-700">
+            --:--
+          </div>
+        </div>
+
+        <!-- Chessboard -->
+        <div id="spectateBoard" class="w-full aspect-square rounded-lg overflow-hidden bg-gray-900" style="min-height:300px;"></div>
+
+        <div class="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-2">
+          <button id="tbStart" type="button" class="btn-outline text-xs py-2">|&lt;</button>
+          <button id="tbPrev" type="button" class="btn-outline text-xs py-2">&lt;</button>
+          <button id="tbPlay" type="button" class="btn-outline text-xs py-2">Play</button>
+          <button id="tbPause" type="button" class="btn-outline text-xs py-2">Pause</button>
+          <button id="tbNext" type="button" class="btn-outline text-xs py-2">&gt;</button>
+          <button id="tbEnd" type="button" class="btn-outline text-xs py-2">&gt;|</button>
+        </div>
+
+        <!-- Bottom player (White) -->
+        <div class="flex items-center justify-between mt-3">
+          <div class="flex items-center gap-2">
+            <div class="w-6 h-6 rounded bg-white flex items-center justify-center text-xs font-bold text-gray-900">W</div>
+            {% fide_badge game.white %}
+            <span class="font-semibold text-sm">{{ game.white.username|default:"???" }}</span>
+            <span class="text-xs text-gray-500">({{ game.white.elo|default:"1200" }})</span>
+          </div>
+          <div id="clockWhite" class="font-mono text-lg px-3 py-1 rounded bg-gray-900 border border-gray-700">
+            --:--
+          </div>
+        </div>
+      </div>
+
+      <!-- Game-over overlay -->
+      <div id="gameOverBanner" class="hidden mt-4 p-5 rounded-lg border border-brand bg-gray-800 text-center shadow-[0_0_24px_rgba(159,122,234,0.18)]">
+        <p class="text-4xl sm:text-5xl font-black tracking-tight text-brand" id="gameOverScore"></p>
+        <p class="text-lg font-bold mt-2" id="gameOverText"></p>
+        <p class="text-sm text-gray-400 mt-1" id="gameOverReason"></p>
+        <p class="text-xs text-gray-500 mt-3 uppercase tracking-wider" id="gameOverNextAction"></p>
+      </div>
+    </div>
+
+    <!-- Right: Move list -->
+    <div class="space-y-4">
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-3">Moves</h3>
+        <div id="moveList" class="font-mono text-sm max-h-96 overflow-y-auto space-y-0.5 text-gray-300">
+          <span class="text-gray-600 text-xs">Waiting for moves…</span>
+        </div>
+      </div>
+      <a href="{% url 'games:game_detail' game.pk %}" class="btn-outline text-xs py-2 w-full text-center block">
+        Full Game Details →
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const gameId = {{ game.pk }};
+  const gameType = '{{ game.game_type|escapejs }}';
+  const STARTING_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  const BT_STARTING_FEN = 'BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w';
+  const REPLAY_BASE_SECONDS = {{ base_seconds|floatformat:'0' }};
+  const REPLAY_CLOCK_STEP_SECONDS = 0.8;
+  const clockWhiteEl = document.getElementById('clockWhite');
+  const clockBlackEl = document.getElementById('clockBlack');
+  const moveListEl = document.getElementById('moveList');
+  const spectatorCountEl = document.getElementById('spectatorCount');
+  const gameOverBanner = document.getElementById('gameOverBanner');
+  const gameOverScore = document.getElementById('gameOverScore');
+  const gameOverText = document.getElementById('gameOverText');
+  const gameOverReason = document.getElementById('gameOverReason');
+  const gameOverNextAction = document.getElementById('gameOverNextAction');
+
+  const tbStart = document.getElementById('tbStart');
+  const tbPrev = document.getElementById('tbPrev');
+  const tbPlay = document.getElementById('tbPlay');
+  const tbPause = document.getElementById('tbPause');
+  const tbNext = document.getElementById('tbNext');
+  const tbEnd = document.getElementById('tbEnd');
+
+  let board = null;
+  let allUciMoves = [];
+  let displayedMoveCount = 0;
+  let toolPlayTimer = null;
+  let replayMode = false;
+
+  /* ── Breakthrough board renderer ──────────── */
+  const BT_FILES = 'abcdefgh';
+
+  function parseBtFen(fen) {
+    const parts = fen.split(' ');
+    const ranks = parts[0].split('/');
+    const grid = [];
+    for (let r = 0; r < ranks.length; r++) {
+      const row = [];
+      for (let i = 0; i < ranks[r].length; i++) {
+        const ch = ranks[r][i];
+        if (ch >= '1' && ch <= '8') {
+          for (let j = 0; j < parseInt(ch); j++) row.push('.');
+        } else {
+          row.push(ch);
+        }
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  function renderBtBoard(fen, lastUci) {
+    const grid = parseBtFen(fen);
+    let fromSq = null, toSq = null;
+    if (lastUci && lastUci.length >= 4) {
+      fromSq = lastUci.substring(0, 2);
+      toSq = lastUci.substring(2, 4);
+    }
+    let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;">';
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const dark = (r + c) % 2 === 1;
+        let bg = dark ? '#b58863' : '#f0d9b5';
+        const sq = BT_FILES[c] + (8 - r);
+        if (sq === fromSq || sq === toSq) bg = dark ? '#aba23a' : '#cdd16a';
+        const piece = grid[r] ? (grid[r][c] || '.') : '.';
+        let pieceHtml = '';
+        if (piece === 'W') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#fff 60%,#ddd);border:2px solid #bbb;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+        else if (piece === 'B') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#333 60%,#111);border:2px solid #555;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>';
+        html += '<div style="background:' + bg + ';display:flex;align-items:center;justify-content:center;">' + pieceHtml + '</div>';
+      }
+    }
+    html += '</div>';
+    const el = document.getElementById('spectateBoard');
+    if (el) el.innerHTML = html;
+  }
+
+  function btApplyMoveToGrid(grid, uci) {
+    if (!uci || uci.length < 4) return grid;
+    const fc = BT_FILES.indexOf(uci[0]), fr = 8 - parseInt(uci[1]);
+    const tc = BT_FILES.indexOf(uci[2]), tr = 8 - parseInt(uci[3]);
+    if (fr >= 0 && fr < 8 && fc >= 0 && fc < 8 && tr >= 0 && tr < 8 && tc >= 0 && tc < 8) {
+      grid[tr][tc] = grid[fr][fc];
+      grid[fr][fc] = '.';
+    }
+    return grid;
+  }
+
+  function resultToDisplay(result) {
+    if (result === '1/2-1/2') return '½-½';
+    return result || '*';
+  }
+
+  function reasonToDisplay(reason) {
+    const labels = {
+      checkmate: 'checkmate',
+      timeout: 'time out',
+      resignation: 'resignation',
+      stalemate: 'draw by stalemate',
+      insufficient_material: 'draw by insufficient material',
+      fifty_moves: 'draw by the 50-move rule',
+      seventyfive_moves: 'draw by the 75-move rule',
+      repetition: 'draw by repetition',
+      armageddon_draw_odds: 'black wins on Armageddon draw odds',
+      bot_error: 'bot error',
+    };
+    return labels[reason] || (reason ? reason.replace(/_/g, ' ') : 'game over');
+  }
+
+  function summaryToDisplay(result, reason) {
+    const detail = reasonToDisplay(reason);
+    if (result === '1-0') return detail === 'checkmate' ? 'White wins by checkmate' : `White wins by ${detail}`;
+    if (result === '0-1') return detail === 'checkmate' ? 'Black wins by checkmate' : `Black wins by ${detail}`;
+    if (result === '1/2-1/2') return detail.charAt(0).toUpperCase() + detail.slice(1);
+    return 'Game finished';
+  }
+
+  function showGameOver(data) {
+    gameOverBanner.classList.remove('hidden');
+    gameOverScore.textContent = resultToDisplay(data.result);
+    gameOverText.textContent = summaryToDisplay(data.result, data.reason);
+    gameOverReason.textContent = reasonToDisplay(data.reason);
+    gameOverNextAction.textContent = 'Replay mode enabled below. Use toolbar to navigate moves.';
+    replayMode = true;
+  }
+
+  function formatClock(seconds) {
+    if (seconds == null || seconds < 0) return '--:--';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function renderReplayClocks(moveCount) {
+    const whiteMoves = Math.ceil(moveCount / 2);
+    const blackMoves = Math.floor(moveCount / 2);
+    clockWhiteEl.textContent = formatClock(Math.max(0, REPLAY_BASE_SECONDS - (whiteMoves * REPLAY_CLOCK_STEP_SECONDS)));
+    clockBlackEl.textContent = formatClock(Math.max(0, REPLAY_BASE_SECONDS - (blackMoves * REPLAY_CLOCK_STEP_SECONDS)));
+  }
+
+  function renderMoveList(moves) {
+    if (!moves || !moves.length) {
+      moveListEl.innerHTML = '<span class="text-gray-600 text-xs">Waiting for moves…</span>';
+      return;
+    }
+    let html = '';
+    for (let i = 0; i < moves.length; i += 2) {
+      const num = Math.floor(i / 2) + 1;
+      html += '<div class="flex gap-3">';
+      html += '<span class="text-gray-500 w-6 text-right">' + num + '.</span>';
+      html += '<span class="w-16">' + moves[i] + '</span>';
+      if (moves[i + 1]) html += '<span class="w-16">' + moves[i + 1] + '</span>';
+      html += '</div>';
+    }
+    moveListEl.innerHTML = html;
+    moveListEl.scrollTop = moveListEl.scrollHeight;
+  }
+
+  function uciToPair(uci) {
+    if (typeof uci !== 'string' || uci.length < 4) return null;
+    return [uci.slice(0, 2), uci.slice(2, 4)];
+  }
+
+  function resetBoardToStart() {
+    if (gameType === 'breakthrough') {
+      renderBtBoard(BT_STARTING_FEN, null);
+      return;
+    }
+    if (!board) return;
+    board.set({
+      fen: STARTING_FEN,
+      lastMove: undefined,
+    });
+  }
+
+  function renderToMoveCount(targetCount) {
+    const capped = Math.max(0, Math.min(targetCount, allUciMoves.length));
+
+    if (gameType === 'breakthrough') {
+      const grid = parseBtFen(BT_STARTING_FEN);
+      for (let i = 0; i < capped; i++) {
+        btApplyMoveToGrid(grid, allUciMoves[i]);
+      }
+      const lastUci = capped > 0 ? allUciMoves[capped - 1] : null;
+      // Render from grid directly
+      let fromSq = null, toSq = null;
+      if (lastUci && lastUci.length >= 4) {
+        fromSq = lastUci.substring(0, 2);
+        toSq = lastUci.substring(2, 4);
+      }
+      let html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;">';
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const dark = (r + c) % 2 === 1;
+          let bg = dark ? '#b58863' : '#f0d9b5';
+          const sq = BT_FILES[c] + (8 - r);
+          if (sq === fromSq || sq === toSq) bg = dark ? '#aba23a' : '#cdd16a';
+          const piece = grid[r] ? (grid[r][c] || '.') : '.';
+          let pieceHtml = '';
+          if (piece === 'W') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#fff 60%,#ddd);border:2px solid #bbb;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+          else if (piece === 'B') pieceHtml = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#333 60%,#111);border:2px solid #555;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>';
+          html += '<div style="background:' + bg + ';display:flex;align-items:center;justify-content:center;">' + pieceHtml + '</div>';
+        }
+      }
+      html += '</div>';
+      const el = document.getElementById('spectateBoard');
+      if (el) el.innerHTML = html;
+      displayedMoveCount = capped;
+      if (replayMode) renderReplayClocks(capped);
+      return;
+    }
+
+    if (!board) return;
+    resetBoardToStart();
+
+    for (let i = 0; i < capped; i += 1) {
+      const pair = uciToPair(allUciMoves[i]);
+      if (!pair) continue;
+      board.move(pair[0], pair[1]);
+    }
+
+    displayedMoveCount = capped;
+    if (replayMode) {
+      renderReplayClocks(capped);
+    }
+  }
+
+  function stopToolPlay() {
+    if (toolPlayTimer) {
+      clearTimeout(toolPlayTimer);
+      toolPlayTimer = null;
+    }
+  }
+
+  function playToolsForward() {
+    if (!replayMode) return;
+    stopToolPlay();
+
+    const tick = () => {
+      if (displayedMoveCount >= allUciMoves.length) {
+        renderToMoveCount(0);
+      } else {
+        renderToMoveCount(displayedMoveCount + 1);
+      }
+      toolPlayTimer = setTimeout(tick, 800);
+    };
+
+    tick();
+  }
+
+  // ── Game WebSocket (for moves / state) ──────
+  function connectGameWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/games/${gameId}/`);
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'game_state') {
+        allUciMoves = Array.isArray(data.move_list) ? data.move_list.slice() : [];
+        clockWhiteEl.textContent = formatClock(data.white_time);
+        clockBlackEl.textContent = formatClock(data.black_time);
+        renderMoveList(data.san_move_list || data.move_list || []);
+
+        if (gameType === 'breakthrough') {
+          if (!replayMode) {
+            renderBtBoard(data.fen, data.last_move || null);
+            displayedMoveCount = allUciMoves.length;
+          } else if (replayMode && displayedMoveCount === 0 && allUciMoves.length > 0) {
+            renderToMoveCount(allUciMoves.length);
+            playToolsForward();
+          }
+        } else if (board && !replayMode) {
+          board.set({
+            fen: data.fen,
+            lastMove: data.last_move ? [data.last_move.substring(0, 2), data.last_move.substring(2, 4)] : undefined,
+          });
+          displayedMoveCount = allUciMoves.length;
+        } else if (board && replayMode && displayedMoveCount === 0 && allUciMoves.length > 0) {
+          renderToMoveCount(allUciMoves.length);
+          playToolsForward();
+        }
+      } else if (data.type === 'game_over') {
+        showGameOver(data);
+        stopToolPlay();
+        renderToMoveCount(allUciMoves.length);
+      }
+    };
+
+    ws.onclose = () => setTimeout(connectGameWS, 3000);
+  }
+
+  // ── Spectate WebSocket (for spectator count) ──
+  function connectSpectateWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/games/${gameId}/spectate/`);
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+      if (data.type === 'spectator_count') {
+        spectatorCountEl.textContent = data.count;
+      }
+    };
+
+    ws.onclose = () => setTimeout(connectSpectateWS, 3000);
+  }
+
+  // ── Init board when Chessground is ready ────
+  function initBoard() {
+    if (gameType === 'breakthrough') {
+      const currentFen = '{{ game.current_fen|escapejs }}';
+      renderBtBoard(currentFen || BT_STARTING_FEN, null);
+      return;
+    }
+    const el = document.getElementById('spectateBoard');
+    if (!el || !window.Chessground) return;
+    board = window.Chessground(el, {
+      fen: '{{ game.current_fen|escapejs }}',
+      viewOnly: true,
+      highlight: { lastMove: true, check: true },
+      coordinates: true,
+      animation: { enabled: true, duration: 300 },
+    });
+  }
+
+  tbStart?.addEventListener('click', () => { stopToolPlay(); renderToMoveCount(0); });
+  tbPrev?.addEventListener('click', () => { stopToolPlay(); renderToMoveCount(displayedMoveCount - 1); });
+  tbNext?.addEventListener('click', () => { stopToolPlay(); renderToMoveCount(displayedMoveCount + 1); });
+  tbEnd?.addEventListener('click', () => { stopToolPlay(); renderToMoveCount(allUciMoves.length); });
+  tbPlay?.addEventListener('click', () => playToolsForward());
+  tbPause?.addEventListener('click', () => stopToolPlay());
+
+  if (gameType === 'breakthrough') {
+    initBoard();
+  } else if (window.Chessground) {
+    initBoard();
+  } else {
+    window.addEventListener('cg-ready', initBoard);
+    window.addEventListener('load', () => {
+      if (window.Chessground && !board) initBoard();
+    });
+  }
+
+  connectGameWS();
+  connectSpectateWS();
+
+  {% if game.is_finished %}
+    showGameOver({
+      result: '{{ game.result|escapejs }}',
+      reason: '{{ game.result_reason|escapejs }}'
+    });
+    renderReplayClocks(0);
+  {% endif %}
+})();
+</script>
+{% endblock %}

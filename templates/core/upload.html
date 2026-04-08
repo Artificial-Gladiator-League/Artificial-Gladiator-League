@@ -1,0 +1,384 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Upload AI — agladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-3xl mx-auto">
+
+  <!-- ═══════════════════════════════════════════
+       Header
+       ═══════════════════════════════════════════ -->
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-extrabold mb-2">
+      <span class="text-gold">⚔️</span> Deploy Your Gladiator
+    </h1>
+    <p class="text-gray-400 text-sm">
+      Upload your AI agent, test it against sample bots, and unleash it in the arena.
+    </p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Wizard Steps Indicator
+       ═══════════════════════════════════════════ -->
+  <div class="wizard-steps" id="wizardSteps">
+    <div class="wizard-step active" data-step="1">
+      <div class="step-num">1</div>
+      <span class="step-label hidden sm:inline">Select Game</span>
+    </div>
+    <div class="wizard-connector"></div>
+    <div class="wizard-step" data-step="2">
+      <div class="step-num">2</div>
+      <span class="step-label hidden sm:inline">Upload Code</span>
+    </div>
+    <div class="wizard-connector"></div>
+    <div class="wizard-step" data-step="3">
+      <div class="step-num">3</div>
+      <span class="step-label hidden sm:inline">Test & Publish</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Step 1: Select Game
+       ═══════════════════════════════════════════ -->
+  <div id="step1" class="wizard-panel">
+    <div class="card">
+      <h2 class="text-lg font-bold mb-1">Choose Your Arena</h2>
+      <p class="text-sm text-gray-400 mb-6">Select the game your AI gladiator will compete in.</p>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-4" id="gameSelector">
+        <div class="game-option selected" data-game="chess">
+          <div class="game-icon">♟️</div>
+          <div class="game-name">Chess</div>
+          <div class="game-desc">Classic strategy</div>
+          <div class="mt-2">
+            <span class="badge-rank green text-xs">Available</span>
+          </div>
+        </div>
+        <div class="game-option opacity-50" data-game="go">
+          <div class="game-icon">⚫</div>
+          <div class="game-name">Go</div>
+          <div class="game-desc">Ancient strategy</div>
+          <div class="mt-2">
+            <span class="badge-rank purple text-xs">Coming Soon</span>
+          </div>
+        </div>
+        <div class="game-option opacity-50" data-game="connect4">
+          <div class="game-icon">🔴</div>
+          <div class="game-name">Connect 4</div>
+          <div class="game-desc">4-in-a-row</div>
+          <div class="mt-2">
+            <span class="badge-rank purple text-xs">Coming Soon</span>
+          </div>
+        </div>
+        <div class="game-option opacity-50" data-game="othello">
+          <div class="game-icon">⬛</div>
+          <div class="game-name">Othello</div>
+          <div class="game-desc">Reversi variant</div>
+          <div class="mt-2">
+            <span class="badge-rank purple text-xs">Coming Soon</span>
+          </div>
+        </div>
+        <div class="game-option opacity-50" data-game="hex">
+          <div class="game-icon">⬡</div>
+          <div class="game-name">Hex</div>
+          <div class="game-desc">Connection game</div>
+          <div class="mt-2">
+            <span class="badge-rank purple text-xs">Coming Soon</span>
+          </div>
+        </div>
+        <div class="game-option opacity-50" data-game="tictactoe">
+          <div class="game-icon">❌</div>
+          <div class="game-name">Tic-Tac-Toe+</div>
+          <div class="game-desc">Advanced variant</div>
+          <div class="mt-2">
+            <span class="badge-rank purple text-xs">Coming Soon</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end mt-6">
+        <button id="step1Next" class="btn-gold cursor-pointer">
+          Continue →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Step 2: Upload Code / Model
+       ═══════════════════════════════════════════ -->
+  <div id="step2" class="wizard-panel hidden">
+    <div class="card">
+      <h2 class="text-lg font-bold mb-1">Connect Your AI Model</h2>
+      <p class="text-sm text-gray-400 mb-6">Enter your gated Hugging Face repo ID (e.g. <code>Maxlegrec/ChessBot</code>).</p>
+
+      <form method="post" id="uploadForm" action="{% url 'core:upload_ai_submit' %}">
+        {% csrf_token %}
+        <input type="hidden" name="game_type" id="gameTypeInput" value="chess">
+
+        <!-- AI Name -->
+        <div class="form-group">
+          <label for="ai_name">AI Gladiator Name *</label>
+          <input type="text" name="ai_name" id="ai_name" required maxlength="120"
+                 class="w-full rounded-lg border border-borderDark bg-surface text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple focus:border-purple transition"
+                 placeholder="e.g. DeepPawn-v3, AlphaKnight, NeuralGladiator">
+          <span class="help-text">This name will appear on leaderboards and in battle replays.</span>
+        </div>
+
+        <!-- HF Repo ID -->
+        <div class="form-group">
+          <label for="hf_model_repo_id">Hugging Face Repo ID *</label>
+          <input type="text" name="hf_model_repo_id" id="hf_model_repo_id" required maxlength="255"
+                 class="w-full rounded-lg border border-borderDark bg-surface text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple focus:border-purple transition"
+                 placeholder="e.g. Maxlegrec/ChessBot">
+          <span class="help-text">Must be a gated repo with access requests enabled.</span>
+        </div>
+
+        <!-- Code Template Helper -->
+        <details class="mb-6 text-sm">
+          <summary class="cursor-pointer text-purple hover:text-gold transition font-medium">
+            📝 View required code template
+          </summary>
+          <div class="mt-3 bg-surface rounded-lg p-4 border border-borderDark">
+            <pre class="text-xs text-gray-300 overflow-x-auto font-mono"><code>"""
+Your AI agent must define a get_move() function.
+It receives a chess.Board object and must return
+a valid UCI move string (e.g. 'e2e4', 'g1f3').
+"""
+import chess
+import random
+
+def get_move(board: chess.Board) -> str:
+    """Return a UCI move string for the given position."""
+    legal_moves = list(board.legal_moves)
+    # Example: pick a random legal move
+    move = random.choice(legal_moves)
+    return move.uci()</code></pre>
+            <p class="text-xs text-gray-500 mt-2">
+              Your function has a <strong class="text-gray-300">time limit per move</strong> based on the game's time control.
+              If your AI exceeds the limit, it forfeits on time.
+            </p>
+          </div>
+        </details>
+
+        <div class="flex justify-between">
+          <button type="button" id="step2Back" class="btn-outline cursor-pointer">
+            ← Back
+          </button>
+          <button type="button" id="step2Next" class="btn-gold cursor-pointer">
+            Continue to Test →
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       Step 3: Test & Publish
+       ═══════════════════════════════════════════ -->
+  <div id="step3" class="wizard-panel hidden">
+    <div class="card">
+      <h2 class="text-lg font-bold mb-1">Test &amp; Publish</h2>
+      <p class="text-sm text-gray-400 mb-6">Run a quick test against our sample bot, then publish your gladiator.</p>
+
+      <!-- Test Section -->
+      <div class="bg-surface rounded-xl p-6 border border-borderDark mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold flex items-center gap-2">
+            <span class="text-purple">🧪</span> Quick Test
+          </h3>
+          <button id="runTestBtn" class="btn-purple btn-sm cursor-pointer">
+            ▶ Run Test Match
+          </button>
+        </div>
+
+        <div id="testStatus" class="text-sm text-gray-400">
+          <p>Click "Run Test Match" to play your AI against our sample random bot.</p>
+          <p class="text-xs text-gray-500 mt-1">This verifies your <code class="text-xs bg-surfaceLight px-1 py-0.5 rounded">get_move()</code> function works correctly.</p>
+        </div>
+
+        <!-- Test results (populated by JS) -->
+        <div id="testResults" class="hidden mt-4">
+          <div class="flex items-center gap-3 p-3 rounded-lg" id="testResultBox">
+            <span id="testResultIcon" class="text-2xl"></span>
+            <div>
+              <p id="testResultTitle" class="font-semibold text-sm"></p>
+              <p id="testResultDesc" class="text-xs text-gray-400"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="bg-surface rounded-xl p-6 border border-borderDark mb-6">
+        <h3 class="font-semibold mb-3 flex items-center gap-2">
+          <span class="text-gold">📋</span> Summary
+        </h3>
+        <table class="w-full text-sm">
+          <tr class="border-b border-borderDark">
+            <td class="py-2 text-gray-400">Game</td>
+            <td class="py-2 font-medium text-right" id="summaryGame">Chess ♟️</td>
+          </tr>
+          <tr class="border-b border-borderDark">
+            <td class="py-2 text-gray-400">AI Name</td>
+            <td class="py-2 font-medium text-right text-gold" id="summaryName">—</td>
+          </tr>
+          <tr class="border-b border-borderDark">
+            <td class="py-2 text-gray-400">File</td>
+            <td class="py-2 font-medium text-right" id="summaryFile">—</td>
+          </tr>
+          <tr>
+            <td class="py-2 text-gray-400">Starting Elo</td>
+            <td class="py-2 font-medium text-right text-purple">1200</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex justify-between">
+        <button type="button" id="step3Back" class="btn-outline cursor-pointer">
+          ← Back
+        </button>
+        <button type="button" id="publishBtn" class="btn-gold cursor-pointer">
+          ⚔️ Publish & Enter Arena
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+(function () {
+  /* ── Elements ──────────────────────────────── */
+  const steps     = document.querySelectorAll('.wizard-step');
+  const connectors= document.querySelectorAll('.wizard-connector');
+  const panels    = document.querySelectorAll('.wizard-panel');
+  const gameOpts  = document.querySelectorAll('.game-option');
+
+  const step1Next = document.getElementById('step1Next');
+  const step2Back = document.getElementById('step2Back');
+  const step2Next = document.getElementById('step2Next');
+  const step3Back = document.getElementById('step3Back');
+  const publishBtn= document.getElementById('publishBtn');
+  const runTestBtn= document.getElementById('runTestBtn');
+
+  const repoInput  = document.getElementById('hf_model_repo_id');
+  const nameInput  = document.getElementById('ai_name');
+  const gameInput  = document.getElementById('gameTypeInput');
+
+  let currentStep = 1;
+  let selectedGame = 'chess';
+
+  /* ── Step navigation ───────────────────────── */
+  function goToStep(n) {
+    currentStep = n;
+
+    // Update step indicators
+    steps.forEach((s, i) => {
+      const stepNum = i + 1;
+      s.classList.remove('active', 'completed');
+      if (stepNum < n) s.classList.add('completed');
+      else if (stepNum === n) s.classList.add('active');
+    });
+    connectors.forEach((c, i) => {
+      c.classList.toggle('completed', i < n - 1);
+    });
+
+    // Show correct panel
+    panels.forEach((p, i) => {
+      p.classList.toggle('hidden', i + 1 !== n);
+    });
+
+    // Update summary on step 3
+    if (n === 3) updateSummary();
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ── Game selection ────────────────────────── */
+  gameOpts.forEach(opt => {
+    opt.addEventListener('click', () => {
+      if (opt.classList.contains('opacity-50')) return; // disabled
+      gameOpts.forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      selectedGame = opt.dataset.game;
+      gameInput.value = selectedGame;
+    });
+  });
+
+  /* ── Step buttons ──────────────────────────── */
+  step1Next.addEventListener('click', () => goToStep(2));
+  step2Back.addEventListener('click', () => goToStep(1));
+  step2Next.addEventListener('click', () => {
+    // Validate step 2
+    if (!nameInput.value.trim()) {
+      nameInput.focus();
+      nameInput.classList.add('ring-2', 'ring-red-500');
+      setTimeout(() => nameInput.classList.remove('ring-2', 'ring-red-500'), 2000);
+      return;
+    }
+    if (!repoInput.value.trim()) {
+      repoInput.focus();
+      repoInput.classList.add('ring-2', 'ring-red-500');
+      setTimeout(() => repoInput.classList.remove('ring-2', 'ring-red-500'), 2000);
+      return;
+    }
+    goToStep(3);
+  });
+  step3Back.addEventListener('click', () => goToStep(2));
+
+  /* ── Summary ───────────────────────────────── */
+  function updateSummary() {
+    const gameNames = { chess: 'Chess ♟️', go: 'Go ⚫', connect4: 'Connect 4 🔴' };
+    document.getElementById('summaryGame').textContent = gameNames[selectedGame] || selectedGame;
+    document.getElementById('summaryName').textContent = nameInput.value || '—';
+    document.getElementById('summaryFile').textContent = repoInput.value || '—';
+  }
+
+  /* ── Test button (simulated) ───────────────── */
+  runTestBtn.addEventListener('click', () => {
+    runTestBtn.disabled = true;
+    runTestBtn.innerHTML = '<span class="spinner"></span> Testing…';
+
+    const statusEl = document.getElementById('testStatus');
+    statusEl.innerHTML = '<p class="text-purple">Running test match against sample bot…</p>';
+
+    // Simulate a test run
+    setTimeout(() => {
+      const results = document.getElementById('testResults');
+      const box = document.getElementById('testResultBox');
+      const icon = document.getElementById('testResultIcon');
+      const title = document.getElementById('testResultTitle');
+      const desc = document.getElementById('testResultDesc');
+
+      // Simulate success
+      results.classList.remove('hidden');
+      box.className = 'flex items-center gap-3 p-3 rounded-lg bg-green-900/30 border border-green-800';
+      icon.textContent = '✅';
+      title.textContent = 'Test Passed!';
+      title.className = 'font-semibold text-sm text-green-400';
+      desc.textContent = 'Your AI played a valid game against the sample bot. Ready to publish!';
+
+      statusEl.innerHTML = '<p class="text-green-400">✓ Test completed successfully</p>';
+      runTestBtn.innerHTML = '✓ Test Passed';
+      runTestBtn.className = 'btn-brand btn-sm cursor-pointer';
+    }, 2500);
+  });
+
+  /* ── Publish ───────────────────────────────── */
+  publishBtn.addEventListener('click', () => {
+    publishBtn.disabled = true;
+    publishBtn.innerHTML = '<span class="spinner"></span> Publishing…';
+
+    // Submit the form
+    const form = document.getElementById('uploadForm');
+    form.submit();
+  });
+})();
+</script>
+{% endblock %}

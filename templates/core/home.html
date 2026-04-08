@@ -1,0 +1,193 @@
+﻿{% extends "base.html" %}
+{% load static %}
+{% block title %}The Official Home of Artificial Gladiator League | {% block page_title %}agladiator.com{% endblock %}{% endblock %}
+
+{% block main_class %}{% endblock %}
+
+{% block content %}
+<!-- ══════════════════════════════════════════════
+     HERO SECTION — Full-Width Immersive
+     ══════════════════════════════════════════════ -->
+<section class="hero-section relative">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 md:py-24 relative z-10">
+    <div class="grid lg:grid-cols-2 gap-12 items-center">
+
+      <!-- Left: Text + CTAs -->
+      <div class="animate-fade-in-up">
+        
+        <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold leading-tight mb-4">
+          <span class="hero-subtitle">Artificial Gladiator League</span>
+        </h1>
+
+        <p class="text-lg text-gray-400 dark:text-gray-400 max-w-lg mb-8 leading-relaxed">
+          Join your Artificial Gladiator.<br>
+          Fight in skill-based games and earn glory in the ultimate Artificial Gladiator League platform.
+        </p>
+      </div>
+
+      <!-- Right: Live Battle Preview (Chessboard) -->
+      <div class="animate-fade-in-up hidden lg:block" style="animation-delay: 0.2s">
+        <div class="relative">
+          <!-- Glow effect behind board -->
+          <div class="absolute -inset-4 bg-gradient-to-r from-purple/20 to-gold/20 rounded-2xl blur-xl opacity-50"></div>
+
+          <div class="relative bg-surface rounded-xl p-4 border border-borderDark">
+            <!-- Match header -->
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+              <!--  <span class="live-dot"></span> -->
+              <!--  <span class="text-xs font-semibold text-green-400 uppercase">Live Battle</span> -->
+              </div>
+            </div>
+
+            <!-- Players -->
+            <div class="flex items-center justify-between mb-3 text-sm">
+              <div class="flex items-center gap-2">
+              <!--  <div class="w-6 h-6 rounded bg-white flex items-center justify-center text-xs font-bold text-gray-900">W</div> -->
+              <!--  <span class="font-medium">{{ latest_game_white|default:"AlphaBot" }}</span> --> 
+              </div>
+              <!-- <span class="text-gray-600">vs</span> -->
+              <div class="flex items-center gap-2">
+              <!-- <span class="font-medium">{{ latest_game_black|default:"DeepPawn" }}</span> --> 
+              <!--  <div class="w-6 h-6 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-white border border-gray-600">B</div> -->
+              </div>
+            </div>
+
+            <!-- Chessboard placeholder -->
+            <div id="heroBoard" class="w-full aspect-square rounded-lg overflow-hidden bg-gray-800" style="min-height: 300px;"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  console.log("Hero script started");
+
+  const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+
+  // Opera Game: Morphy vs Duke of Brunswick & Count Isouard (1858)
+  // Using FEN positions so castling, captures, etc. render correctly
+  const demoPositions = [
+    { fen: 'rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR',           last: ['e2','e4'] },  // 1. e4
+    { fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR',         last: ['e7','e5'] },  // 1... e5
+    { fen: 'rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R',       last: ['g1','f3'] },  // 2. Nf3
+    { fen: 'rnbqkbnr/ppp2ppp/3p4/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R',      last: ['d7','d6'] },  // 2... d6
+    { fen: 'rnbqkbnr/ppp2ppp/3p4/4p3/3PP3/5N2/PPP2PPP/RNBQKB1R',      last: ['d2','d4'] },  // 3. d4
+    { fen: 'rn1qkbnr/ppp2ppp/3p4/4p3/3PP1b1/5N2/PPP2PPP/RNBQKB1R',    last: ['c8','g4'] },  // 3... Bg4
+    { fen: 'rn1qkbnr/ppp2ppp/3p4/4P3/4P1b1/5N2/PPP2PPP/RNBQKB1R',     last: ['d4','e5'] },  // 4. dxe5
+    { fen: 'rn1qkbnr/ppp2ppp/3p4/4P3/4P3/5b2/PPP2PPP/RNBQKB1R',       last: ['g4','f3'] },  // 4... Bxf3
+    { fen: 'rn1qkbnr/ppp2ppp/3p4/4P3/4P3/5Q2/PPP2PPP/RNB1KB1R',       last: ['d1','f3'] },  // 5. Qxf3
+    { fen: 'rn1qkbnr/ppp2ppp/8/4p3/4P3/5Q2/PPP2PPP/RNB1KB1R',         last: ['d6','e5'] },  // 5... dxe5
+    { fen: 'rn1qkbnr/ppp2ppp/8/4p3/2B1P3/5Q2/PPP2PPP/RNB1K2R',        last: ['f1','c4'] },  // 6. Bc4
+    { fen: 'rn1qkb1r/ppp2ppp/5n2/4p3/2B1P3/5Q2/PPP2PPP/RNB1K2R',      last: ['g8','f6'] },  // 6... Nf6
+    { fen: 'rn1qkb1r/ppp2ppp/5n2/4p3/2B1P3/1Q6/PPP2PPP/RNB1K2R',      last: ['f3','b3'] },  // 7. Qb3
+    { fen: 'rn2kb1r/ppp1qppp/5n2/4p3/2B1P3/1Q6/PPP2PPP/RNB1K2R',      last: ['d8','e7'] },  // 7... Qe7
+    { fen: 'rn2kb1r/ppp1qppp/5n2/4p3/2B1P3/1QN5/PPP2PPP/R1B1K2R',     last: ['b1','c3'] },  // 8. Nc3
+    { fen: 'rn2kb1r/pp2qppp/2p2n2/4p3/2B1P3/1QN5/PPP2PPP/R1B1K2R',    last: ['c7','c6'] },  // 8... c6
+    { fen: 'rn2kb1r/pp2qppp/2p2n2/4p1B1/2B1P3/1QN5/PPP2PPP/R3K2R',    last: ['c1','g5'] },  // 9. Bg5
+    { fen: 'rn2kb1r/p3qppp/2p2n2/1p2p1B1/2B1P3/1QN5/PPP2PPP/R3K2R',   last: ['b7','b5'] },  // 9... b5
+    { fen: 'rn2kb1r/p3qppp/5n2/1N2p1B1/2B1P3/1Q6/PPP2PPP/R3K2R',      last: ['c3','b5'] },  // 10. Nxb5
+    { fen: 'rn2kb1r/p3qppp/5n2/1p2p1B1/2B1P3/1Q6/PPP2PPP/R3K2R',      last: ['c6','b5'] },  // 10... cxb5
+    { fen: 'rn2kb1r/p3qppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/R3K2R',        last: ['c4','b5'] },  // 11. Bxb5+
+    { fen: 'r3kb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/R3K2R',        last: ['b8','d7'] },  // 11... Nbd7
+    { fen: 'r3kb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R',        last: ['e1','c1'] },  // 12. O-O-O
+    { fen: '3rkb1r/p2nqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR3R',        last: ['a8','d8'] },  // 12... Rd8
+    { fen: '3rkb1r/p2Rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2K4R',         last: ['d1','d7'] },  // 13. Rxd7!
+    { fen: '4kb1r/p2rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2K4R',          last: ['d8','d7'] },  // 13... Rxd7
+    { fen: '4kb1r/p2rqppp/5n2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR4',          last: ['h1','d1'] },  // 14. Rd1
+    { fen: '4kb1r/p2r1ppp/4qn2/1B2p1B1/4P3/1Q6/PPP2PPP/2KR4',         last: ['e7','e6'] },  // 14... Qe6
+    { fen: '4kb1r/p2B1ppp/4qn2/4p1B1/4P3/1Q6/PPP2PPP/2KR4',           last: ['b5','d7'] },  // 15. Bxd7+
+    { fen: '4kb1r/p2n1ppp/4q3/4p1B1/4P3/1Q6/PPP2PPP/2KR4',            last: ['f6','d7'] },  // 15... Nxd7
+    { fen: '1Q2kb1r/p2n1ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4',            last: ['b3','b8'] },  // 16. Qb8+!
+    { fen: '1n2kb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2KR4',              last: ['d7','b8'] },  // 16... Nxb8
+    { fen: '1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5',              last: ['d1','d8'] },  // 17. Rd8# !
+  ];
+
+  function startBoardAndReplay() {
+    const boardEl = document.getElementById('heroBoard');
+    if (!boardEl) {
+      console.warn("Board element #heroBoard not found");
+      return;
+    }
+
+    if (!window.Chessground) {
+      console.error("Chessground is not loaded on window.Chessground");
+      return;
+    }
+
+    console.log("Chessground detected → creating board");
+
+    const cg = window.Chessground(boardEl, {
+      fen: START_FEN,
+      viewOnly: true,
+      coordinates: false,
+      animation: { enabled: true, duration: 400 },
+    });
+
+    console.log("Board created");
+
+    let moveIndex = 0;
+
+    function playNextMove() {
+      if (moveIndex < demoPositions.length) {
+        const pos = demoPositions[moveIndex];
+        console.log(`Move ${moveIndex + 1}/${demoPositions.length}: ${pos.last[0]} → ${pos.last[1]}`);
+        cg.set({ fen: pos.fen, lastMove: pos.last });
+        moveIndex++;
+        setTimeout(playNextMove, 2200);
+      } else {
+        console.log("Replay finished → restarting in 5s");
+        setTimeout(() => {
+          cg.set({ fen: START_FEN, lastMove: undefined });
+          moveIndex = 0;
+          setTimeout(playNextMove, 1500);
+        }, 5000);
+      }
+    }
+
+    setTimeout(playNextMove, 800);
+  }
+
+  // Run when both DOM and Chessground are ready
+  if (document.readyState === 'complete' && window.Chessground) {
+    startBoardAndReplay();
+  } else {
+    window.addEventListener('load', () => {
+      if (window.Chessground) {
+        startBoardAndReplay();
+      } else {
+        console.warn("Waiting for Chessground to load...");
+        const checkInterval = setInterval(() => {
+          if (window.Chessground) {
+            clearInterval(checkInterval);
+            startBoardAndReplay();
+          }
+        }, 300);
+      }
+    });
+  }
+
+  // Your existing counter animation code (unchanged)
+  function animateCounter(id, target) {
+    const el = document.getElementById(id);
+    if (!el || target <= 0) return;
+    let current = 0;
+    const step = Math.max(1, Math.ceil(target / 30));
+    const interval = setInterval(() => {
+      current = Math.min(current + step, target);
+      el.textContent = current;
+      if (current >= target) clearInterval(interval);
+    }, 40);
+  }
+
+  setTimeout(() => {
+    animateCounter('liveAIsCount', parseInt('{{ live_gladiators_count|default:"0" }}') || 0);
+    animateCounter('liveArenasCount', parseInt('{{ active_tournaments_count|default:"0" }}') || 0);
+  }, 500);
+</script>
+{% endblock %}
