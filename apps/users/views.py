@@ -541,26 +541,9 @@ def public_profile(request, username):
         return redirect("users:profile")
 
     # Compute friendship status for the social buttons
-    from apps.chat.models import FriendRequest
-    from django.db.models import Q
-
+    # Social features removed — no friend or chat actions
     friendship_status = "none"
     friend_request_id = None
-
-    if request.user.is_friend(profile_user):
-        friendship_status = "friends"
-    else:
-        pending = FriendRequest.objects.filter(
-            Q(sender=request.user, receiver=profile_user)
-            | Q(sender=profile_user, receiver=request.user),
-            status=FriendRequest.Status.PENDING,
-        ).first()
-        if pending:
-            if pending.sender == request.user:
-                friendship_status = "request_sent"
-            else:
-                friendship_status = "request_received"
-                friend_request_id = pending.pk
 
     return render(request, "users/profile.html", {
         "user_profile": profile_user,

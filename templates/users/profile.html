@@ -117,65 +117,7 @@
         <span class="stat-label">ELO</span>
       </div>
 
-      {% if not is_own_profile %}
-        {# ── Social buttons for other users ── #}
-        {% if friendship_status == 'friends' %}
-          <a href="{% url 'chat:chat' user_profile.username %}"
-             class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 no-underline">
-            💬 Message
-          </a>
-          <button id="unfriendBtn" class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 text-red-400 hover:text-red-300 hover:border-red-400 transition">
-            ✕ Unfriend
-          </button>
-          <!-- Unfriend confirmation modal -->
-          <div id="unfriendConfirmModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
-            <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="unfriendConfirmOverlay"></div>
-            <div class="relative bg-white dark:bg-surface border border-gray-200 dark:border-borderDark rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-fade-in">
-              <h3 class="text-base font-bold mb-1">Unfriend {{ user_profile.username }}?</h3>
-              <p class="text-sm text-gray-400 mb-5">This will remove them from your friends list. You won’t be able to message each other until a new request is accepted.</p>
-              <div class="flex items-center justify-end gap-2">
-                <button id="unfriendConfirmCancel" class="btn-outline text-sm py-2 px-5 rounded-lg">Cancel</button>
-                <button id="unfriendConfirmYes" class="text-sm py-2 px-5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold transition">✕ Unfriend</button>
-              </div>
-            </div>
-          </div>
-        {% elif friendship_status == 'request_sent' %}
-          <span class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 opacity-60 cursor-default">
-            ⏳ Request Sent
-          </span>
-        {% elif friendship_status == 'request_received' %}
-          <form method="post" action="{% url 'chat:respond_friend_request' friend_request_id %}" class="inline-flex gap-2">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="accept">
-            <button type="submit" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5">
-              ✓ Accept
-            </button>
-          </form>
-          <form method="post" action="{% url 'chat:respond_friend_request' friend_request_id %}" class="inline-flex">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="decline">
-            <button type="submit" class="btn-outline text-sm py-2 px-4 rounded-lg text-red-400 hover:text-red-300 inline-flex items-center gap-1.5">
-              ✕ Decline
-            </button>
-          </form>
-        {% else %}
-          <button id="addFriendBtn" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5">
-            👤+ Add Friend
-          </button>
-          <!-- Confirmation modal -->
-          <div id="friendConfirmModal" class="fixed inset-0 z-[100] hidden items-center justify-center">
-            <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" id="friendConfirmOverlay"></div>
-            <div class="relative bg-white dark:bg-surface border border-gray-200 dark:border-borderDark rounded-2xl shadow-2xl p-6 w-full max-w-sm mx-4 animate-fade-in">
-              <h3 class="text-base font-bold mb-1">Send friend request?</h3>
-              <p class="text-sm text-gray-400 mb-5">Send a friend request to <span class="text-gray-200 font-semibold">{{ user_profile.username }}</span>. They’ll need to accept before you can chat.</p>
-              <div class="flex items-center justify-end gap-2">
-                <button id="friendConfirmCancel" class="btn-outline text-sm py-2 px-5 rounded-lg">Cancel</button>
-                <button id="friendConfirmSend" class="btn-brand text-sm py-2 px-5 rounded-lg inline-flex items-center gap-1.5">👤+ Send Request</button>
-              </div>
-            </div>
-          </div>
-        {% endif %}
-      {% endif %}
+      <!-- Social buttons removed -->
     </div>
   </div>
 
@@ -561,57 +503,7 @@
       </div>{# /tab-ai-models #}
       {% endif %}
 
-      <!-- ═══════════════════════════════════════
-           TAB: Friends
-           ═══════════════════════════════════════ -->
-      <div id="tab-friends" class="tab-panel hidden space-y-4">
-        {% if friends_list %}
-        <div class="space-y-2">
-          {% for friend in friends_list %}
-          <div class="card flex items-center gap-3 p-4">
-            <!-- Avatar -->
-            <div class="w-10 h-10 rounded-full bg-purple flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-              {{ friend.username|make_list|first|upper }}
-            </div>
-            <!-- Info -->
-            <div class="flex-1 min-w-0">
-              <a href="{% url 'users:public_profile' friend.username %}" class="font-semibold text-sm hover:text-brand transition no-underline">
-                {% fide_badge friend %} {{ friend.username }}
-              </a>
-              <div class="flex items-center gap-3 text-xs text-gray-500 mt-0.5">
-                <span>ELO <span class="text-brand font-medium">{{ friend.elo }}</span></span>
-                {% if friend.last_login %}
-                <span>Last seen {{ friend.last_login|timesince }} ago</span>
-                {% endif %}
-              </div>
-            </div>
-            <!-- Action buttons -->
-            <div class="flex items-center gap-2 flex-shrink-0">
-              {% if is_own_profile %}
-              <a href="{% url 'chat:chat' friend.username %}" class="btn-brand text-xs py-1.5 px-3 rounded-lg inline-flex items-center gap-1 no-underline">💬 Message</a>
-              <form method="post" action="{% url 'chat:unfriend' %}" class="inline"
-                    onsubmit="return confirm('Remove {{ friend.username }} from your friends?');">
-                {% csrf_token %}
-                <input type="hidden" name="username" value="{{ friend.username }}">
-                <button type="submit" class="btn-outline text-xs py-1.5 px-3 rounded-lg text-red-400 hover:text-red-300 hover:border-red-400 transition">✕</button>
-              </form>
-              {% endif %}
-            </div>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="card text-center py-12">
-          <p class="text-4xl mb-3">👥</p>
-          <p class="text-gray-400 mb-2 font-medium">
-            {% if is_own_profile %}You don't have any friends yet.{% else %}{{ user_profile.username }} hasn't added any friends yet.{% endif %}
-          </p>
-          {% if is_own_profile %}
-          <p class="text-sm text-gray-500">Use the search bar to find other players and send friend requests!</p>
-          {% endif %}
-        </div>
-        {% endif %}
-      </div>{# /tab-friends #}
+      <!-- Friends tab removed -->
 
       <!-- ═══════════════════════════════════════
            TAB 2: Stats & History
@@ -789,85 +681,7 @@
 {% block extra_js %}
 <script>
 (function () {
-  /* ── Add Friend button → styled confirmation modal ── */
-  const addBtn = document.getElementById('addFriendBtn');
-  const modal = document.getElementById('friendConfirmModal');
-  if (addBtn && modal) {
-    const overlay = document.getElementById('friendConfirmOverlay');
-    const cancelBtn = document.getElementById('friendConfirmCancel');
-    const sendBtn = document.getElementById('friendConfirmSend');
-
-    function openModal()  { modal.classList.remove('hidden'); modal.classList.add('flex'); }
-    function closeModal() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
-
-    addBtn.addEventListener('click', openModal);
-    overlay.addEventListener('click', closeModal);
-    cancelBtn.addEventListener('click', closeModal);
-
-    sendBtn.addEventListener('click', () => {
-      sendBtn.disabled = true;
-      sendBtn.textContent = 'Sending…';
-      const form = new FormData();
-      form.append('username', '{{ user_profile.username|escapejs }}');
-      fetch('{% url "chat:send_friend_request" %}', {
-        method: 'POST',
-        headers: {'X-CSRFToken': '{{ csrf_token }}'},
-        body: form,
-      })
-      .then(r => r.json())
-      .then(data => {
-        closeModal();
-        if (data.status === 'accepted') {
-          addBtn.outerHTML = '<a href="/chat/@{{ user_profile.username|escapejs }}/" class="btn-brand text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 no-underline">💬 Message</a>';
-        } else if (data.status === 'sent') {
-          addBtn.outerHTML = '<span class="btn-outline text-sm py-2 px-4 rounded-lg inline-flex items-center gap-1.5 opacity-60 cursor-default">⏳ Request Sent</span>';
-        } else if (data.error) {
-          alert(data.error);
-          sendBtn.disabled = false;
-          sendBtn.textContent = '👤+ Send Request';
-        }
-      });
-    });
-  }
-
-  /* ── Unfriend button → styled confirmation modal ── */
-  const unfriendBtn = document.getElementById('unfriendBtn');
-  const unfriendModal = document.getElementById('unfriendConfirmModal');
-  if (unfriendBtn && unfriendModal) {
-    const ufOverlay = document.getElementById('unfriendConfirmOverlay');
-    const ufCancel  = document.getElementById('unfriendConfirmCancel');
-    const ufConfirm = document.getElementById('unfriendConfirmYes');
-
-    function openUfModal()  { unfriendModal.classList.remove('hidden'); unfriendModal.classList.add('flex'); }
-    function closeUfModal() { unfriendModal.classList.add('hidden'); unfriendModal.classList.remove('flex'); }
-
-    unfriendBtn.addEventListener('click', openUfModal);
-    ufOverlay.addEventListener('click', closeUfModal);
-    ufCancel.addEventListener('click', closeUfModal);
-
-    ufConfirm.addEventListener('click', () => {
-      ufConfirm.disabled = true;
-      ufConfirm.textContent = 'Removing…';
-      const form = new FormData();
-      form.append('username', '{{ user_profile.username|escapejs }}');
-      fetch('{% url "chat:unfriend" %}', {
-        method: 'POST',
-        headers: {'X-CSRFToken': '{{ csrf_token }}', 'X-Requested-With': 'XMLHttpRequest'},
-        body: form,
-      })
-      .then(r => r.json())
-      .then(data => {
-        closeUfModal();
-        if (data.status === 'unfriended') {
-          location.reload();
-        } else if (data.error) {
-          alert(data.error);
-          ufConfirm.disabled = false;
-          ufConfirm.textContent = '✕ Unfriend';
-        }
-      });
-    });
-  }
+  // Social features removed: friend/unfriend UI disabled.
 
   /* ── Tab switching ───────────────────────── */
   document.querySelectorAll('.profile-tab').forEach(btn => {

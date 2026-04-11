@@ -53,11 +53,7 @@
         </div>
       </div>
     </div>
-
-    <!-- Friend / Chat action buttons -->
-    <div class="mt-5 flex items-center gap-3" id="friendActions">
-      <span class="text-xs text-gray-500">Loading…</span>
-    </div>
+    <!-- Social features removed -->
   </div>
 
   <!-- Stats -->
@@ -102,97 +98,4 @@
 
 </div>
 {% endblock %}
-
-{% block extra_js %}
-<script>
-(function() {
-  const USERNAME = '{{ profile_user.username|escapejs }}';
-  const container = document.getElementById('friendActions');
-  const csrfToken = '{{ csrf_token }}';
-
-  function renderActions(status, requestId) {
-    container.innerHTML = '';
-
-    if (status === 'friends') {
-      const msgBtn = document.createElement('a');
-      msgBtn.href = '/chat/@' + USERNAME + '/';
-      msgBtn.className = 'friend-btn friend-btn-message';
-      msgBtn.innerHTML = '💬 Message';
-      container.appendChild(msgBtn);
-
-      const badge = document.createElement('span');
-      badge.className = 'text-xs text-green-400 font-medium';
-      badge.textContent = '✓ Friends';
-      container.appendChild(badge);
-
-    } else if (status === 'request_sent') {
-      const btn = document.createElement('span');
-      btn.className = 'friend-btn friend-btn-pending';
-      btn.textContent = '⏳ Request Sent';
-      container.appendChild(btn);
-
-    } else if (status === 'request_received') {
-      const acceptBtn = document.createElement('button');
-      acceptBtn.className = 'friend-btn friend-btn-accept';
-      acceptBtn.textContent = '✓ Accept';
-      acceptBtn.onclick = () => respondRequest(requestId, 'accept');
-      container.appendChild(acceptBtn);
-
-      const declineBtn = document.createElement('button');
-      declineBtn.className = 'friend-btn friend-btn-decline';
-      declineBtn.textContent = '✕ Decline';
-      declineBtn.onclick = () => respondRequest(requestId, 'decline');
-      container.appendChild(declineBtn);
-
-    } else {
-      const addBtn = document.createElement('button');
-      addBtn.className = 'friend-btn friend-btn-add';
-      addBtn.innerHTML = '👤+ Add Friend';
-      addBtn.onclick = sendRequest;
-      container.appendChild(addBtn);
-    }
-  }
-
-  function loadStatus() {
-    fetch('/chat/friends/status/' + USERNAME + '/')
-      .then(r => r.json())
-      .then(data => renderActions(data.status, data.request_id));
-  }
-
-  function sendRequest() {
-    const form = new FormData();
-    form.append('username', USERNAME);
-    fetch('/chat/friends/send/', {
-      method: 'POST',
-      headers: {'X-CSRFToken': csrfToken},
-      body: form,
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'accepted') {
-        renderActions('friends');
-      } else {
-        renderActions('request_sent');
-      }
-    });
-  }
-
-  function respondRequest(id, action) {
-    const form = new FormData();
-    form.append('action', action);
-    fetch('/chat/friends/respond/' + id + '/', {
-      method: 'POST',
-      headers: {'X-CSRFToken': csrfToken},
-      body: form,
-    })
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'accepted') renderActions('friends');
-      else renderActions('none');
-    });
-  }
-
-  loadStatus();
-})();
-</script>
 {% endblock %}

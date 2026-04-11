@@ -188,33 +188,19 @@ class CustomUser(AbstractUser):
     # ── Friend helpers ─────────────────────────
     @property
     def friends(self):
-        """Return a queryset of users who are accepted friends."""
-        from apps.chat.models import FriendRequest
-        from django.db.models import Q
-        accepted = FriendRequest.objects.filter(
-            Q(sender=self) | Q(receiver=self),
-            status=FriendRequest.Status.ACCEPTED,
-        )
-        friend_ids = set()
-        for fr in accepted:
-            friend_ids.add(fr.sender_id if fr.receiver_id == self.pk else fr.receiver_id)
-        return CustomUser.objects.filter(pk__in=friend_ids)
+        """Social features removed — return empty queryset."""
+        return CustomUser.objects.none()
 
     @property
     def pending_sent_requests(self):
-        return self.sent_friend_requests.filter(status="pending")
+        return []
 
     @property
     def pending_received_requests(self):
-        return self.received_friend_requests.filter(status="pending")
+        return []
 
     def is_friend(self, other_user) -> bool:
-        from apps.chat.models import FriendRequest
-        from django.db.models import Q
-        return FriendRequest.objects.filter(
-            Q(sender=self, receiver=other_user) | Q(sender=other_user, receiver=self),
-            status=FriendRequest.Status.ACCEPTED,
-        ).exists()
+        return False
 
     @property
     def win_rate(self) -> float:

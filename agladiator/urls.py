@@ -15,8 +15,7 @@ urlpatterns = [
     path("users/", include("django.contrib.auth.urls")),  # password_reset, etc.
     path("tournaments/", include("apps.tournaments.urls")),
     path("games/", include("apps.games.urls")),
-    path("forum/", include("apps.forum.urls")),
-    path("chat/", include("apps.chat.urls")),
+    # Forum and chat URL includes removed
 ]
 
 if settings.DEBUG:

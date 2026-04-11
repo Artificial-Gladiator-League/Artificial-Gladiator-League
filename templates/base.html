@@ -124,7 +124,7 @@
             </div>
           </div>
           <a href="{% url 'core:leaderboard' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
-          <a href="{% url 'forum:home' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Forum</a>
+          <!-- Forum removed -->
         </div>
 
         <!-- Right side: search, theme toggle, auth -->
@@ -184,10 +184,7 @@
                   Profile
                 </a>
 
-                <a href="{% url 'chat:inbox' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
-                  <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
-                  Messages
-                </a>
+                <!-- Messages removed -->
                 <a href="{% url 'games:history' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
                   <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                   Battle History
@@ -228,11 +225,11 @@
       <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">➕ Create Lobby Game</button>
       <a href="{% url 'tournaments:list' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">⚔️ Arena Tournament</a>
       <a href="{% url 'core:leaderboard' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">🏆 Leaderboards</a>
-      <a href="{% url 'forum:home' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">💬 Forum</a>
+      <!-- Forum removed -->
       <hr class="border-gray-200 dark:border-borderDark">
       {% if user.is_authenticated %}
         <a href="{% url 'users:profile' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">👤 {% fide_badge user %} {{ user.username }}</a>
-      <a href="{% url 'chat:inbox' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">💬 Messages</a>
+      <!-- Messages removed -->
       <a href="#" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight" onclick="document.getElementById('notifBellBtn')?.click()">🔔 Notifications <span id="notifBadgeMobile" class="hidden ml-1 text-[0.6rem] font-bold text-white bg-red-500 rounded-full px-1.5 py-0.5">0</span></a>
         <form method="post" action="{% url 'users:logout' %}">
           {% csrf_token %}

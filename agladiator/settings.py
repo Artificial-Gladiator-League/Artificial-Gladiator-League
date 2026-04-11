@@ -32,8 +32,7 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.tournaments",
     "apps.games",
-    "apps.forum",
-    "apps.chat",
+    # Forum and chat apps removed
     # Third‑party
     "channels",
     "django_apscheduler",
