@@ -138,15 +138,6 @@
           </div>
 
           {% if user.is_authenticated %}
-            <!-- User search -->
-            <div class="relative hidden sm:block" id="userSearchWrap">
-              <div class="flex items-center bg-gray-100 dark:bg-surfaceLight border border-transparent focus-within:border-brand rounded-lg px-2.5 py-1.5 transition">
-                <svg class="h-3.5 w-3.5 text-gray-400 mr-1.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-                <input type="text" id="userSearchInput" placeholder="Search users…" autocomplete="off"
-                       class="bg-transparent outline-none text-sm w-36 lg:w-48 text-gray-800 dark:text-gray-200 placeholder-gray-400">
-              </div>
-              <div id="userSearchResults" class="hidden absolute right-0 mt-1 w-64 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl overflow-hidden z-50"></div>
-            </div>
 
             <!-- 🔔 Notification bell -->
             <div class="relative" id="notifBellWrap">
