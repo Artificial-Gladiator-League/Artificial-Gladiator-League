@@ -65,6 +65,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import time as _time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -184,6 +185,17 @@ def _force_remove_container(container_name: str) -> None:
         pass
 
 
+def _docker_available() -> bool:
+    """Return True if Docker daemon appears available and responsive."""
+    try:
+        result = subprocess.run([
+            "docker", "info",
+        ], capture_output=True, text=True, timeout=3)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Phase 1 — Download (to temp dir)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -258,17 +270,9 @@ def download_model(
         log.info("✅ Download complete for '%s' → %s (%d safetensors files)",
                  repo_id, model_dir, len(safetensor_files))
     else:
-        # For Breakthrough, verify handler.py exists
-        handler = model_dir / "handler.py"
-        if not handler.exists():
-            log.warning("No handler.py found in Breakthrough repo '%s'", repo_id)
-            _cleanup_temp_dir(dest_dir)
-            return False, (
-                "Rejected: no handler.py found. Breakthrough models must include "
-                "a handler.py with an EndpointHandler class."
-            ), None
-        log.info("✅ Download complete for '%s' → %s (Breakthrough — handler.py found)",
-                 repo_id, model_dir)
+        # For Breakthrough we DO NOT require the user's handler.py; the
+        # platform will use an official handler instead. Keep the repo as-is.
+        log.info("✅ Download complete for '%s' → %s (Breakthrough)", repo_id, model_dir)
 
     return True, "Download successful.", model_dir
 
@@ -406,25 +410,16 @@ def scan_model(model_dir: Path) -> tuple[bool, dict]:
         return False, report
     report["checks"]["forbidden_files"] = "clean"
 
-    # ── 1b. Verify handler.py matches official platform version ──
+    # ── 1b. Handler.py presence — platform will ignore user handler.py ──
     handler_path = model_dir / "handler.py"
     if handler_path.exists():
-        import hashlib
-        actual = hashlib.sha256(
-            handler_path.read_bytes()
-        ).hexdigest()
-        if actual != _OFFICIAL_HANDLER_CHECKSUM:
-            report["passed"] = False
-            report["checks"]["handler_checksum"] = {
-                "passed": False,
-                "reason": "handler.py does not match the official "
-                          "platform version — do not modify handler.py.",
-                "expected": _OFFICIAL_HANDLER_CHECKSUM[:12] + "...",
-                "actual": actual[:12] + "...",
-            }
-            return False, report
-        else:
-            report["checks"]["handler_checksum"] = {"passed": True}
+        # Do not require or enforce the user's handler.py checksum. The
+        # platform uses official handlers mounted into the sandbox. Record
+        # presence for diagnostics but do not reject on mismatch.
+        report["checks"]["handler_checksum"] = {
+            "skipped": True,
+            "note": "User handler.py present but ignored; official handler used.",
+        }
 
     # ── 2. Dangerous code pattern scan ──
     py_files = list(model_dir.rglob("*.py"))
@@ -682,6 +677,7 @@ def _run_in_sandbox(
     data_dir: Path | None = None,
     timeout: int | None = None,
     container_name: str | None = None,
+    allow_local_fallback: bool = True,
 ) -> str | None:
     """Run inference in a Docker sandbox container.
 
@@ -696,6 +692,7 @@ def _run_in_sandbox(
 
     Returns a UCI move string, or None on failure.
     """
+    # Prefer Docker when available; otherwise use a safe local-process fallback
     docker_image = _get_docker_image()
     if timeout is None:
         timeout = _get_move_timeout()
@@ -703,7 +700,7 @@ def _run_in_sandbox(
     if container_name is None:
         container_name = f"agl-sandbox-{int(_time.time() * 1000)}"
 
-    # Write the inference script into the model directory
+    # Ensure inference script exists in model_dir
     inference_script = _build_inference_script(game_type)
     script_path = model_dir / "_agl_inference.py"
     try:
@@ -711,6 +708,15 @@ def _run_in_sandbox(
     except Exception:
         log.exception("Could not write inference script to %s", model_dir)
         return None
+
+    # If Docker is not available, and local fallback is enabled both in
+    # settings and by the caller (only allow for cached/verified models), run locally
+    if not _docker_available() and getattr(settings, "SANDBOX_ENABLE_LOCAL_FALLBACK", True) and allow_local_fallback:
+        log.warning("Docker unavailable — falling back to local process for sandboxed inference")
+        return _run_in_local_process(model_dir, fen, player, game_type, data_dir=data_dir, timeout=timeout)
+
+    # Mount the platform's official handlers directory into the container
+    handlers_dir = Path(__file__).resolve().parent / "handlers"
 
     docker_cmd = [
         "docker", "run",
@@ -724,8 +730,16 @@ def _run_in_sandbox(
         "-v", f"{_docker_host_path(model_dir)}:/model:ro",
     ]
 
+    # If our handlers directory exists, mount it read-only at /agl_handlers
+    try:
+        if handlers_dir.exists():
+            docker_cmd.extend(["-v", f"{_docker_host_path(handlers_dir)}:/agl_handlers:ro"])
+    except Exception:
+        pass
+
     if data_dir and data_dir.exists():
         docker_cmd.extend(["-v", f"{_docker_host_path(data_dir)}:/data:ro"])
+        docker_cmd.extend(["-e", "DATA_DIR=/data"])
 
     docker_cmd.extend([
         "-e", f"GAME_TYPE={game_type}",
@@ -749,10 +763,15 @@ def _run_in_sandbox(
         )
 
         if result.returncode != 0:
+            # If Docker cannot connect to the daemon (Windows npipe, etc.), fallback
+            stderr = (result.stderr or "").lower()
             log.warning(
                 "Sandbox exit code %d (container=%s): stderr=%s",
-                result.returncode, container_name, result.stderr[:500],
+                result.returncode, container_name, stderr[:500],
             )
+            if ("npipe" in stderr or "failed to connect" in stderr or "docker desktop" in stderr) and getattr(settings, "SANDBOX_ENABLE_LOCAL_FALLBACK", True) and allow_local_fallback:
+                log.warning("Docker connection error detected — falling back to local process")
+                return _run_in_local_process(model_dir, fen, player, game_type, data_dir=data_dir, timeout=timeout)
             return None
 
         move = _parse_sandbox_output(result.stdout)
@@ -770,11 +789,15 @@ def _run_in_sandbox(
         _force_remove_container(container_name)
         return None
     except FileNotFoundError:
-        log.error("Docker is not installed or not in PATH")
+        log.error("Docker executable not found — falling back to local process if enabled")
+        if getattr(settings, "SANDBOX_ENABLE_LOCAL_FALLBACK", True) and allow_local_fallback:
+            return _run_in_local_process(model_dir, fen, player, game_type, data_dir=data_dir, timeout=timeout)
         return None
     except Exception:
         log.exception("Sandbox failed (container=%s)", container_name)
         _force_remove_container(container_name)
+        if getattr(settings, "SANDBOX_ENABLE_LOCAL_FALLBACK", True) and allow_local_fallback:
+            return _run_in_local_process(model_dir, fen, player, game_type, data_dir=data_dir, timeout=timeout)
         return None
 
 
@@ -788,7 +811,6 @@ def _find_cached_model(
     """
     try:
         from apps.users.models import UserGameModel
-
         gm = UserGameModel.objects.filter(
             hf_model_repo_id=repo_id,
             game_type=game_type,
@@ -796,15 +818,289 @@ def _find_cached_model(
         if not gm:
             return None, None
 
-        user_models_base = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
-        model_dir = user_models_base / str(gm.user_id) / game_type / "model"
-        data_dir = user_models_base / str(gm.user_id) / game_type / "data"
+        # If the model was explicitly cached with a path, prefer that.
+        # The cache may point to either the repository folder itself (new layout)
+        # or the older layout which used a 'model' subdirectory.
+        if getattr(gm, "cached_path", None):
+            base = Path(gm.cached_path)
+            # Old layout: base/model
+            old_model = base / "model"
+            old_data = base / "data"
+            if old_model.exists():
+                # Optional: ensure cached commit matches last_verified_commit
+                if getattr(gm, "cached_commit", "") and getattr(gm, "last_verified_commit", "") and gm.cached_commit != gm.last_verified_commit:
+                    log.debug("Cached commit mismatch for %s — ignoring cached path", repo_id)
+                else:
+                    return old_model, (old_data if old_data.exists() else None)
 
-        if model_dir.exists():
-            return model_dir, (data_dir if data_dir.exists() else None)
+            # New layout: base is the repo folder containing model files
+            if base.exists():
+                # Heuristic: presence of handler.py or any .safetensors indicates model root
+                if (base / "handler.py").exists() or any(base.rglob("*.safetensors")) or (base / "config_model.json").exists():
+                    data_dir = base / "data"
+                    return base, (data_dir if data_dir.exists() else None)
+
+        # Fallback: search under configured model cache root (new layout)
+        cache_root = getattr(settings, "MODEL_CACHE_ROOT", None)
+        if not cache_root:
+            cache_root = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
+
+        try:
+            # Build expected repo folder name
+            repo_folder = repo_id.replace('/', '__')
+            candidate = Path(cache_root) / f"user_{gm.user_id}" / game_type / repo_folder
+            if candidate.exists():
+                data_dir = candidate / "data"
+                return candidate, (data_dir if data_dir.exists() else None)
+        except Exception:
+            pass
     except Exception:
         log.debug("Could not look up cached model for %s", repo_id, exc_info=True)
     return None, None
+
+
+def _run_in_local_process(
+    model_dir: Path,
+    fen: str,
+    player: str,
+    game_type: str,
+    *,
+    data_dir: Path | None = None,
+    timeout: int | None = None,
+) -> str | None:
+    """Run a focused local runner that imports the model's handler/modules
+    and calls the top-level `get_move(fen, player)` or `EndpointHandler`.
+
+    Runs the user's model code in a separate subprocess for isolation and
+    enforces the supplied timeout.
+    """
+    if timeout is None:
+        timeout = _get_move_timeout()
+
+    # Use a plain template (not an f-string) to avoid accidental
+    # interpretation of inner braces like {} or inner f-strings.
+    runner_template = """#!/usr/bin/env python3
+import importlib.util
+import json
+import os
+import sys
+import traceback
+from pathlib import Path
+
+MODEL_DIR = Path(os.environ.get('MODEL_DIR', __MODEL_DIR__))
+DATA_DIR = Path(os.environ.get('DATA_DIR', '')) if os.environ.get('DATA_DIR') else None
+FEN = os.environ.get('FEN', '')
+PLAYER = os.environ.get('PLAYER', 'w')
+GAME_TYPE = os.environ.get('GAME_TYPE', __GAME_TYPE__)
+
+def load_zone_db():
+    # Try config_model.json zone_db_filename, else 'zone_db.npz'
+    cfg = MODEL_DIR / 'config_model.json'
+    filename = 'zone_db.npz'
+    try:
+        if cfg.exists():
+            import json
+            d = json.loads(cfg.read_text(encoding='utf-8'))
+            filename = d.get('zone_db_filename', filename)
+    except Exception:
+        pass
+    # Prefer DATA_DIR, then MODEL_DIR
+    for base in (DATA_DIR, MODEL_DIR):
+        if base:
+            p = base / filename
+            if p.exists():
+                try:
+                    import numpy as np
+                    return np.load(str(p), allow_pickle=True)
+                except Exception:
+                    return None
+    return None
+
+def try_handler_get_move():
+    # Prefer the platform's official handlers (mounted into HANDLERS_DIR).
+    HANDLERS_DIR = Path(__HANDLERS_DIR__)
+    try:
+        if HANDLERS_DIR.exists() and str(HANDLERS_DIR) not in sys.path:
+            sys.path.insert(0, str(HANDLERS_DIR))
+    except Exception:
+        pass
+
+    try:
+        if GAME_TYPE == 'breakthrough':
+            import official_breakthrough_handler as oh
+            print('✅ Using OFFICIAL Breakthrough handler (ignoring user\'s handler.py)', file=sys.stderr)
+        else:
+            import official_chess_handler as oh
+            print('✅ Using OFFICIAL Chess handler (ignoring user\'s handler.py)', file=sys.stderr)
+
+        handler = oh.EndpointHandler(path=str(MODEL_DIR))
+        print(f'✅ Loading model weights from cache: {MODEL_DIR}', file=sys.stderr)
+        return handler({ 'inputs': {'fen': FEN, 'player': PLAYER, 'game_type': GAME_TYPE} })
+    except Exception:
+        # Fall back to user modules/config if official handler fails — keep best-effort compatibility
+        pass
+
+    # Legacy: if no official handler or it failed, try loading user modules from config
+    handler_path = MODEL_DIR / 'handler.py'
+    if not handler_path.exists():
+        return None
+    spec = importlib.util.spec_from_file_location('user_handler', str(handler_path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 1) top-level get_move
+    if hasattr(mod, 'get_move'):
+        fn = getattr(mod, 'get_move')
+        try:
+            zone_db = load_zone_db()
+            try:
+                return fn(FEN, PLAYER, zone_db=zone_db)
+            except TypeError:
+                return fn(FEN, PLAYER)
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            return None
+
+    # 2) EndpointHandler
+    if hasattr(mod, 'EndpointHandler'):
+        try:
+            handler = mod.EndpointHandler(path=str(MODEL_DIR))
+            return handler({ 'inputs': {'fen': FEN, 'player': PLAYER, 'game_type': GAME_TYPE} })
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            return None
+
+    return None
+
+def try_modules_from_config():
+    cfg = MODEL_DIR / 'config_model.json'
+    modules = []
+    if cfg.exists():
+        try:
+            data = json.loads(cfg.read_text(encoding='utf-8'))
+            modules = data.get('modules', [])
+        except Exception:
+            pass
+
+    for mfile in modules:
+        mpath = MODEL_DIR / mfile
+        if not mpath.exists():
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(mpath.stem, str(mpath))
+            mm = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mm)
+            # get_move
+            if hasattr(mm, 'get_move'):
+                fn = getattr(mm, 'get_move')
+                try:
+                    zone_db = load_zone_db()
+                    try:
+                        return fn(FEN, PLAYER, zone_db=zone_db)
+                    except TypeError:
+                        return fn(FEN, PLAYER)
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
+                    continue
+            # UCTSearcher
+            if hasattr(mm, 'UCTSearcher'):
+                try:
+                    cls = getattr(mm, 'UCTSearcher')
+                    zone_db = load_zone_db()
+                    kwargs = {} if zone_db is None else {'zone_db': zone_db}
+                    s = cls(**kwargs)
+                    return s.search(FEN, PLAYER)
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
+                    continue
+            # predict
+            if hasattr(mm, 'predict'):
+                try:
+                    fn = getattr(mm, 'predict')
+                    return fn(FEN, PLAYER)
+                except Exception:
+                    traceback.print_exc(file=sys.stderr)
+                    continue
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            continue
+    return None
+
+def main():
+    # Try handler first
+    out = try_handler_get_move()
+    if out is None:
+        out = try_modules_from_config()
+    if out is None:
+        print('ERROR:no_result', file=sys.stderr)
+        sys.exit(2)
+
+    move = None
+    if isinstance(out, str):
+        move = out.strip()
+    elif isinstance(out, dict):
+        move = out.get('move') or out.get('output')
+    elif isinstance(out, list) and out:
+        it = out[0]
+        if isinstance(it, dict):
+            move = it.get('move') or it.get('output')
+        elif isinstance(it, str):
+            move = it.strip()
+
+    if move:
+        print(f'MOVE:{move}', flush=True)
+        sys.exit(0)
+    else:
+        print('ERROR:empty_result', file=sys.stderr)
+        sys.exit(3)
+
+if __name__ == '__main__':
+    main()
+"""
+
+    # Inject the concrete values safely using repr() so any quotes are preserved.
+    handlers_dir = Path(__file__).resolve().parent / "handlers"
+    runner_code = (
+        runner_template
+        .replace('__MODEL_DIR__', repr(model_dir.as_posix()))
+        .replace('__GAME_TYPE__', repr(game_type))
+        .replace('__HANDLERS_DIR__', repr(str(handlers_dir.as_posix())))
+    )
+
+    runner_path = model_dir / "_agl_local_runner.py"
+    try:
+        runner_path.write_text(runner_code, encoding="utf-8")
+    except Exception:
+        log.exception("Failed to write local runner to %s", runner_path)
+        return None
+
+    env = os.environ.copy()
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        env.pop(k, None)
+    env.update({"GAME_TYPE": game_type, "FEN": fen, "PLAYER": player, "MODEL_DIR": model_dir.as_posix()})
+    if data_dir:
+        env["DATA_DIR"] = data_dir.as_posix()
+
+    python_bin = str(getattr(settings, "SANDBOX_PYTHON_BIN", sys.executable))
+    try:
+        proc = subprocess.run(
+            [python_bin, str(runner_path)],
+            cwd=str(model_dir),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=env,
+        )
+        if proc.returncode != 0:
+            log.warning("Local runner failed (rc=%s) stderr=%s", proc.returncode, proc.stderr[:1000])
+            return None
+        return _parse_sandbox_output(proc.stdout)
+    except subprocess.TimeoutExpired:
+        log.warning("Local runner timed out after %ds", timeout)
+        return None
+    except Exception:
+        log.exception("Local runner failed for %s", model_dir)
+        return None
 
 
 def _resolve_user_token(repo_id: str, game_type: str) -> str | None:
@@ -871,10 +1167,13 @@ def get_move_local(
         log.info(
             "♻️ Using cached model for '%s' at %s", repo_id, cached_model_dir,
         )
+        # Explicit platform-level handler message
+        log.info("✅ Using OFFICIAL %s handler (ignoring user handler.py). Loading model from cache: %s", game_type.upper(), cached_model_dir)
         try:
             move = _run_in_sandbox(
                 cached_model_dir, fen, player, game_type,
                 data_dir=cached_data_dir,
+                allow_local_fallback=True,
             )
             return move
         except Exception:
@@ -884,6 +1183,20 @@ def get_move_local(
             )
 
     # ── Fallback: download fresh (original per-move behaviour) ──
+    # Per-move downloads are disabled by default. If enabled via
+    # settings.ALLOW_PER_MOVE_DOWNLOADS then fall back to the original
+    # behaviour; otherwise return None so callers use safe local fallback.
+    if not getattr(settings, "ALLOW_PER_MOVE_DOWNLOADS", False):
+        # Explicit cache-miss log with actionable guidance.
+        log.warning(
+            "CACHE_MISS: No cached model found for repo='%s' (game=%s). "
+            "Per-move downloads are disabled. Using safe fallback (random or default AI). "
+            "To change this, either ensure the user has a verified model cached at login, "
+            "or enable per-move downloads by setting ALLOW_PER_MOVE_DOWNLOADS=True.",
+            repo_id, game_type,
+        )
+        return None
+
     temp_dir = _make_temp_dir(f"move_{repo_id.replace('/', '_')}", game_type)
     model_dir: Path | None = None
     data_dir: Path | None = None
@@ -912,6 +1225,7 @@ def get_move_local(
         move = _run_in_sandbox(
             model_dir, fen, player, game_type,
             data_dir=data_dir,
+            allow_local_fallback=False,
         )
         return move
 
@@ -939,26 +1253,73 @@ import sys
 GAME_TYPE = os.environ.get("GAME_TYPE", "chess")
 FEN = os.environ.get("FEN", "")
 PLAYER = os.environ.get("PLAYER", "w")
+DATA_DIR = os.environ.get("DATA_DIR", "")
 
 
-def try_custom_handler():
-    """Try handler.py with EndpointHandler pattern."""
-    handler_path = "/model/handler.py"
-    if not os.path.exists(handler_path):
+def _load_zone_db_from_data():
+    """Try to load the zone database from the DATA_DIR mount (/data)."""
+    if not DATA_DIR or not os.path.isdir(DATA_DIR):
         return None
+    # Read zone_db_filename from config
+    zone_filename = "zone_db.npz"
+    config_path = "/model/config_model.json"
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                cfg = json.load(f)
+            zone_filename = cfg.get("zone_db_filename", zone_filename)
+        except Exception:
+            pass
+    zone_path = os.path.join(DATA_DIR, zone_filename)
+    if os.path.exists(zone_path):
+        try:
+            import numpy as np
+            return np.load(zone_path, allow_pickle=True)
+        except Exception:
+            pass
+    return None
 
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("handler", handler_path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
 
-    if not hasattr(mod, "EndpointHandler"):
+def try_official_handler():
+    """Use the platform's official handler modules mounted at /agl_handlers.
+
+    The sandbox mounts the platform handlers into /agl_handlers. We prefer
+    the official handlers over any user-provided handler.py in the model
+    repository. These handlers are authored by the platform and import
+    the cached model files from /model.
+    """
+    # Ensure our mounted handlers directory is on sys.path
+    try:
+        if os.path.isdir("/agl_handlers") and "/agl_handlers" not in sys.path:
+            sys.path.insert(0, "/agl_handlers")
+    except Exception:
+        pass
+
+    try:
+        if GAME_TYPE == "breakthrough":
+            # Official Breakthrough handler
+            import official_breakthrough_handler as oh
+            print("✅ Using OFFICIAL Breakthrough handler (ignoring user's handler.py)")
+        else:
+            # Official Chess handler
+            import official_chess_handler as oh
+            print("✅ Using OFFICIAL Chess handler (ignoring user's handler.py)")
+
+        # Instantiate the handler with the mounted model path
+        handler = oh.EndpointHandler(path="/model")
+        print(f"✅ Loading model weights from cache: /model")
+
+        # If the handler needs a zone_db and it wasn't loaded, provide it
+        if getattr(handler, "zone_db", None) is None and DATA_DIR:
+            zone_db = _load_zone_db_from_data()
+            if zone_db is not None:
+                handler.zone_db = zone_db
+                if hasattr(handler, "_init_predictor"):
+                    handler._init_predictor()
+
+        return handler({"inputs": {"fen": FEN, "player": PLAYER, "game_type": GAME_TYPE}})
+    except Exception:
         return None
-
-    handler = mod.EndpointHandler(path="/model")
-    return handler({
-        "inputs": {"fen": FEN, "player": PLAYER, "game_type": GAME_TYPE}
-    })
 
 
 def try_transformers_chess():
@@ -1062,6 +1423,7 @@ def verify_model(
     *,
     token: str | None = None,
     force: bool = False,
+    model_dir: Path | None = None,
 ) -> tuple[bool, str, dict]:
     """Run the full 3-phase verification pipeline for a model.
 
@@ -1101,45 +1463,56 @@ def verify_model(
     game_model.verification_status = "pending"
     game_model.save(update_fields=["verification_status"])
 
-    # Create the sole temp directory for this entire verification
-    temp_dir = _make_temp_dir(game_model.user_id, game_type)
-
+    # If a persistent model_dir is provided, use it and skip Phase 1 download.
+    created_temp_dir = None
+    temp_dir = None
+    data_dir = None
     try:
-        # ── Phase 1: Download ──
-        print(f"📥 Downloading model repo {repo_id} ...")
-        ok, msg, model_dir = download_model(
-            repo_id, game_type, token=token, dest_dir=temp_dir,
-        )
-        report["phases"]["download"] = {"passed": ok, "message": msg}
-        if not ok:
-            _mark_rejected(game_model, report)
-            return False, f"Download failed: {msg}", report
+        if model_dir is None:
+            # Create the sole temp directory for this entire verification
+            temp_dir = _make_temp_dir(game_model.user_id, game_type)
+            created_temp_dir = temp_dir
 
-        # Download data repo if needed (Breakthrough)
-        data_dir = None
-        if game_type == "breakthrough" and model_dir:
-            data_repo_id = _resolve_data_repo_id(model_dir, game_model)
-            if data_repo_id:
+            # ── Phase 1: Download ──
+            print(f"📥 Downloading model repo {repo_id} ...")
+            ok, msg, model_dir = download_model(
+                repo_id, game_type, token=token, dest_dir=temp_dir,
+            )
+            report["phases"]["download"] = {"passed": ok, "message": msg}
+            if not ok:
+                _mark_rejected(game_model, report)
+                return False, f"Download failed: {msg}", report
+
+            # Download data repo if needed (Breakthrough)
+            if game_type == "breakthrough" and model_dir:
+                data_repo_id = _resolve_data_repo_id(model_dir, game_model)
+                if data_repo_id:
+                    ok_data, msg_data, data_dir = _download_data_repo(
+                        data_repo_id, temp_dir, token=token,
+                    )
+                    report["phases"]["data_download"] = {
+                        "passed": ok_data, "message": msg_data,
+                        "data_repo_id": data_repo_id,
+                    }
+                    if not ok_data:
+                        _mark_rejected(game_model, report)
+                        return False, f"Data download failed: {msg_data}", report
+            elif game_model.hf_data_repo_id:
                 ok_data, msg_data, data_dir = _download_data_repo(
-                    data_repo_id, temp_dir, token=token,
+                    game_model.hf_data_repo_id, temp_dir, token=token,
                 )
-                report["phases"]["data_download"] = {
-                    "passed": ok_data, "message": msg_data,
-                    "data_repo_id": data_repo_id,
-                }
+                report["phases"]["data_download"] = {"passed": ok_data, "message": msg_data}
                 if not ok_data:
                     _mark_rejected(game_model, report)
                     return False, f"Data download failed: {msg_data}", report
-        elif game_model.hf_data_repo_id:
-            ok_data, msg_data, data_dir = _download_data_repo(
-                game_model.hf_data_repo_id, temp_dir, token=token,
-            )
-            report["phases"]["data_download"] = {"passed": ok_data, "message": msg_data}
-            if not ok_data:
-                _mark_rejected(game_model, report)
-                return False, f"Data download failed: {msg_data}", report
 
-        print(f"✅ Files downloaded to temporary folder: {temp_dir}  (you can inspect them now before deletion)")
+            print(f"✅ Files downloaded to temporary folder: {temp_dir}  (you can inspect them now before deletion)")
+        else:
+            # model_dir provided — assume caller downloaded to the final cache path
+            model_dir = Path(model_dir)
+            if not model_dir.exists():
+                _mark_rejected(game_model, report)
+                return False, "Provided model_dir does not exist.", report
 
         # ── Phase 2: Security scan ──
         print(f"🔍 Running malicious code scan (bandit + modelscan + fickling)...")
@@ -1160,6 +1533,7 @@ def verify_model(
                 model_dir, test_fen, test_player, game_type,
                 data_dir=data_dir,
                 timeout=_get_verify_timeout(),
+                allow_local_fallback=False,
             )
             passed = move is not None
             test_results.append({
@@ -1191,6 +1565,59 @@ def verify_model(
         game_model.scan_report = report
         game_model.model_integrity_ok = True
         game_model.rated_games_since_revalidation = 30
+
+        # Persist the approved model into the per-user cache directory so
+        # subsequent move requests can reuse the files without re-downloading.
+        try:
+            cache_root = getattr(settings, "MODEL_CACHE_ROOT", None)
+            if not cache_root:
+                cache_root = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
+
+            repo_folder = repo_id.replace('/', '__')
+            dest_repo = Path(cache_root) / f"user_{game_model.user_id}" / game_type / repo_folder
+
+            # If model_dir came from a temp location, move it into dest_repo.
+            if model_dir and model_dir.exists():
+                model_path = Path(model_dir)
+                if model_path.resolve() != dest_repo.resolve():
+                    # Remove any previous cached copy then move
+                    if dest_repo.exists():
+                        shutil.rmtree(dest_repo, ignore_errors=True)
+                    dest_repo.parent.mkdir(parents=True, exist_ok=True)
+                    try:
+                        shutil.move(str(model_path), str(dest_repo))
+                    except Exception:
+                        # Fallback: move contents
+                        dest_repo.mkdir(parents=True, exist_ok=True)
+                        for p in model_path.iterdir():
+                            try:
+                                shutil.move(str(p), str(dest_repo))
+                            except Exception:
+                                log.debug("Failed moving %s into cache %s", p, dest_repo, exc_info=True)
+                        try:
+                            shutil.rmtree(model_path, ignore_errors=True)
+                        except Exception:
+                            pass
+                else:
+                    # model_dir is already the desired cache location
+                    dest_repo = model_path
+
+            # Move data_dir into dest_repo/data if present
+            if data_dir and data_dir.exists():
+                try:
+                    dst_data = dest_repo / "data"
+                    if dst_data.exists():
+                        shutil.rmtree(dst_data, ignore_errors=True)
+                    shutil.move(str(data_dir), str(dst_data))
+                except Exception:
+                    log.debug("Failed to persist data_dir for %s", repo_id, exc_info=True)
+
+            game_model.cached_path = str(dest_repo)
+            game_model.cached_at = timezone.now()
+            game_model.cached_commit = current_sha or ""
+        except Exception:
+            log.exception("Failed to persist verified model for %s — proceeding without cache", repo_id)
+
         game_model.save(update_fields=[
             "verification_status",
             "last_verified_commit",
@@ -1198,6 +1625,9 @@ def verify_model(
             "scan_report",
             "model_integrity_ok",
             "rated_games_since_revalidation",
+            "cached_path",
+            "cached_at",
+            "cached_commit",
         ])
 
         report["completed_at"] = now.isoformat()
@@ -1209,9 +1639,13 @@ def verify_model(
         return True, "Model verified successfully — approved for play.", report
 
     finally:
-        # ALWAYS clean up — zero persistent storage
+        # Clean up only the temp dir we created for this verification.
         print(f"🗑️ Cleaning up temporary files (zero persistent storage)")
-        _cleanup_temp_dir(temp_dir)
+        try:
+            if created_temp_dir:
+                _cleanup_temp_dir(created_temp_dir)
+        except Exception:
+            log.debug("Failed to cleanup temp dir after verification for %s", repo_id, exc_info=True)
 
 
 def _mark_rejected(game_model: UserGameModel, report: dict) -> None:

@@ -170,6 +170,16 @@ class EndpointHandler:
                     local_zone,
                 )
 
+        # Fall back to DATA_DIR env var (set by Agladiator Docker sandbox
+        # when a separate data repository is mounted at /data).
+        if self.zone_db is None:
+            data_dir_env = os.environ.get("DATA_DIR", "")
+            if data_dir_env:
+                data_zone = Path(data_dir_env) / zone_db_filename
+                if data_zone.exists():
+                    self.zone_db = np.load(str(data_zone), allow_pickle=True)
+                    log.info("Zone DB loaded from DATA_DIR %s", data_zone)
+
         # ── 4. Initialise the predictor ─────────
         self._init_predictor()
         log.info("EndpointHandler initialised successfully.")

@@ -195,6 +195,20 @@ def _run_chess_game(game) -> None:
     log.info("[game %s] ♚ Black: %s (repo=%s)", game.pk,
              game.black.username if game.black else '?', black_repo)
 
+    # Log cached paths for white/black if present (official handler will use these)
+    try:
+        from apps.users.models import UserGameModel
+        if white_repo:
+            w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='chess').first()
+            if w_gm and getattr(w_gm, 'cached_path', None):
+                log.info("[game %s] ✅ Loading white model weights from cache: %s", game.pk, w_gm.cached_path)
+        if black_repo:
+            b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='chess').first()
+            if b_gm and getattr(b_gm, 'cached_path', None):
+                log.info("[game %s] ✅ Loading black model weights from cache: %s", game.pk, b_gm.cached_path)
+    except Exception:
+        log.debug("Could not query UserGameModel cached paths", exc_info=True)
+
     if not white_repo or not black_repo:
         log.error("❌ run_bot_game: Missing HF repo for game %s", game.pk)
         _forfeit_game(game, "white" if not white_repo else "black")
@@ -292,6 +306,20 @@ def _run_breakthrough_game(game) -> None:
              game.white.username if game.white else '?', white_repo)
     log.info("[game %s] ♚ Black: %s (repo=%s)", game.pk,
              game.black.username if game.black else '?', black_repo)
+
+    # Log cached paths for white/black if present (official handler will use these)
+    try:
+        from apps.users.models import UserGameModel
+        if white_repo:
+            w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='breakthrough').first()
+            if w_gm and getattr(w_gm, 'cached_path', None):
+                log.info("[game %s] ✅ Loading white model weights from cache: %s", game.pk, w_gm.cached_path)
+        if black_repo:
+            b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='breakthrough').first()
+            if b_gm and getattr(b_gm, 'cached_path', None):
+                log.info("[game %s] ✅ Loading black model weights from cache: %s", game.pk, b_gm.cached_path)
+    except Exception:
+        log.debug("Could not query UserGameModel cached paths", exc_info=True)
 
     if not white_repo and not black_repo:
         log.error("❌ run_bot_game: Missing HF repos for Breakthrough game %s", game.pk)

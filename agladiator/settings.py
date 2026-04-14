@@ -2,6 +2,7 @@
 # agladiator/settings.py — Artificial Gladiator
 # ──────────────────────────────────────────────
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -107,7 +108,35 @@ CACHES = {
 }
 
 # ── User model storage ────────────────────────
-USER_MODELS_BASE_DIR = Path("/tmp/user_models")
+# Per-user cached model storage (populated on verification, cleaned on logout).
+# Default is a system path; override with AGL_USER_MODELS_DIR env var.
+USER_MODELS_BASE_DIR = Path(os.environ.get("AGL_USER_MODELS_DIR", "/var/lib/agladiator/user_models"))
+SHARED_MODELS_BASE_DIR = Path(os.environ.get("AGL_SHARED_MODELS_DIR", "/var/lib/agladiator/shared_models"))
+
+# Persistent model cache root used by download/verify routines. If
+# `MODEL_CACHE_ROOT` is set in the environment it will be used; otherwise
+# fall back to `USER_MODELS_BASE_DIR` for compatibility.
+MODEL_CACHE_ROOT = Path(os.environ.get("MODEL_CACHE_ROOT", str(USER_MODELS_BASE_DIR)))
+
+# Ensure Hugging Face cache environment variables point into the model cache
+# so HF libraries (huggingface_hub, transformers) use the same local cache
+# directory. These can be overridden in the environment if needed.
+HF_HOME = os.environ.get("HF_HOME", str(MODEL_CACHE_ROOT / "hf_home"))
+HF_HUB_CACHE = os.environ.get("HF_HUB_CACHE", str(MODEL_CACHE_ROOT / "hf_hub_cache"))
+os.environ.setdefault("HF_HOME", HF_HOME)
+os.environ.setdefault("HF_HUB_CACHE", HF_HUB_CACHE)
+
+# Cache freshness TTL (days) used when deciding whether to re-download
+# models. Set via env var `USER_MODELS_CACHE_DAYS`.
+USER_MODELS_CACHE_DAYS = int(os.environ.get("USER_MODELS_CACHE_DAYS", "7"))
+
+# Allow per-move downloads? Default False to avoid network traffic during moves.
+ALLOW_PER_MOVE_DOWNLOADS = os.environ.get("ALLOW_PER_MOVE_DOWNLOADS", "False").lower() in ("true", "1", "yes")
+
+# Python binary used for local (non-Docker) sandbox fallback.
+SANDBOX_PYTHON_BIN = os.environ.get("SANDBOX_PYTHON_BIN", sys.executable)
+# Enable safe local process fallback when Docker is unavailable (default True).
+SANDBOX_ENABLE_LOCAL_FALLBACK = os.environ.get("SANDBOX_ENABLE_LOCAL_FALLBACK", "True").lower() in ("true", "1", "yes")
 
 CHANNEL_LAYERS = {
     "default": {
@@ -277,6 +306,16 @@ LOGGING = {
     },
     "loggers": {
         "apps": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.games": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.users": {
             "handlers": ["console"],
             "level": "INFO",
             "propagate": False,

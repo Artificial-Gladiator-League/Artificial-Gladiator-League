@@ -151,7 +151,29 @@ def update_stats_after_game(sender, instance, **kwargs):
     from apps.users.models import UserGameModel
     from django.db.models import F
 
-    game_type = getattr(instance, "game_type", "chess")
+    game_type = getattr(instance, "game_type", "chess") or "chess"
+
+    # Auto-create UserGameModel for legacy users who only have
+    # hf_model_repo_id on CustomUser but no per-game entry yet.
+    # Without this, their rated_games_since_revalidation never
+    # increments and they can never meet the 30-game tournament gate.
+    for player in (white, black):
+        if not UserGameModel.objects.filter(user=player, game_type=game_type).exists():
+            repo = player.hf_model_repo_id if game_type == "chess" else ""
+            if repo:
+                UserGameModel.objects.create(
+                    user=player,
+                    game_type=game_type,
+                    hf_model_repo_id=repo,
+                    model_integrity_ok=player.model_integrity_ok,
+                    original_model_commit_sha=player.original_model_commit_sha or "",
+                    last_known_commit_id=player.last_known_commit_id or "",
+                    rated_games_played=player.rated_games_played,
+                )
+                log.info(
+                    "Auto-created UserGameModel for legacy user %s/%s (repo=%s)",
+                    player.username, game_type, repo,
+                )
 
     record_rated_game(white, game_type=game_type)
     record_rated_game(black, game_type=game_type)
@@ -247,26 +269,141 @@ def _notify_user_verification_failed(user, game_type: str, error_msg: str):
 
 @receiver(user_logged_in)
 def preload_breakthrough_on_login(sender, request, user, **kwargs):
-    """Log the login event.
+    """Schedule model download & verification for the user after login.
 
-    Model download + scan is now handled by model_lifecycle.download_and_scan_on_login
-    triggered from UserLoginView.form_valid().  The old verify_model() call here was
-    redundant (downloaded to /tmp/verification/ then immediately deleted) and caused
-    403 errors on gated repos because it ran in parallel with model_lifecycle.
+    This schedules the Celery task `download_and_scan_on_login` for the
+    authenticated user. In `CELERY_TASK_ALWAYS_EAGER` mode we call
+    `.delay()` from a background thread so the login response is not blocked.
     """
-    print(f"[ONLINE] {user.username} logged in")
+    if user is None:
+        return
+    try:
+        from django.conf import settings
+        from apps.users.model_lifecycle import download_and_scan_on_login
+
+        user_pk = getattr(user, "pk", None)
+        if user_pk is None:
+            return
+
+        if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
+            def _bg():
+                try:
+                    download_and_scan_on_login.delay(user_pk)
+                except Exception:
+                    log.exception("Background login scan failed for user=%s", user_pk)
+
+            threading.Thread(target=_bg, daemon=True).start()
+        else:
+            download_and_scan_on_login.delay(user_pk)
+
+        log.info("Scheduled download_and_scan_on_login for user %s", user.username)
+    except Exception:
+        log.exception("Failed to schedule download task for user %s", getattr(user, "username", "?"))
 
 
 # ── Logout handler (no-op — zero persistent storage) ──
 
 @receiver(user_logged_out)
 def clear_breakthrough_on_logout(sender, request, user, **kwargs):
-    """No-op — models are never stored in RAM or on disk.
+    """Schedule cleanup of cached model files on logout.
 
-    With the Docker sandbox approach, there is nothing to clean up
-    at logout. All model files are deleted after every verification
-    and every move inference call.
+    When a user logs out we schedule `cleanup_on_logout` to remove cached
+    files for that user. In eager Celery mode the `.delay()` call is made from
+    a background thread to avoid blocking the logout response.
     """
     if user is None:
         return
-    print(f"[OFFLINE] {user.username} — logged out (no cleanup needed — zero persistent storage)")
+    try:
+        from django.conf import settings
+        from apps.users.model_lifecycle import cleanup_on_logout
+
+        user_id = getattr(user, "pk", None)
+        if user_id is None:
+            return
+
+        if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
+            def _bg():
+                try:
+                    cleanup_on_logout.delay(user_id)
+                except Exception:
+                    log.exception("Background logout cleanup failed for user=%s", user_id)
+
+            threading.Thread(target=_bg, daemon=True).start()
+        else:
+            cleanup_on_logout.delay(user_id)
+
+        log.info("Scheduled cleanup_on_logout for user %s", user.username)
+    except Exception:
+        log.exception("Failed to schedule logout cleanup for user %s", getattr(user, "username", "?"))
+
+
+@receiver(user_logged_in)
+def on_user_login(sender, request, user, **kwargs):
+    """When a user logs in, pre-warm their model cache."""
+    if user is None:
+        return
+    log.info("🔑 LOGIN  user=%s — triggering model pre-warm", user.username)
+    try:
+        from apps.games.local_sandbox_inference import verify_model
+        from apps.users.models import UserGameModel
+        game_models = UserGameModel.objects.filter(user=user, verification_status="approved")
+        for gm in game_models:
+            if gm.cached_path:
+                import os
+                if os.path.exists(gm.cached_path):
+                    log.info(
+                        "✅ LOGIN  user=%s game_type=%s — model cache exists at %s",
+                        user.username, gm.game_type, gm.cached_path,
+                    )
+                else:
+                    log.warning(
+                        "⚠️  LOGIN  user=%s game_type=%s — cached_path %s missing on disk, "
+                        "model must be re-verified before playing.",
+                        user.username, gm.game_type, gm.cached_path,
+                    )
+            else:
+                log.warning(
+                    "⚠️  LOGIN  user=%s game_type=%s — no cached model, "
+                    "model must be verified before playing.",
+                    user.username, gm.game_type,
+                )
+    except Exception:
+        log.exception("❌ LOGIN  user=%s — error during model pre-warm check", user.username)
+
+
+@receiver(user_logged_out)
+def on_user_logout(sender, request, user, **kwargs):
+    """When a user logs out, delete their model cache from disk."""
+    if user is None:
+        return
+    log.info("🚪 LOGOUT user=%s — deleting model cache", user.username)
+    try:
+        import shutil
+        from apps.users.models import UserGameModel
+        game_models = UserGameModel.objects.filter(user=user)
+        for gm in game_models:
+            if gm.cached_path:
+                import os
+                if os.path.exists(gm.cached_path):
+                    try:
+                        shutil.rmtree(gm.cached_path, ignore_errors=True)
+                        log.info(
+                            "🗑️  LOGOUT user=%s game_type=%s — deleted cache at %s",
+                            user.username, gm.game_type, gm.cached_path,
+                        )
+                    except Exception:
+                        log.exception(
+                            "❌ LOGOUT user=%s game_type=%s — failed to delete %s",
+                            user.username, gm.game_type, gm.cached_path,
+                        )
+                    # Clear the cached_path field in DB so it won't be referenced after deletion
+                    gm.cached_path = ""
+                    gm.cached_at = None
+                    gm.save(update_fields=["cached_path", "cached_at"])
+                else:
+                    log.info(
+                        "LOGOUT user=%s game_type=%s — no cache on disk (already clean)",
+                        user.username, gm.game_type,
+                    )
+    except Exception:
+        log.exception("❌ LOGOUT user=%s — error during model cache cleanup", user.username)

@@ -143,23 +143,88 @@ class EndpointHandler:
         downloaded_files: dict[str, str] = {}
 
         if data_repo:
-            from huggingface_hub import hf_hub_download
+            # Robust download: try explicit revisions (conversion branch), platform token,
+            # and force a fresh download to avoid stale/corrupt cache entries.
+            from huggingface_hub import hf_hub_download, HfApi
+            from huggingface_hub.utils import (
+                EntryNotFoundError,
+                LocalEntryNotFoundError,
+                HfHubHTTPError,
+                RepositoryNotFoundError,
+                GatedRepoError,
+            )
+
+            platform_token = os.environ.get("HF_PLATFORM_TOKEN") or None
+            # Allow overriding revision via env for flaky converter branches
+            env_rev = os.environ.get("HF_DATA_REVISION")
+            # Common revisions to try: env, explicit converter refs, main, then default
+            revisions_to_try = []
+            if env_rev:
+                revisions_to_try.append(env_rev)
+            revisions_to_try.extend(["refs/convert/parquet", "convert/parquet", "main", None])
+
+            tokens_to_try = [None]
+            if platform_token:
+                tokens_to_try.append(platform_token)
 
             for data_file in data_config.get("files", []):
-                try:
-                    local_path = hf_hub_download(
-                        repo_id=data_repo,
-                        filename=data_file,
-                        repo_type="dataset",
-                    )
-                    downloaded_files[data_file] = local_path
-                    log.info("Downloaded %s from %s", data_file, data_repo)
-                except Exception:
-                    log.warning(
-                        "Failed to download %s from %s — skipping.",
-                        data_file,
-                        data_repo,
-                    )
+                success = False
+                last_exc = None
+                for rev in revisions_to_try:
+                    for tkn in tokens_to_try:
+                        try:
+                            log.debug("hf_hub_download try repo=%s file=%s rev=%s token=%s", data_repo, data_file, rev, "platform" if tkn else "anon")
+                            local_path = hf_hub_download(
+                                repo_id=data_repo,
+                                filename=data_file,
+                                repo_type="dataset",
+                                token=tkn,
+                                revision=rev,
+                                force_download=True,
+                            )
+                            downloaded_files[data_file] = local_path
+                            log.info("Downloaded %s from %s (rev=%s)", data_file, data_repo, rev or "default")
+                            success = True
+                            break
+                        except EntryNotFoundError as e:
+                            last_exc = e
+                            # File not present at this revision — try next revision
+                            continue
+                        except LocalEntryNotFoundError as e:
+                            last_exc = e
+                            # Network/cache error — try other tokens/revisions
+                            continue
+                        except (GatedRepoError, HfHubHTTPError, RepositoryNotFoundError) as e:
+                            last_exc = e
+                            # Permission or HTTP issue — try other tokens
+                            continue
+                        except Exception as e:
+                            last_exc = e
+                            continue
+                    if success:
+                        break
+
+                if not success:
+                    # As a best-effort diagnostic, list repo files to see if file exists on other refs
+                    try:
+                        api = HfApi(token=platform_token)
+                        found_revs = []
+                        try_revs = [env_rev, "refs/convert/parquet", "convert/parquet", "main"]
+                        for r in [r for r in try_revs if r]:
+                            try:
+                                files = api.list_repo_files(data_repo, revision=r)
+                                if data_file in files:
+                                    found_revs.append(r)
+                            except Exception:
+                                continue
+                        if found_revs:
+                            log.warning("%s exists in %s at revisions %s but download failed; consider setting HF_DATA_REVISION=%s", data_file, data_repo, found_revs, found_revs[0])
+                        else:
+                            log.warning("%s not found in %s at common revisions; last error: %s", data_file, data_repo, last_exc)
+                    except Exception:
+                        log.warning("Could not perform repo file checks for %s: %s", data_repo, last_exc)
+
+                    log.warning("Failed to download %s from %s — skipping. Last error: %s", data_file, data_repo, last_exc)
         else:
             log.warning(
                 "HF_DATA_REPO_ID not set — skipping data file downloads."

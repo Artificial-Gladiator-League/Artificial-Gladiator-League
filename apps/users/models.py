@@ -392,6 +392,19 @@ class UserGameModel(models.Model):
         blank=True,
         help_text="JSON output from the security scanner (bandit, modelscan, etc.).",
     )
+    # ── Cached model metadata (persisted after successful verification) ──
+    cached_path = models.CharField(
+        max_length=1024, blank=True,
+        help_text="Filesystem path to the user's cached model directory.",
+    )
+    cached_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Timestamp when the cached model files were written.",
+    )
+    cached_commit = models.CharField(
+        max_length=40, blank=True,
+        help_text="Commit SHA corresponding to the cached snapshot.",
+    )
 
     # ── Submission identity ─────────────────────
     submission_repo_type = models.CharField(

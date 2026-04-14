@@ -378,19 +378,26 @@
             <div class="form-group">
               <label for="id_repo_{{ game.type }}">Hugging Face Model Repo</label>
               <input type="text"
-                     id="id_repo_{{ game.type }}"
-                     name="hf_model_repo_id"
-                     value="{{ game.model.hf_model_repo_id|default:'' }}"
-                     placeholder="{% if game.type == 'breakthrough' %}e.g. YourUsername/breakthrough-model{% else %}e.g. YourUsername/MyModel{% endif %}"
-                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
-              <span class="text-xs text-gray-500 mt-1 block">
-                Only gated (access-request enabled) repos are accepted. Must output UCI moves.
-              </span>
-              {% if game.type == 'breakthrough' %}
-              <span class="text-xs text-yellow-400 mt-1 block">
-                Your model repo must be named <strong>YourUsername/breakthrough-model</strong> and set to <strong>gated</strong> on Hugging Face.
-              </span>
-              {% endif %}
+                id="id_repo_{{ game.type }}"
+                name="hf_model_repo_id"
+                value="{{ game.model.hf_model_repo_id|default:'' }}"
+                placeholder="e.g. YourUsername/MyModel"
+                class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+
+              <div class="mt-3 p-4 bg-gray-900/70 border border-gray-700 rounded-lg text-sm">
+                <strong>Important: Grant Access to Our Platform</strong><br>
+                <span class="text-gray-400">
+                  Your repo must be <strong>Gated</strong>.<br>
+                  After setting it to Gated, please grant access to our platform account: 
+                  <code class="text-brand">ArtificialGladiatorLeague</code>
+                </span>
+                
+                <a href="https://huggingface.co/{{ game.model.hf_model_repo_id|default:'yourusername/breakthrough-model' }}/settings/access" 
+                  target="_blank" 
+                  class="block mt-3 text-brand hover:underline text-sm">
+                  → Click here to go to Access Settings and add "ArtificialGladiatorLeague"
+                </a>
+              </div>
             </div>
 
             {% if game.type == 'breakthrough' %}

@@ -395,7 +395,7 @@ def ai_models(request):
                                 f"Our platform does not have access to your "
                                 f"gated repo yet. Please go to "
                                 f"https://huggingface.co/{repo_id} and add "
-                                f"'typical-cyber' to your authorized users "
+                                f"'ArtificialGladiatorLeague' to your authorized users "
                                 f"list, then try again.",
                             )
                             _visibility_ok = False
@@ -481,52 +481,19 @@ class UserLoginView(LoginView):
     redirect_authenticated_user = True
 
     def form_valid(self, form):
-        response = super().form_valid(form)
-        from apps.users.model_lifecycle import download_and_scan_on_login
-        from django.conf import settings as django_settings
-
-        user_pk = self.request.user.pk
-        if getattr(django_settings, "CELERY_TASK_ALWAYS_EAGER", False):
-            # Eager mode (no Redis): run in a background thread so the
-            # login response is not blocked by model downloads.
-            import threading
-
-            def _bg():
-                try:
-                    download_and_scan_on_login(user_pk)
-                except Exception:
-                    log.warning("Background login scan failed for user=%s",
-                                user_pk, exc_info=True)
-
-            threading.Thread(target=_bg, daemon=True).start()
-        else:
-            download_and_scan_on_login.delay(user_pk)
-        return response
+        # Model download/verification is scheduled by the user_logged_in
+        # signal in apps.users.signals. Keep the login response fast.
+        return super().form_valid(form)
 
 
 class UserLogoutView(LogoutView):
     next_page = "/"
 
-    def post(self, request, *args, **kwargs):
-        user_id = request.user.pk
-        response = super().post(request, *args, **kwargs)
-        from apps.users.model_lifecycle import cleanup_on_logout
-        from django.conf import settings as django_settings
-
-        if getattr(django_settings, "CELERY_TASK_ALWAYS_EAGER", False):
-            import threading
-
-            def _bg():
-                try:
-                    cleanup_on_logout(user_id)
-                except Exception:
-                    log.warning("Background logout cleanup failed for user=%s",
-                                user_id, exc_info=True)
-
-            threading.Thread(target=_bg, daemon=True).start()
-        else:
-            cleanup_on_logout.delay(user_id)
-        return response
+    def dispatch(self, request, *args, **kwargs):
+        # Logout cleanup is scheduled by the user_logged_out signal in
+        # apps.users.signals which captures the user id and schedules
+        # `cleanup_on_logout` asynchronously.
+        return super().dispatch(request, *args, **kwargs)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -576,9 +543,10 @@ def _build_breakthrough_file_status(user, gm):
     found_any = False
 
     # User's personal OAuth token (if they linked via HF OAuth).
-    # For gated repos we fall back to the platform token which was
-    # granted access during model submission.
-    hf_token = get_user_hf_token(user) or settings.HF_PLATFORM_TOKEN
+    # For gated repos we try the user's token first, then fall back to
+    # the platform token (settings.HF_PLATFORM_TOKEN) if configured.
+    hf_token_user = get_user_hf_token(user)
+    platform_token = settings.HF_PLATFORM_TOKEN or None
     hf_data_repo_id = gm.hf_data_repo_id or f"{user.username}/breakthrough-data"
 
     # Determine the correct revision for this user's model
@@ -591,54 +559,112 @@ def _build_breakthrough_file_status(user, gm):
             EntryNotFoundError,
             HfHubHTTPError,
             RepositoryNotFoundError,
+            LocalEntryNotFoundError,
         )
 
-        # Pre-check: verify the file exists at the target revision
-        api = HfApi(token=hf_token)
-        try:
-            repo_files = api.list_repo_files(
-                repo_id=gm.hf_model_repo_id,
-                revision=revision,
-                token=hf_token,
-            )
-        except RepositoryNotFoundError:
-            raise RepositoryNotFoundError(
-                f"Model repo '{gm.hf_model_repo_id}' not found or not accessible."
-            )
-        except HfHubHTTPError as e:
-            if "404" in str(e) or "RevisionNotFound" in str(e):
-                raise EntryNotFoundError(
-                    f"Revision '{revision}' not found in repo '{gm.hf_model_repo_id}'."
-                )
-            raise
+        api = HfApi()
+        # Try tokens in order: user's token, then platform token, then anonymous.
+        tokens_to_try = []
+        if hf_token_user:
+            tokens_to_try.append(hf_token_user)
+        if platform_token and platform_token not in tokens_to_try:
+            tokens_to_try.append(platform_token)
+        tokens_to_try.append(None)  # anonymous fallback
 
-        if "config_model.json" not in repo_files:
-            model_error = (
-                f"config_model.json not found in '{gm.hf_model_repo_id}' "
-                f"at revision '{revision[:12]}…'."
-            )
-            log.warning(
-                "config_model.json missing from file listing: repo=%s rev=%s files=%s",
-                gm.hf_model_repo_id, revision, repo_files[:20],
-            )
+        repo_files = None
+        token_used = None
+        last_exc = None
+
+        for tkn in tokens_to_try:
+            try:
+                repo_files = api.list_repo_files(
+                    repo_id=gm.hf_model_repo_id,
+                    revision=revision,
+                    token=tkn,
+                )
+                token_used = tkn
+                break
+            except RepositoryNotFoundError as exc:
+                # Could be not found or lack of access with this token — try next
+                last_exc = exc
+                continue
+            except HfHubHTTPError as exc:
+                # Revision not found or permission issue — try next token
+                last_exc = exc
+                # If it's clearly a revision-not-found, expose that to the caller
+                exc_str = str(exc)
+                if "404" in exc_str or "RevisionNotFound" in exc_str:
+                    raise EntryNotFoundError(
+                        f"Revision '{revision}' not found in repo '{gm.hf_model_repo_id}'."
+                    )
+                continue
+
+        if repo_files is None:
+            # Could not access the repo with any token
+            model_error = f"Model repo '{gm.hf_model_repo_id}' not found or you lack access."
+            # If we have a platform token, try to determine the platform username
+            try:
+                if platform_token:
+                    platform_api = HfApi(token=platform_token)
+                    who = platform_api.whoami()
+                    plat_name = (who and (who.get("name") or who.get("login"))) or None
+                else:
+                    plat_name = None
+            except Exception:
+                plat_name = None
+
+            if plat_name:
+                model_error += f" Please add '{plat_name}' to your authorized users on Hugging Face, or link your Hugging Face account to this site."
+            else:
+                if not platform_token:
+                    model_error += (
+                        " Server configuration: HF_PLATFORM_TOKEN is not set on this server. "
+                        "Set the environment variable HF_PLATFORM_TOKEN to a Hugging Face token for the platform account "
+                        "(the account that was granted access) and restart the server."
+                    )
+                else:
+                    model_error += " Please link your Hugging Face account to this site or contact an administrator to grant platform access."
+
+            log.warning("Could not list repo files for %s (user=%s): %s", gm.hf_model_repo_id, user.username, last_exc)
         else:
-            config_path = hf_hub_download(
-                repo_id=gm.hf_model_repo_id,
-                filename="config_model.json",
-                token=hf_token,
-                revision=revision,
-            )
-            with open(config_path, "r") as fh:
-                config = _json.load(fh)
-            model_files = [{"name": f, "present": True} for f in config["files"]]
-            found_any = True
+            if "config_model.json" not in repo_files:
+                model_error = (
+                    f"config_model.json not found in '{gm.hf_model_repo_id}' "
+                    f"at revision '{revision[:12]}…'."
+                )
+                log.warning(
+                    "config_model.json missing from file listing: repo=%s rev=%s files=%s",
+                    gm.hf_model_repo_id, revision, repo_files[:20],
+                )
+            else:
+                config_path = hf_hub_download(
+                    repo_id=gm.hf_model_repo_id,
+                    filename="config_model.json",
+                    token=token_used,
+                    revision=revision,
+                )
+                with open(config_path, "r") as fh:
+                    config = _json.load(fh)
+                model_files = [{"name": f, "present": True} for f in config["files"]]
+                found_any = True
 
     except RepositoryNotFoundError:
         model_error = f"Model repo '{gm.hf_model_repo_id}' not found or you lack access."
         log.warning("Repo not found: %s (user=%s)", gm.hf_model_repo_id, user.username, exc_info=True)
     except EntryNotFoundError as e:
+        # File or revision not found
         model_error = str(e) or f"config_model.json not found at revision '{revision[:12]}…'."
         log.warning("Entry not found: repo=%s rev=%s user=%s", gm.hf_model_repo_id, revision, user.username, exc_info=True)
+    except LocalEntryNotFoundError as e:
+        # Hugging Face could not be reached and the file isn't in the local cache.
+        # This commonly happens when the server has no outbound network access
+        # or when a proxy/firewall blocks requests to huggingface.co.
+        model_error = (
+            "Could not reach Hugging Face to download model files and they are not present in the local cache. "
+            "Please check the server's network/proxy settings and ensure it can reach https://huggingface.co, "
+            "or pre-download the files on this machine using `hf_hub_download` and retry."
+        )
+        log.exception("LocalEntryNotFoundError when fetching model files: repo=%s user=%s", gm.hf_model_repo_id, user.username)
     except HfHubHTTPError as e:
         model_error = f"HuggingFace API error reading model repo (HTTP {getattr(e, 'response', None) and e.response.status_code})."
         log.exception("HfHub HTTP error: repo=%s rev=%s user=%s", gm.hf_model_repo_id, revision, user.username)
@@ -674,6 +700,13 @@ def _build_breakthrough_file_status(user, gm):
     except EntryNotFoundError:
         data_error = f"config_data.json not found in data repo '{hf_data_repo_id}'."
         log.warning("config_data.json missing: repo=%s user=%s", hf_data_repo_id, user.username)
+    except LocalEntryNotFoundError:
+        data_error = (
+            "Could not reach Hugging Face to download data files and they are not present in the local cache. "
+            "Please check the server's network/proxy settings and ensure it can reach https://huggingface.co, "
+            "or pre-download the files on this machine using `hf_hub_download` and retry."
+        )
+        log.exception("LocalEntryNotFoundError when fetching data files: repo=%s user=%s", hf_data_repo_id, user.username)
     except HfHubHTTPError:
         data_error = "HuggingFace API error reading data repo."
         log.exception("HfHub HTTP error: data repo=%s user=%s", hf_data_repo_id, user.username)

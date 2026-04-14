@@ -82,6 +82,19 @@ def get_move(
             )
             return move
 
+        # Explicit fallback logging when cache is missing or sandbox fails
+        try:
+            from apps.users.models import UserGameModel
+            gm = UserGameModel.objects.filter(hf_model_repo_id=hf_repo_id, game_type='breakthrough').first()
+            if gm is None:
+                log.warning("CACHE_MISS: No UserGameModel found for repo=%s — using random fallback.", hf_repo_id)
+            elif not getattr(gm, 'cached_path', None):
+                log.warning("CACHE_MISS: No cached model for repo=%s — using random fallback.", hf_repo_id)
+            else:
+                log.warning("SANDBOX_ERROR: Cached model present at %s but sandbox/handler failed — using random fallback.", gm.cached_path)
+        except Exception:
+            log.debug("Could not query UserGameModel for cache status", exc_info=True)
+
     # ── Priority 2: safe random fallback ──
     move = _random_legal_move(all_legal)
     _elapsed = _time.monotonic() - _t0
@@ -105,6 +118,14 @@ def _try_sandbox(
     """Run inference in the Docker sandbox and return a legal move, or None."""
     try:
         from apps.games.local_sandbox_inference import get_move_local
+        # Log if a cached model path exists for diagnostics (official handler will be used)
+        try:
+            from apps.users.models import UserGameModel
+            gm = UserGameModel.objects.filter(hf_model_repo_id=hf_repo_id, game_type='breakthrough').first()
+            if gm and getattr(gm, 'cached_path', None):
+                log.info("✅ Loading model weights from cache: %s", gm.cached_path)
+        except Exception:
+            pass
 
         move = get_move_local(
             repo_id=hf_repo_id,

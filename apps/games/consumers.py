@@ -40,9 +40,10 @@ class LobbyConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         self.user = self.scope.get("user")
+        username = getattr(self.user, "username", "anonymous")
+        log.info("🏛️  LOBBY CONNECT  user=%s channel=%s", username, self.channel_name)
         await self.channel_layer.group_add(self.GROUP, self.channel_name)
         await self.accept()
-        # Push current tournament counts on connect
         counts = await self._tournament_counts()
         await self.send(text_data=json.dumps({
             "type": "tournament_counts",
@@ -50,7 +51,8 @@ class LobbyConsumer(AsyncWebsocketConsumer):
         }))
 
     async def disconnect(self, close_code):
-        # Remove from every queue on disconnect
+        username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
+        log.info("🏛️  LOBBY DISCONNECT user=%s channel=%s close_code=%s", username, self.channel_name, close_code)
         self._remove_from_all_queues()
         await self.channel_layer.group_discard(self.GROUP, self.channel_name)
 
@@ -315,22 +317,66 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.game_id = int(self.scope["url_route"]["kwargs"]["game_id"])
         self.group_name = f"game_{self.game_id}"
         self.user = self.scope.get("user")
+        username = getattr(self.user, "username", "anonymous")
+        log.info(
+            "🔌 CONNECT   game=%s user=%s channel=%s",
+            self.game_id, username, self.channel_name,
+        )
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+
+        # Log model cache status for this user
+        await self._log_model_cache_status()
 
         # Push full game state on connect
         state = await self._get_game_state()
         await self.send(text_data=json.dumps(state))
-
-        # Always broadcast state to the group so other connected
-        # players see updates (e.g. black's name after joining).
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_state",
             "data": state if state.get("type") != "error" else await self._get_game_state(),
         })
 
     async def disconnect(self, close_code):
+        username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
+        log.info(
+            "🔌 DISCONNECT game=%s user=%s channel=%s close_code=%s",
+            getattr(self, "game_id", "?"), username, self.channel_name, close_code,
+        )
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    @database_sync_to_async
+    def _log_model_cache_status(self):
+        """Log whether this user's model is cached and ready to play."""
+        if not self.user or self.user.is_anonymous:
+            return
+        try:
+            from apps.users.models import UserGameModel
+            import os
+            game_models = UserGameModel.objects.filter(user=self.user)
+            if not game_models.exists():
+                log.warning(
+                    "⚠️  CONNECT game=%s user=%s — no UserGameModel found (no AI model configured)",
+                    self.game_id, self.user.username,
+                )
+                return
+            for gm in game_models:
+                if gm.cached_path and os.path.exists(gm.cached_path):
+                    log.info(
+                        "✅ CONNECT game=%s user=%s game_type=%s — model ready at %s",
+                        self.game_id, self.user.username, gm.game_type, gm.cached_path,
+                    )
+                elif gm.cached_path:
+                    log.warning(
+                        "⚠️  CONNECT game=%s user=%s game_type=%s — cached_path set but file MISSING: %s",
+                        self.game_id, self.user.username, gm.game_type, gm.cached_path,
+                    )
+                else:
+                    log.warning(
+                        "⚠️  CONNECT game=%s user=%s game_type=%s — no cached model (status=%s)",
+                        self.game_id, self.user.username, gm.game_type, gm.verification_status,
+                    )
+        except Exception:
+            log.exception("❌ _log_model_cache_status failed for user=%s", self.user.username)
 
     async def receive(self, text_data=None, bytes_data=None):
         data = json.loads(text_data)
@@ -936,9 +982,9 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Validate both players have an AI model configured (chess only)
         if game.game_type != Game.GameType.BREAKTHROUGH:
-            if not game.white.hf_model_repo_id:
+            if not game.white.get_repo_for_game(game.game_type):
                 return {"error": f"{game.white.username} does not have an AI model configured."}
-            if not game.black.hf_model_repo_id:
+            if not game.black.get_repo_for_game(game.game_type):
                 return {"error": f"{game.black.username} does not have an AI model configured."}
 
         game.status = Game.Status.ONGOING
