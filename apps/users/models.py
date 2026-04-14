@@ -305,8 +305,7 @@ class UserGameModel(models.Model):
         max_length=255,
         blank=True,
         validators=[validate_hf_repo_id],
-        help_text="Hugging Face data repo ID (e.g. username/breakthrough-data). "
-                  "Used for Breakthrough only.",
+        help_text="Hugging Face data repo ID (e.g. username/breakthrough-data or username/chess-data). Used for Breakthrough and Chess.",
     )
 
     # ── Integrity & locking (per-game) ──────────

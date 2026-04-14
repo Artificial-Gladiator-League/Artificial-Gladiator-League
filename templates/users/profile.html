@@ -235,7 +235,7 @@
       <!-- Tab bar -->
       <div class="flex border-b border-gray-700 mb-6">
         {% if is_own_profile %}
-        <button class="profile-tab active" data-tab="edit">✏️ Edit Profile</button>
+        <button class="profile-tab active" data-tab="edit">Profile</button>
         <button class="profile-tab" data-tab="ai-models">🤖 AI Models</button>
         <button class="profile-tab" data-tab="stats">📊 Stats &amp; History</button>
         {% else %}
@@ -308,9 +308,7 @@
               </div>
             </div>
 
-            <button type="submit" class="btn-brand w-full sm:w-auto text-base py-2.5 px-8 mt-2">
-              Save Changes
-            </button>
+            {# Save Changes button removed per UI update #}
           </form>
         </div>
 
@@ -414,6 +412,20 @@
                 It must contain the file <code>breakthrough_zone_db.npz</code>.
               </span>
             </div>
+            {% elif game.type == 'chess' %}
+            <div class="form-group">
+              <label for="id_data_repo_chess">Hugging Face Data Repo</label>
+              <input type="text"
+                     id="id_data_repo_chess"
+                     name="hf_data_repo_id"
+                     value="{{ game.model.hf_data_repo_id|default:'' }}"
+                     placeholder="e.g. YourUsername/chess-data"
+                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+              <span class="text-xs text-gray-500 mt-1 block">
+                Your data repo must be named <strong>YourUsername/chess-data</strong> and set to <strong>public</strong> on Hugging Face.
+                It should contain a <code>config_data.json</code> that lists the required chess data files.
+              </span>
+            </div>
             {% endif %}
 
             <div class="form-group">
@@ -435,7 +447,7 @@
             </button>
           </form>
 
-          {% if game.type == 'breakthrough' %}
+          {% if game.type == 'breakthrough' or game.type == 'chess' %}
           <div class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">
             <h3 class="text-lg font-semibold text-gray-200">Repo File Status</h3>
             {% if game.model_files_status %}
@@ -487,20 +499,22 @@
 
         <script>
         (function () {
-          const modelInput = document.getElementById('id_repo_breakthrough');
-          const dataInput  = document.getElementById('id_data_repo_breakthrough');
-          if (!modelInput || !dataInput) return;
-          let autoFilled = !dataInput.value;
-          dataInput.addEventListener('input', function () { autoFilled = false; });
-          modelInput.addEventListener('input', function () {
-            if (!autoFilled) return;
-            const val = modelInput.value;
-            const slash = val.indexOf('/');
-            if (slash > 0) {
-              dataInput.value = val.substring(0, slash) + '/breakthrough-data';
-            } else {
-              dataInput.value = '';
-            }
+          ['breakthrough','chess'].forEach(function(t) {
+            const modelInput = document.getElementById('id_repo_' + t);
+            const dataInput = document.getElementById('id_data_repo_' + t);
+            if (!modelInput || !dataInput) return;
+            let autoFilled = !dataInput.value;
+            dataInput.addEventListener('input', function () { autoFilled = false; });
+            modelInput.addEventListener('input', function () {
+              if (!autoFilled) return;
+              const val = modelInput.value;
+              const slash = val.indexOf('/');
+              if (slash > 0) {
+                dataInput.value = val.substring(0, slash) + '/' + t + '-data';
+              } else {
+                dataInput.value = '';
+              }
+            });
           });
         })();
         </script>

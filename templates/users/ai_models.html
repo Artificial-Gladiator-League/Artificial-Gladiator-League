@@ -93,6 +93,20 @@
           It must contain the file <code>breakthrough_zone_db.npz</code>.
         </span>
       </div>
+      {% elif game.type == 'chess' %}
+      <div class="form-group">
+        <label for="id_data_repo_{{ game.type }}">Hugging Face Data Repo</label>
+        <input type="text"
+               id="id_data_repo_{{ game.type }}"
+               name="hf_data_repo_id"
+               value="{{ game.model.hf_data_repo_id|default:'' }}"
+               placeholder="e.g. YourUsername/chess-data"
+               class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+        <span class="text-xs text-gray-500 mt-1 block">
+          Your data repo must be set to <strong>public</strong> on Hugging Face.
+          It should contain a <code>config_data.json</code> that lists the required chess data files.
+        </span>
+      </div>
       {% endif %}
 
       <div class="form-group">
@@ -115,6 +129,27 @@
     </form>
   </div>
   {% endfor %}
+  <script>
+  (function () {
+    ['breakthrough','chess'].forEach(function(t){
+      const modelInput = document.getElementById('id_repo_' + t);
+      const dataInput = document.getElementById('id_data_repo_' + t);
+      if (!modelInput || !dataInput) return;
+      let autoFilled = !dataInput.value;
+      dataInput.addEventListener('input', function () { autoFilled = false; });
+      modelInput.addEventListener('input', function () {
+        if (!autoFilled) return;
+        const val = modelInput.value;
+        const slash = val.indexOf('/');
+        if (slash > 0) {
+          dataInput.value = val.substring(0, slash) + '/' + t + '-data';
+        } else {
+          dataInput.value = '';
+        }
+      });
+    });
+  })();
+  </script>
 
   <div class="text-center mt-4">
     <a href="{% url 'users:profile' %}" class="text-brand hover:underline text-sm">&larr; Back to Profile</a>

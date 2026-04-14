@@ -326,7 +326,7 @@ def ai_models(request):
         elif not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
-            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data').")
+            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
         elif not hf_token:
             messages.error(request, "Please enter your Hugging Face access token.")
         else:
@@ -559,7 +559,7 @@ def _build_breakthrough_file_status(user, gm):
     # the platform token (settings.HF_PLATFORM_TOKEN) if configured.
     hf_token_user = get_user_hf_token(user)
     platform_token = settings.HF_PLATFORM_TOKEN or None
-    hf_data_repo_id = gm.hf_data_repo_id or f"{user.username}/breakthrough-data"
+    hf_data_repo_id = gm.hf_data_repo_id or f"{user.username}/{gm.game_type}-data"
 
     # Determine the correct revision for this user's model
     revision = gm.approved_full_sha or gm.submitted_ref or "main"
@@ -920,7 +920,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "model": gm,
                 "model_files_status": None,
             }
-            if g["type"] == "breakthrough" and gm and gm.hf_model_repo_id:
+            # Build file-status for any game with a registered model (includes breakthrough and chess)
+            if gm and gm.hf_model_repo_id:
                 entry["model_files_status"] = _build_breakthrough_file_status(
                     user, gm,
                 )
@@ -952,7 +953,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         elif not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
-            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data').")
+            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
         elif not hf_token:
             messages.error(request, "Please enter your Hugging Face access token.")
         else:
