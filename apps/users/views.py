@@ -444,6 +444,18 @@ def ai_models(request):
                             "An admin will review it manually.",
                         )
 
+                    # Ensure the model is cached for gameplay even if
+                    # verify_model's persist section didn't run (e.g. it
+                    # was already approved from a previous attempt).
+                    try:
+                        from apps.users.model_lifecycle import download_and_scan_for_user
+                        download_and_scan_for_user(request.user.pk)
+                    except Exception:
+                        log.debug(
+                            "Post-registration cache warm failed for %s/%s",
+                            request.user.username, game_type, exc_info=True,
+                        )
+
                     # Soft model-card check
                     card_result = check_model_card(repo_id, hf_token)
                     if not card_result["has_card"] or card_result["missing"]:

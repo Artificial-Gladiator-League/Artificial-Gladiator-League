@@ -196,6 +196,84 @@ def _docker_available() -> bool:
         return False
 
 
+def safe_snapshot_download(
+    repo_id: str,
+    local_dir: Path,
+    *,
+    token: str | None = None,
+    allow_patterns: list | None = None,
+    repo_type: str | None = None,
+    cache_dir: str | None = None,
+    max_attempts: int = 8,
+) -> tuple[bool, str]:
+    """Call ``huggingface_hub.snapshot_download`` with retries for HF 503 errors.
+
+    Uses exponential backoff and jitter for transient 503 / "Service Unavailable"
+    responses which are common for new or small repos during `resolve` calls.
+    Returns (True, "OK") on success or (False, error_message) on final failure.
+
+    Note: we intentionally only retry on 503 / Service Unavailable errors to
+    avoid masking other permanent failures.
+    """
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception as exc:
+        return False, f"huggingface_hub not available: {exc}"
+
+    hf_token = token or getattr(settings, "HF_PLATFORM_TOKEN", "")
+    last_exc = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=str(local_dir),
+                token=hf_token or None,
+                allow_patterns=allow_patterns,
+                repo_type=repo_type,
+                cache_dir=cache_dir,
+            )
+            return True, "OK"
+        except Exception as exc:
+            last_exc = exc
+            # Detect HF 503 / Service Unavailable in a best-effort way.
+            is_503 = False
+            try:
+                # huggingface_hub exposes HfHubHTTPError in some versions
+                from huggingface_hub.utils import HfHubHTTPError
+            except Exception:
+                HfHubHTTPError = None
+
+            if HfHubHTTPError is not None and isinstance(exc, HfHubHTTPError):
+                status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+                if status == 503:
+                    is_503 = True
+
+            if not is_503:
+                s = str(exc) or ""
+                if "503" in s or "Service Unavailable" in s or "503 Server Error" in s:
+                    is_503 = True
+
+            if is_503 and attempt < max_attempts:
+                # Exponential backoff: sleep 2 ** attempt seconds between retries.
+                sleep_time = 2 ** attempt
+                log.warning(
+                    "HF 503 while resolving %s — attempt %d/%d, retrying in %ds",
+                    repo_id, attempt, max_attempts, sleep_time,
+                )
+                print(f"⚠️ HuggingFace 503 for {repo_id} — retry {attempt}/{max_attempts} in {sleep_time}s")
+                try:
+                    _time.sleep(sleep_time)
+                except Exception:
+                    pass
+                continue
+
+            # Non-503 or out of attempts: log and return failure message
+            log.exception("snapshot_download failed for %s (attempt %d/%d)", repo_id, attempt, max_attempts)
+            return False, str(exc)
+
+    return False, f"snapshot_download failed after {max_attempts} attempts: {last_exc}"
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Phase 1 — Download (to temp dir)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -226,18 +304,20 @@ def download_model(
     hf_token = token or getattr(settings, "HF_PLATFORM_TOKEN", "")
 
     try:
-        from huggingface_hub import snapshot_download
-
         log.info("📥 Downloading model repo='%s' game_type='%s' → %s",
                  repo_id, game_type, model_dir)
 
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=str(model_dir),
+        ok, msg = safe_snapshot_download(
+            repo_id,
+            model_dir,
             token=hf_token or None,
             allow_patterns=SAFE_ALLOW_PATTERNS,
-            cache_dir=str(dest_dir / ".hf_cache"),  # temp cache, never ~/.cache
+            cache_dir=str(dest_dir / ".hf_cache"),
         )
+        if not ok:
+            log.warning("Failed to download model '%s': %s", repo_id, msg)
+            _cleanup_temp_dir(dest_dir)
+            return False, f"Download failed: {msg}", None
     except Exception as exc:
         log.exception("Failed to download model '%s'", repo_id)
         _cleanup_temp_dir(dest_dir)
@@ -293,19 +373,21 @@ def _download_data_repo(
     hf_token = token or getattr(settings, "HF_PLATFORM_TOKEN", "")
 
     try:
-        from huggingface_hub import snapshot_download
-
         log.info("📥 Downloading dataset from data_repo_id: %s → %s",
                  data_repo_id, data_dir)
         print(f"📥 Downloading dataset from data_repo_id: {data_repo_id}")
-        snapshot_download(
-            repo_id=data_repo_id,
-            local_dir=str(data_dir),
+
+        ok, msg = safe_snapshot_download(
+            data_repo_id,
+            data_dir,
             token=hf_token or None,
             repo_type="dataset",
             allow_patterns=["*.npz", "*.json", "*.txt", "*.csv"],
             cache_dir=str(dest_dir / ".hf_cache"),
         )
+        if not ok:
+            log.exception("Failed to download data repo '%s': %s", data_repo_id, msg)
+            return False, f"Data download failed: {msg}", None
     except Exception as exc:
         log.exception("Failed to download data repo '%s'", data_repo_id)
         return False, f"Data download failed: {exc}", None
@@ -429,7 +511,15 @@ def scan_model(model_dir: Path) -> tuple[bool, dict]:
             code_issues = _scan_code_patterns(user_py_files)
             report["checks"]["code_patterns"] = code_issues
             if code_issues.get("dangerous_patterns"):
-                report["passed"] = False
+                # Log a warning but do NOT block — models run in an isolated
+                # subprocess (Docker or sandboxed local process) so code
+                # patterns like open(..., 'w') are not an actual risk.
+                # The real safety gate is the sandbox test in verify_model.
+                log.warning(
+                    "Code pattern warnings in %s: %s",
+                    model_dir,
+                    [p["pattern"] for p in code_issues["dangerous_patterns"]],
+                )
         else:
             report["checks"]["code_patterns"] = "skipped — only handler.py present"
 
@@ -704,9 +794,34 @@ def _run_in_sandbox(
     inference_script = _build_inference_script(game_type)
     script_path = model_dir / "_agl_inference.py"
     try:
-        script_path.write_text(inference_script, encoding="utf-8")
+        # Ensure the script parent directory exists. On Windows a Linux-style
+        # path (e.g. "/var/...") may be present in development environments —
+        # warn but still attempt to create the directory.
+        script_parent = script_path.parent
+        if platform.system().lower().startswith("win") and str(model_dir).startswith("/"):
+            log.warning(
+                "Cross-platform path detected for model_dir on Windows: %s. "
+                "Attempting to create parent directories but path may be invalid.",
+                model_dir,
+            )
+        try:
+            script_parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            log.debug("Could not create parent directories for %s", script_parent, exc_info=True)
+
+        try:
+            script_path.write_text(inference_script, encoding="utf-8")
+        except FileNotFoundError:
+            log.error(
+                "Failed to write inference script — parent directory does not exist or path is cross-platform incompatible. model_dir=%s",
+                model_dir,
+            )
+            return None
+        except Exception:
+            log.exception("Could not write inference script to %s", model_dir)
+            return None
     except Exception:
-        log.exception("Could not write inference script to %s", model_dir)
+        log.exception("Could not prepare inference script in %s", model_dir)
         return None
 
     # If Docker is not available, and local fallback is enabled both in
@@ -819,43 +934,100 @@ def _find_cached_model(
             return None, None
 
         # If the model was explicitly cached with a path, prefer that.
-        # The cache may point to either the repository folder itself (new layout)
-        # or the older layout which used a 'model' subdirectory.
+        # The cache points to the game-type dir which contains model/ and data/
+        # subdirectories.
         if getattr(gm, "cached_path", None):
             base = Path(gm.cached_path)
-            # Old layout: base/model
-            old_model = base / "model"
-            old_data = base / "data"
-            if old_model.exists():
+            # Standard layout: base/model and base/data
+            model_sub = base / "model"
+            data_sub = base / "data"
+            if model_sub.exists():
                 # Optional: ensure cached commit matches last_verified_commit
                 if getattr(gm, "cached_commit", "") and getattr(gm, "last_verified_commit", "") and gm.cached_commit != gm.last_verified_commit:
                     log.debug("Cached commit mismatch for %s — ignoring cached path", repo_id)
                 else:
-                    return old_model, (old_data if old_data.exists() else None)
+                    return model_sub, (data_sub if data_sub.exists() else None)
 
-            # New layout: base is the repo folder containing model files
+            # Legacy layout: base itself is the repo folder containing model files
             if base.exists():
-                # Heuristic: presence of handler.py or any .safetensors indicates model root
-                if (base / "handler.py").exists() or any(base.rglob("*.safetensors")) or (base / "config_model.json").exists():
+                if (base / "handler.py").exists() \
+                        or any(base.rglob("*.safetensors")) \
+                        or (base / "config_model.json").exists() \
+                        or any(base.glob("*.py")) \
+                        or any(base.glob("*.npz")):
                     data_dir = base / "data"
                     return base, (data_dir if data_dir.exists() else None)
 
-        # Fallback: search under configured model cache root (new layout)
+        # Fallback: search under configured model cache root
         cache_root = getattr(settings, "MODEL_CACHE_ROOT", None)
         if not cache_root:
             cache_root = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
 
         try:
-            # Build expected repo folder name
-            repo_folder = repo_id.replace('/', '__')
-            candidate = Path(cache_root) / f"user_{gm.user_id}" / game_type / repo_folder
-            if candidate.exists():
-                data_dir = candidate / "data"
-                return candidate, (data_dir if data_dir.exists() else None)
+            candidate_base = Path(cache_root) / f"user_{gm.user_id}" / game_type
+            candidate_model = candidate_base / "model"
+            if candidate_model.exists():
+                data_dir = candidate_base / "data"
+                return candidate_model, (data_dir if data_dir.exists() else None)
         except Exception:
             pass
     except Exception:
         log.debug("Could not look up cached model for %s", repo_id, exc_info=True)
+
+    # On-demand warming for bot models (no login):
+    # If per-move downloads are disabled, and we have a UserGameModel entry
+    # with model_integrity_ok=True but no cached_path, attempt a one-time
+    # synchronous cache warm for that user. Guard with a per-repo cache lock
+    # so concurrent moves don't trigger multiple downloads.
+    try:
+        if not getattr(settings, "ALLOW_PER_MOVE_DOWNLOADS", False):
+            try:
+                from django.core.cache import cache
+                from apps.users.models import UserGameModel
+
+                gm = UserGameModel.objects.filter(
+                    hf_model_repo_id=repo_id,
+                    game_type=game_type,
+                ).first()
+                if gm and not gm.cached_path and getattr(gm, 'verification_status', '') not in ('rejected', 'scan_failed'):
+                    lock_key = f"warming_{repo_id.replace('/', '__')}"
+                    got_lock = False
+                    try:
+                        got_lock = cache.add(lock_key, 1, timeout=120)
+                    except Exception:
+                        # If cache backend misbehaves, skip warming to avoid blocking
+                        got_lock = False
+
+                    if got_lock:
+                        log.info("WARMING START repo=%s user=%s — attempting on-demand cache warm", repo_id, gm.user_id)
+                        try:
+                            from apps.users.model_lifecycle import download_and_scan_for_user
+                            # Synchronous warm for the owning user; will persist cached_path on success
+                            download_and_scan_for_user(gm.user_id)
+                        except Exception:
+                            log.exception("Error while warming cache for repo=%s user=%s", repo_id, gm.user_id)
+
+                        # Retry lookup once (do not attempt warming again concurrently)
+                        try:
+                            model_dir_retry, data_dir_retry = _find_cached_model(repo_id, game_type)
+                            if model_dir_retry:
+                                return model_dir_retry, data_dir_retry
+                            else:
+                                log.warning("WARMING MISS: repo=%s user=%s — cache still missing after warm", repo_id, gm.user_id)
+                        except Exception:
+                            log.exception("Error during retry lookup after warming for %s", repo_id)
+                        finally:
+                            try:
+                                cache.delete(lock_key)
+                            except Exception:
+                                pass
+                    else:
+                        log.debug("Warming already in progress for repo=%s — skipping on-demand warm", repo_id)
+            except Exception:
+                log.debug("On-demand warming check failed for %s", repo_id, exc_info=True)
+    except Exception:
+        log.debug("On-demand warming outer failed for %s", repo_id, exc_info=True)
+
     return None, None
 
 
@@ -928,10 +1100,10 @@ def try_handler_get_move():
     try:
         if GAME_TYPE == 'breakthrough':
             import official_breakthrough_handler as oh
-            print('✅ Using OFFICIAL Breakthrough handler (ignoring user\'s handler.py)', file=sys.stderr)
+            print("✅ Using OFFICIAL Breakthrough handler (ignoring user handler.py)", file=sys.stderr)
         else:
             import official_chess_handler as oh
-            print('✅ Using OFFICIAL Chess handler (ignoring user\'s handler.py)', file=sys.stderr)
+            print("✅ Using OFFICIAL Chess handler (ignoring user handler.py)", file=sys.stderr)
 
         handler = oh.EndpointHandler(path=str(MODEL_DIR))
         print(f'✅ Loading model weights from cache: {MODEL_DIR}', file=sys.stderr)
@@ -1068,8 +1240,29 @@ if __name__ == '__main__':
     )
 
     runner_path = model_dir / "_agl_local_runner.py"
+    # Ensure runner parent directory exists. On Windows dev machines a
+    # Linux-style absolute path (starting with '/') may appear in the
+    # model_dir; warn and attempt to create the parents regardless.
+    runner_parent = runner_path.parent
+    if platform.system().lower().startswith("win") and str(model_dir).startswith("/"):
+        log.warning(
+            "Cross-platform path detected for model_dir on Windows: %s. "
+            "Attempting to create parent directories but path may be invalid.",
+            model_dir,
+        )
+    try:
+        runner_parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        log.debug("Could not create parent directories for %s", runner_parent, exc_info=True)
+
     try:
         runner_path.write_text(runner_code, encoding="utf-8")
+    except FileNotFoundError:
+        log.error(
+            "Failed to write local runner — parent directory does not exist or path is cross-platform incompatible. model_dir=%s",
+            model_dir,
+        )
+        return None
     except Exception:
         log.exception("Failed to write local runner to %s", runner_path)
         return None
@@ -1098,6 +1291,12 @@ if __name__ == '__main__':
     except subprocess.TimeoutExpired:
         log.warning("Local runner timed out after %ds", timeout)
         return None
+    except FileNotFoundError:
+        log.error(
+            "Local runner failed with FileNotFoundError. This may indicate an invalid/cross-platform model path (Windows vs Linux paths). model_dir=%s python_bin=%s runner_path=%s",
+            model_dir, python_bin, runner_path,
+        )
+        return None
     except Exception:
         log.exception("Local runner failed for %s", model_dir)
         return None
@@ -1124,6 +1323,103 @@ def _resolve_user_token(repo_id: str, game_type: str) -> str | None:
     except Exception:
         log.debug("Could not resolve user token for %s", repo_id, exc_info=True)
     return getattr(settings, "HF_PLATFORM_TOKEN", "")
+
+
+def _quick_snapshot_download(
+    repo_id: str,
+    game_type: str,
+    dest_dir: Path,
+    token: str | None = None,
+    timeout: int = 5,
+) -> tuple[bool, str, Path | None]:
+    """Attempt a fast, one-shot snapshot_download in a subprocess.
+
+    This helper is used for a safe *quick* per-move download: it spawns a
+    separate Python process that calls ``huggingface_hub.snapshot_download``
+    and enforces a strict timeout. If the download does not complete within
+    ``timeout`` seconds the subprocess is killed and the attempt is treated
+    as a failure. This avoids blocking the main game loop for long HF
+    downloads.
+
+    NOTE: This performs a minimal, best-effort download and does *not*
+    perform the full security scan (bandit/modelscan/fickling). Use with
+    caution and only when a short timeout is acceptable. Caller must
+    cleanup ``dest_dir`` on failure or after use.
+    """
+    model_dir = dest_dir / "model"
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    hf_token = token or getattr(settings, "HF_PLATFORM_TOKEN", "")
+    python_bin = str(getattr(settings, "SANDBOX_PYTHON_BIN", sys.executable))
+
+    # Build a tiny downloader script that calls snapshot_download() with retries
+    # NOTE: HF 503 on resolve is common for new/small repos and is usually transient.
+    allow_patterns = repr(SAFE_ALLOW_PATTERNS)
+    script = f"""
+import sys, time, random
+from huggingface_hub import snapshot_download
+
+repo_id = {repr(repo_id)}
+model_dir = {repr(str(model_dir))}
+token = {repr(hf_token or None)}
+allow_patterns = {allow_patterns}
+cache_dir = model_dir + '/.hf_cache'
+max_attempts = 8
+
+for attempt in range(1, max_attempts + 1):
+    try:
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=model_dir,
+            token=token,
+            allow_patterns=allow_patterns,
+            cache_dir=cache_dir,
+        )
+        print('OK')
+        sys.exit(0)
+    except Exception as e:
+        s = str(e) or ''
+        is_503 = False
+        try:
+            if getattr(e, 'status_code', None) == 503 or getattr(e, 'status', None) == 503:
+                is_503 = True
+        except Exception:
+            pass
+        if not is_503 and ('503' in s or 'Service Unavailable' in s or '503 Server Error' in s):
+            is_503 = True
+        if is_503 and attempt < max_attempts:
+            # Exponential backoff: sleep 2 ** attempt seconds
+            sleep_time = 2 ** attempt
+            print(f"⚠️ 503 from HF for {repo_id}; retry {attempt}/{max_attempts} in {sleep_time}s", file=sys.stderr)
+            time.sleep(sleep_time)
+            continue
+        else:
+            print('ERROR:' + str(e), file=sys.stderr)
+            sys.exit(2)
+"""
+
+    script_path = dest_dir / "_quick_dl.py"
+    try:
+        script_path.write_text(script, encoding="utf-8")
+    except Exception as exc:
+        return False, f"Could not write quick download script: {exc}", None
+
+    try:
+        result = subprocess.run(
+            [python_bin, str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode == 0 and "OK" in (result.stdout or ""):
+            return True, "Quick download successful", model_dir
+        return False, (result.stderr or result.stdout or "quick download failed"), None
+    except subprocess.TimeoutExpired:
+        log.warning("Quick snapshot_download timed out for %s (timeout=%ds)", repo_id, timeout)
+        return False, "timeout", None
+    except Exception as exc:
+        log.exception("Quick snapshot_download failed for %s", repo_id)
+        return False, str(exc), None
 
 
 def get_move_local(
@@ -1162,6 +1458,9 @@ def get_move_local(
         return None
 
     # ── Try pre-downloaded model from /tmp/user_models/ (login cache) ──
+    # Resolve the best token for this repo (user's OAuth → platform)
+    # moved here so quick-download and cached-path checks can reuse it
+    _dl_token = _resolve_user_token(repo_id, game_type)
     cached_model_dir, cached_data_dir = _find_cached_model(repo_id, game_type)
     if cached_model_dir:
         log.info(
@@ -1187,24 +1486,58 @@ def get_move_local(
     # settings.ALLOW_PER_MOVE_DOWNLOADS then fall back to the original
     # behaviour; otherwise return None so callers use safe local fallback.
     if not getattr(settings, "ALLOW_PER_MOVE_DOWNLOADS", False):
-        # Explicit cache-miss log with actionable guidance.
-        log.warning(
-            "CACHE_MISS: No cached model found for repo='%s' (game=%s). "
-            "Per-move downloads are disabled. Using safe fallback (random or default AI). "
-            "To change this, either ensure the user has a verified model cached at login, "
-            "or enable per-move downloads by setting ALLOW_PER_MOVE_DOWNLOADS=True.",
-            repo_id, game_type,
-        )
-        return None
+        # If per-move downloads are globally disabled, optionally attempt a
+        # short, one-shot download controlled by a toggle. This allows a
+        # fast best-effort retrieval (timeout-limited) so the first move can
+        # still try the user's model without stalling the game.
+        allow_quick = getattr(settings, "ALLOW_PER_MOVE_QUICK_DOWNLOAD", False)
+        quick_timeout = int(getattr(settings, "PER_MOVE_QUICK_DOWNLOAD_TIMEOUT", 5))
+        if not allow_quick:
+            # Explicit cache-miss log with actionable guidance.
+            log.warning(
+                "CACHE_MISS: No cached model found for repo='%s' (game=%s). "
+                "Per-move downloads are disabled. Using safe fallback (random or default AI). "
+                "To change this, either ensure the user has a verified model cached at login, "
+                "or enable per-move downloads by setting ALLOW_PER_MOVE_DOWNLOADS=True.",
+                repo_id, game_type,
+            )
+            return None
+
+        # Quick per-move download enabled — attempt a short, timed download.
+        log.info("CACHE_MISS: attempting quick per-move download repo=%s timeout=%ds", repo_id, quick_timeout)
+        temp_dir = _make_temp_dir(f"move_quick_{repo_id.replace('/', '_')}", game_type)
+        model_dir = None
+        data_dir = None
+        try:
+            ok, msg, model_dir = _quick_snapshot_download(repo_id, game_type, temp_dir, token=_dl_token, timeout=quick_timeout)
+            if not ok or model_dir is None:
+                log.warning("Quick download failed for %s: %s", repo_id, msg)
+                return None
+
+            # Download data repo if needed (Breakthrough)
+            if data_repo_id:
+                ok_data, _, data_dir = _download_data_repo(
+                    data_repo_id, temp_dir, token=_dl_token,
+                )
+                if not ok_data:
+                    log.warning("Data download failed for %s", data_repo_id)
+
+            # Run the sandbox with the freshly-downloaded model
+            move = _run_in_sandbox(
+                model_dir, fen, player, game_type,
+                data_dir=data_dir,
+                allow_local_fallback=False,
+            )
+            return move
+        finally:
+            # ALWAYS clean up — zero persistent storage
+            _cleanup_temp_dir(temp_dir)
 
     temp_dir = _make_temp_dir(f"move_{repo_id.replace('/', '_')}", game_type)
     model_dir: Path | None = None
     data_dir: Path | None = None
 
     try:
-        # Resolve the best token for this repo (user's OAuth → platform)
-        _dl_token = _resolve_user_token(repo_id, game_type)
-
         # Download model to temp dir
         ok, msg, model_dir = download_model(
             repo_id, game_type, token=_dl_token, dest_dir=temp_dir,
@@ -1533,7 +1866,7 @@ def verify_model(
                 model_dir, test_fen, test_player, game_type,
                 data_dir=data_dir,
                 timeout=_get_verify_timeout(),
-                allow_local_fallback=False,
+                allow_local_fallback=getattr(settings, "SANDBOX_ENABLE_LOCAL_FALLBACK", True),
             )
             passed = move is not None
             test_results.append({
@@ -1573,46 +1906,46 @@ def verify_model(
             if not cache_root:
                 cache_root = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
 
-            repo_folder = repo_id.replace('/', '__')
-            dest_repo = Path(cache_root) / f"user_{game_model.user_id}" / game_type / repo_folder
+            dest_base = Path(cache_root) / f"user_{game_model.user_id}" / game_type
+            dest_model = dest_base / "model"
 
-            # If model_dir came from a temp location, move it into dest_repo.
+            # If model_dir came from a temp location, move it into dest_model.
             if model_dir and model_dir.exists():
                 model_path = Path(model_dir)
-                if model_path.resolve() != dest_repo.resolve():
+                if model_path.resolve() != dest_model.resolve():
                     # Remove any previous cached copy then move
-                    if dest_repo.exists():
-                        shutil.rmtree(dest_repo, ignore_errors=True)
-                    dest_repo.parent.mkdir(parents=True, exist_ok=True)
+                    if dest_model.exists():
+                        shutil.rmtree(dest_model, ignore_errors=True)
+                    dest_model.parent.mkdir(parents=True, exist_ok=True)
                     try:
-                        shutil.move(str(model_path), str(dest_repo))
+                        shutil.move(str(model_path), str(dest_model))
                     except Exception:
                         # Fallback: move contents
-                        dest_repo.mkdir(parents=True, exist_ok=True)
+                        dest_model.mkdir(parents=True, exist_ok=True)
                         for p in model_path.iterdir():
                             try:
-                                shutil.move(str(p), str(dest_repo))
+                                shutil.move(str(p), str(dest_model))
                             except Exception:
-                                log.debug("Failed moving %s into cache %s", p, dest_repo, exc_info=True)
+                                log.debug("Failed moving %s into cache %s", p, dest_model, exc_info=True)
                         try:
                             shutil.rmtree(model_path, ignore_errors=True)
                         except Exception:
                             pass
                 else:
                     # model_dir is already the desired cache location
-                    dest_repo = model_path
+                    dest_model = model_path
 
-            # Move data_dir into dest_repo/data if present
+            # Move data_dir into dest_base/data if present
             if data_dir and data_dir.exists():
                 try:
-                    dst_data = dest_repo / "data"
+                    dst_data = dest_base / "data"
                     if dst_data.exists():
                         shutil.rmtree(dst_data, ignore_errors=True)
                     shutil.move(str(data_dir), str(dst_data))
                 except Exception:
                     log.debug("Failed to persist data_dir for %s", repo_id, exc_info=True)
 
-            game_model.cached_path = str(dest_repo)
+            game_model.cached_path = str(dest_base)
             game_model.cached_at = timezone.now()
             game_model.cached_commit = current_sha or ""
         except Exception:

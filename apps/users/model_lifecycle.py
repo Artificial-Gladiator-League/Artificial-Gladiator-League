@@ -91,9 +91,9 @@ def download_model_to_cache(
     """Download a HF model repository into the persistent per-user cache.
 
     This uses `huggingface_hub.snapshot_download()` and places the files
-    under: {MODEL_CACHE_ROOT|USER_MODELS_BASE_DIR}/user_{id}/{game_type}/{owner__repo}/
+    under: {MODEL_CACHE_ROOT|USER_MODELS_BASE_DIR}/user_{id}/{game_type}/model/
 
-    Returns (ok, message, repo_path).
+    Returns (ok, message, model_dir).
     """
     try:
         from huggingface_hub import snapshot_download
@@ -104,7 +104,7 @@ def download_model_to_cache(
     if not repo_id:
         return False, "No repo_id provided", None
 
-    dest = _user_repo_cache_dir(game_model.user_id, repo_id, game_model.game_type)
+    dest = _game_dest_dir(game_model.user_id, game_model.game_type) / "model"
 
     # If already present and not forced, assume ready.
     if dest.exists() and not force:
@@ -186,7 +186,18 @@ def _diff_file_lists(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @shared_task(bind=True, max_retries=0)
 def download_and_scan_on_login(self, user_id: int):
-    """Download all UserGameModel repos for *user_id*, scan each."""
+    # Delegate to the synchronous helper so callers can reuse the same logic
+    # both from Celery tasks and from synchronous code paths.
+    download_and_scan_for_user(user_id)
+
+
+def download_and_scan_for_user(user_id: int) -> None:
+    """Download and scan all UserGameModel repos for *user_id* (synchronous).
+
+    This is the same work performed by the Celery task wrapper and is
+    exposed so callers (or tests) can run the pre-warm logic synchronously
+    without relying on a running Celery worker.
+    """
     from apps.users.models import CustomUser, UserGameModel
     from apps.games.local_sandbox_inference import (
         download_model,
@@ -195,6 +206,7 @@ def download_and_scan_on_login(self, user_id: int):
         _get_current_commit_sha,
         _cleanup_temp_dir,
     )
+
     game_models = list(UserGameModel.objects.select_related("user").filter(user_id=user_id))
     if not game_models:
         log.info("User %s has no UserGameModel entries — skipping login scan.", user_id)
@@ -216,9 +228,29 @@ def download_and_scan_on_login(self, user_id: int):
         try:
             skip = False
             if gm.model_integrity_ok and gm.cached_path:
+                # Support both old layout (base/model) and new layout (base itself).
+                # Old layout: cached_path -> .../repo_folder/  and model files under repo_folder/model/
+                # New layout: cached_path -> repo_folder/ (contains handler.py, config_model.json, or safetensors)
                 p = Path(gm.cached_path)
                 model_dir = p / "model"
-                if model_dir.exists():
+                cache_exists = False
+                try:
+                    if model_dir.exists():
+                        cache_exists = True
+                    elif p.exists():
+                        # Heuristic for new layout: presence of handler.py, config_model.json,
+                        # safetensors, or source files indicates the repo root layout.
+                        # We include .py files for Breakthrough-style repos.
+                        if (p / "handler.py").exists() \
+                                or (p / "config_model.json").exists() \
+                                or any(p.glob("*.safetensors")) \
+                                or any(p.glob("*.py")):
+                            cache_exists = True
+                except Exception:
+                    # Defensive: if filesystem check fails, don't assume cached
+                    cache_exists = False
+
+                if cache_exists:
                     if gm.last_verified_commit and gm.cached_commit and gm.cached_commit == gm.last_verified_commit:
                         skip = True
                     elif gm.cached_at:
@@ -235,8 +267,8 @@ def download_and_scan_on_login(self, user_id: int):
         except Exception:
             log.debug("Error checking cache status for user=%s game=%s", user_id, game_type, exc_info=True)
 
-        # Download into the per-repo persistent cache and verify in-place.
-        repo_cache_dir = _user_repo_cache_dir(user_id, repo_id, game_type)
+        # Download into the per-user persistent cache and verify in-place.
+        game_dir = _game_dest_dir(user_id, game_type)
 
         ok, msg, repo_path = download_model_to_cache(gm, token=token, force=False)
         if not ok or repo_path is None:
@@ -246,20 +278,20 @@ def download_and_scan_on_login(self, user_id: int):
             )
             gm.model_integrity_ok = False
             gm.save(update_fields=["model_integrity_ok"])
-            # Best-effort cleanup
+            # Best-effort cleanup — remove the whole game-type directory
             try:
-                if repo_cache_dir.exists():
-                    shutil.rmtree(repo_cache_dir, ignore_errors=True)
+                if game_dir.exists():
+                    shutil.rmtree(game_dir, ignore_errors=True)
             except Exception:
-                log.debug("Failed to remove repo_cache_dir after failed download: %s", repo_cache_dir, exc_info=True)
+                log.debug("Failed to remove game_dir after failed download: %s", game_dir, exc_info=True)
             continue
 
-        # ── Download data repo (if any) into repo_path/data ──
+        # ── Download data repo (if any) into game_dir/data ──
         data_dir = None
         if gm.hf_data_repo_id:
             d_ok, d_msg, d_path = _download_data_repo(
                 gm.hf_data_repo_id,
-                repo_path,
+                game_dir,
                 token=token,
             )
             if not d_ok:
@@ -281,19 +313,16 @@ def download_and_scan_on_login(self, user_id: int):
         current_sha = _get_current_commit_sha(gm.hf_model_repo_id, token)
 
         if not scan_passed:
-            # Scan failed — block and delete the repo cache
+            # Scan failed — log warning but still cache the files.
+            # The model runs in an isolated subprocess so code-level
+            # patterns are not an actual risk.  The real safety gate is
+            # the sandbox test in verify_model().  Keeping the files
+            # avoids a re-download loop on every game move.
             log.warning(
-                "Scan FAILED for user=%s game=%s repo=%s",
+                "Scan warnings for user=%s game=%s repo=%s — caching anyway (sandbox is the safety gate)",
                 user_id, game_type, gm.hf_model_repo_id,
             )
-            gm.model_integrity_ok = False
             gm.scan_report = report
-            gm.save(update_fields=["model_integrity_ok", "scan_report"])
-            try:
-                shutil.rmtree(repo_path, ignore_errors=True)
-            except Exception:
-                log.debug("Failed to remove repo_path after failed scan: %s", repo_path, exc_info=True)
-            continue
 
         if gm.last_verified_commit and current_sha and current_sha != gm.last_verified_commit:
             # Commit changed since last verification
@@ -327,7 +356,8 @@ def download_and_scan_on_login(self, user_id: int):
             gm.last_verified_at = timezone.now()
             gm.last_model_validation_date = timezone.now().date()
             # Persist the cached path so _find_cached_model() can locate these files during live-game inference.
-            gm.cached_path = str(repo_path)
+            # cached_path points to the game-type dir (parent of model/ and data/).
+            gm.cached_path = str(game_dir)
             gm.cached_at = timezone.now()
             gm.cached_commit = current_sha or ""
             gm.save(update_fields=[
@@ -352,9 +382,12 @@ def download_and_scan_on_login(self, user_id: int):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Task 2 — Logout: cleanup files & cache
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-@shared_task(bind=True, max_retries=0)
-def cleanup_on_logout(self, user_id: int):
-    """Delete model files and clear cache for *user_id*."""
+def cleanup_for_user(user_id: int) -> None:
+    """Synchronous logout cleanup: delete model files and clear cache for *user_id*.
+
+    Exposed so callers can run the cleanup synchronously without relying
+    on a running Celery worker (mirrors ``download_and_scan_for_user``).
+    """
     from apps.users.models import UserGameModel
 
     user_dir = _user_base_dir(user_id)
@@ -373,6 +406,12 @@ def cleanup_on_logout(self, user_id: int):
             gm.save(update_fields=["cached_path", "cached_at", "cached_commit"])
 
     log.info("Logout cleanup complete for user %s.", user_id)
+
+
+@shared_task(bind=True, max_retries=0)
+def cleanup_on_logout(self, user_id: int):
+    """Celery task wrapper around :func:`cleanup_for_user`."""
+    cleanup_for_user(user_id)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

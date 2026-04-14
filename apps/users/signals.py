@@ -20,6 +20,7 @@ from channels.layers import get_channel_layer
 from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.utils import timezone
 
 from apps.games.chess_engine import compute_elo_deltas
 from apps.games.models import Game
@@ -269,141 +270,57 @@ def _notify_user_verification_failed(user, game_type: str, error_msg: str):
 
 @receiver(user_logged_in)
 def preload_breakthrough_on_login(sender, request, user, **kwargs):
-    """Schedule model download & verification for the user after login.
+    """Download & verify models for the user after login.
 
-    This schedules the Celery task `download_and_scan_on_login` for the
-    authenticated user. In `CELERY_TASK_ALWAYS_EAGER` mode we call
-    `.delay()` from a background thread so the login response is not blocked.
+    Always runs ``download_and_scan_for_user`` directly in a background
+    thread so it works regardless of whether a Celery worker is running.
     """
     if user is None:
         return
     try:
-        from django.conf import settings
-        from apps.users.model_lifecycle import download_and_scan_on_login
+        from apps.users.model_lifecycle import download_and_scan_for_user
 
         user_pk = getattr(user, "pk", None)
         if user_pk is None:
             return
 
-        if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
-            def _bg():
-                try:
-                    download_and_scan_on_login.delay(user_pk)
-                except Exception:
-                    log.exception("Background login scan failed for user=%s", user_pk)
+        def _bg():
+            try:
+                download_and_scan_for_user(user_pk)
+            except Exception:
+                log.exception("Background login scan failed for user=%s", user_pk)
 
-            threading.Thread(target=_bg, daemon=True).start()
-        else:
-            download_and_scan_on_login.delay(user_pk)
-
-        log.info("Scheduled download_and_scan_on_login for user %s", user.username)
+        threading.Thread(target=_bg, daemon=True).start()
+        log.info("Started background download_and_scan for user %s", user.username)
     except Exception:
-        log.exception("Failed to schedule download task for user %s", getattr(user, "username", "?"))
+        log.exception("Failed to start download task for user %s", getattr(user, "username", "?"))
 
 
 # ── Logout handler (no-op — zero persistent storage) ──
 
 @receiver(user_logged_out)
 def clear_breakthrough_on_logout(sender, request, user, **kwargs):
-    """Schedule cleanup of cached model files on logout.
+    """Clean up cached model files on logout.
 
-    When a user logs out we schedule `cleanup_on_logout` to remove cached
-    files for that user. In eager Celery mode the `.delay()` call is made from
-    a background thread to avoid blocking the logout response.
+    Always runs ``cleanup_for_user`` directly in a background thread so
+    it works regardless of whether a Celery worker is running.
     """
     if user is None:
         return
     try:
-        from django.conf import settings
-        from apps.users.model_lifecycle import cleanup_on_logout
+        from apps.users.model_lifecycle import cleanup_for_user
 
         user_id = getattr(user, "pk", None)
         if user_id is None:
             return
 
-        if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
-            def _bg():
-                try:
-                    cleanup_on_logout.delay(user_id)
-                except Exception:
-                    log.exception("Background logout cleanup failed for user=%s", user_id)
+        def _bg():
+            try:
+                cleanup_for_user(user_id)
+            except Exception:
+                log.exception("Background logout cleanup failed for user=%s", user_id)
 
-            threading.Thread(target=_bg, daemon=True).start()
-        else:
-            cleanup_on_logout.delay(user_id)
-
-        log.info("Scheduled cleanup_on_logout for user %s", user.username)
+        threading.Thread(target=_bg, daemon=True).start()
+        log.info("Started background cleanup for user %s", user.username)
     except Exception:
-        log.exception("Failed to schedule logout cleanup for user %s", getattr(user, "username", "?"))
-
-
-@receiver(user_logged_in)
-def on_user_login(sender, request, user, **kwargs):
-    """When a user logs in, pre-warm their model cache."""
-    if user is None:
-        return
-    log.info("🔑 LOGIN  user=%s — triggering model pre-warm", user.username)
-    try:
-        from apps.games.local_sandbox_inference import verify_model
-        from apps.users.models import UserGameModel
-        game_models = UserGameModel.objects.filter(user=user, verification_status="approved")
-        for gm in game_models:
-            if gm.cached_path:
-                import os
-                if os.path.exists(gm.cached_path):
-                    log.info(
-                        "✅ LOGIN  user=%s game_type=%s — model cache exists at %s",
-                        user.username, gm.game_type, gm.cached_path,
-                    )
-                else:
-                    log.warning(
-                        "⚠️  LOGIN  user=%s game_type=%s — cached_path %s missing on disk, "
-                        "model must be re-verified before playing.",
-                        user.username, gm.game_type, gm.cached_path,
-                    )
-            else:
-                log.warning(
-                    "⚠️  LOGIN  user=%s game_type=%s — no cached model, "
-                    "model must be verified before playing.",
-                    user.username, gm.game_type,
-                )
-    except Exception:
-        log.exception("❌ LOGIN  user=%s — error during model pre-warm check", user.username)
-
-
-@receiver(user_logged_out)
-def on_user_logout(sender, request, user, **kwargs):
-    """When a user logs out, delete their model cache from disk."""
-    if user is None:
-        return
-    log.info("🚪 LOGOUT user=%s — deleting model cache", user.username)
-    try:
-        import shutil
-        from apps.users.models import UserGameModel
-        game_models = UserGameModel.objects.filter(user=user)
-        for gm in game_models:
-            if gm.cached_path:
-                import os
-                if os.path.exists(gm.cached_path):
-                    try:
-                        shutil.rmtree(gm.cached_path, ignore_errors=True)
-                        log.info(
-                            "🗑️  LOGOUT user=%s game_type=%s — deleted cache at %s",
-                            user.username, gm.game_type, gm.cached_path,
-                        )
-                    except Exception:
-                        log.exception(
-                            "❌ LOGOUT user=%s game_type=%s — failed to delete %s",
-                            user.username, gm.game_type, gm.cached_path,
-                        )
-                    # Clear the cached_path field in DB so it won't be referenced after deletion
-                    gm.cached_path = ""
-                    gm.cached_at = None
-                    gm.save(update_fields=["cached_path", "cached_at"])
-                else:
-                    log.info(
-                        "LOGOUT user=%s game_type=%s — no cache on disk (already clean)",
-                        user.username, gm.game_type,
-                    )
-    except Exception:
-        log.exception("❌ LOGOUT user=%s — error during model cache cleanup", user.username)
+        log.exception("Failed to start logout cleanup for user %s", getattr(user, "username", "?"))

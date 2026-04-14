@@ -109,9 +109,21 @@ CACHES = {
 
 # ── User model storage ────────────────────────
 # Per-user cached model storage (populated on verification, cleaned on logout).
-# Default is a system path; override with AGL_USER_MODELS_DIR env var.
-USER_MODELS_BASE_DIR = Path(os.environ.get("AGL_USER_MODELS_DIR", "/var/lib/agladiator/user_models"))
-SHARED_MODELS_BASE_DIR = Path(os.environ.get("AGL_SHARED_MODELS_DIR", "/var/lib/agladiator/shared_models"))
+# Default is a system path on Linux; on Windows, fall back to a project-local
+# directory so paths resolve correctly during development.
+_DEFAULT_USER_MODELS = "/var/lib/agladiator/user_models"
+_DEFAULT_SHARED_MODELS = "/var/lib/agladiator/shared_models"
+if sys.platform == "win32":
+    _DEFAULT_USER_MODELS = str(BASE_DIR / "user_models")
+    _DEFAULT_SHARED_MODELS = str(BASE_DIR / "shared_models")
+USER_MODELS_BASE_DIR = Path(os.environ.get("AGL_USER_MODELS_DIR", _DEFAULT_USER_MODELS))
+SHARED_MODELS_BASE_DIR = Path(os.environ.get("AGL_SHARED_MODELS_DIR", _DEFAULT_SHARED_MODELS))
+
+# Live session models root — per-user live folders used while the user is logged in.
+# These folders are created at login and removed at logout. Override with
+# the LIVE_MODELS_ROOT environment variable if desired.
+_DEFAULT_LIVE_ROOT = str(USER_MODELS_BASE_DIR / "live")
+LIVE_MODELS_ROOT = Path(os.environ.get("LIVE_MODELS_ROOT", _DEFAULT_LIVE_ROOT))
 
 # Persistent model cache root used by download/verify routines. If
 # `MODEL_CACHE_ROOT` is set in the environment it will be used; otherwise
