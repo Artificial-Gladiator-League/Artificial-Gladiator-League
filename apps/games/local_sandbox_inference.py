@@ -1664,9 +1664,20 @@ def try_transformers_chess():
         model = AutoModelForCausalLM.from_pretrained(
             "/model", use_safetensors=True, trust_remote_code=False,
         )
-        tokenizer = AutoTokenizer.from_pretrained(
-            "/model", trust_remote_code=False,
-        )
+        # Load tokenizer: prefer fast tokenizer but fallback to slow if fast
+        # conversion requires optional dependencies (sentencepiece/tiktoken).
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                "/model", trust_remote_code=False,
+            )
+        except Exception as e:
+            # Retry with slow tokenizer
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(
+                    "/model", trust_remote_code=False, use_fast=False,
+                )
+            except Exception:
+                raise
         model.eval()
 
         inputs = tokenizer(FEN, return_tensors="pt")

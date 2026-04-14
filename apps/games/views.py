@@ -382,7 +382,7 @@ def create_lobby_game(request):
     game_type = request.POST.get("game_type", Game.GameType.CHESS)
     if game_type not in {Game.GameType.CHESS, Game.GameType.BREAKTHROUGH}:
         game_type = Game.GameType.CHESS
-    if game_type != Game.GameType.BREAKTHROUGH and not request.user.hf_model_repo_id:
+    if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
         messages.error(request, "You must set an AI model before creating a game.")
         return redirect("games:lobby")
     base_minutes = request.POST.get("base_minutes", "3")
@@ -436,7 +436,7 @@ def create_game(request):
     game_type = request.POST.get("game_type", Game.GameType.CHESS)
     if game_type not in {Game.GameType.CHESS, Game.GameType.BREAKTHROUGH}:
         game_type = Game.GameType.CHESS
-    if game_type != Game.GameType.BREAKTHROUGH and not request.user.hf_model_repo_id:
+    if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
         messages.error(request, "You must set an AI model before creating a game.")
         return redirect("games:lobby")
     tc = request.POST.get("time_control", "3+1")
@@ -469,7 +469,7 @@ def join_game(request, game_id):
     # Already in this game
     if request.user in (game.white, game.black):
         return redirect("games:game_detail", game_id=game.pk)
-    if game.game_type != Game.GameType.BREAKTHROUGH and not request.user.hf_model_repo_id:
+    if game.game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game.game_type):
         messages.error(request, "You must set an AI model before joining a game.")
         return redirect("games:lobby")
     if game.black is None:
