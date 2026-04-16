@@ -27,6 +27,74 @@ def _dark_attrs(extra=None, css=_INPUT_CSS, **kwargs):
     return attrs
 
 
+def ensure_read_only_hf_token(hf_token: str) -> str:
+    """Ensure *hf_token* is valid and does NOT grant write/admin permissions.
+
+    Returns the HF username associated with the token. Raises
+    ``forms.ValidationError`` on failure.
+    """
+    from huggingface_hub import HfApi
+    from huggingface_hub.utils import HfHubHTTPError
+
+    api = HfApi()
+    try:
+        whoami_result = api.whoami(token=hf_token)
+        token_username = whoami_result.get("name") or whoami_result.get("login")
+        if not token_username:
+            raise forms.ValidationError({
+                "hf_token": "Invalid Hugging Face access token (no username found).",
+            })
+    except HfHubHTTPError:
+        raise forms.ValidationError({
+            "hf_token": (
+                "Invalid Hugging Face access token. "
+                "Check that you copied the full token from https://huggingface.co/settings/tokens"
+            ),
+        })
+
+    # Inspect token metadata and reject tokens with write/admin scopes.
+    try:
+        auth = whoami_result.get("auth") if isinstance(whoami_result, dict) else None
+        access_token = None
+        if isinstance(auth, dict):
+            access_token = auth.get("accessToken")
+        # Fallbacks for different HF whoami shapes
+        if not access_token:
+            access_token = whoami_result.get("token") or whoami_result.get("accessToken")
+
+        if isinstance(access_token, dict):
+            role = access_token.get("role") or access_token.get("permission")
+            if role and isinstance(role, str):
+                rl = role.lower()
+                if "write" in rl or "admin" in rl or "owner" in rl or "maintain" in rl:
+                    raise forms.ValidationError({
+                        "hf_token": (
+                            "Please provide a token with READ permissions only. "
+                            "Tokens with write or admin scopes are not accepted."
+                        ),
+                    })
+
+            scopes = access_token.get("scopes") or access_token.get("permissions") or []
+            for s in scopes or []:
+                try:
+                    sval = str(s).lower()
+                except Exception:
+                    sval = ""
+                if "write" in sval or "admin" in sval or "repo:write" in sval:
+                    raise forms.ValidationError({
+                        "hf_token": (
+                            "Please provide a token with READ permissions only. "
+                            "Tokens with write or admin scopes are not accepted."
+                        ),
+                    })
+    except forms.ValidationError:
+        raise
+    except Exception:
+        log.debug("Could not fully inspect token scopes from whoami(): %s", whoami_result)
+
+    return token_username
+
+
 # ────────────────────────────────────────────────────────────
 #  Gated-repo validation helper
 # ────────────────────────────────────────────────────────────
@@ -82,6 +150,53 @@ def validate_gated_hf_repo(repo_id: str, hf_token: str) -> None:
                 "Check that you copied the full token from "
                 "https://huggingface.co/settings/tokens",
         })
+
+    # ── 3b. Inspect token metadata and reject tokens with write/admin scopes
+    # Some tokens (fine-grained access tokens) expose detailed metadata
+    # under `whoami()` in `auth.accessToken` including `role` and `scopes`.
+    # Reject any token that appears to grant write or admin permissions.
+    try:
+        auth = whoami_result.get("auth") if isinstance(whoami_result, dict) else None
+        access_token = None
+        if isinstance(auth, dict):
+            access_token = auth.get("accessToken")
+        # Fallbacks for different HF whoami shapes
+        if not access_token:
+            access_token = whoami_result.get("token") or whoami_result.get("accessToken")
+
+        if isinstance(access_token, dict):
+            # role is often a short string like 'read' / 'write' / 'admin'
+            role = access_token.get("role") or access_token.get("permission")
+            if role and isinstance(role, str):
+                rl = role.lower()
+                if "write" in rl or "admin" in rl or "owner" in rl or "maintain" in rl:
+                    raise forms.ValidationError({
+                        "hf_token": (
+                            "Please provide a token with READ permissions only. "
+                            "Tokens with write or admin scopes are not accepted."
+                        ),
+                    })
+
+            # Also inspect any explicit scopes list (e.g. ['repo:read', 'repo:write'])
+            scopes = access_token.get("scopes") or access_token.get("permissions") or []
+            for s in scopes or []:
+                try:
+                    sval = str(s).lower()
+                except Exception:
+                    sval = ""
+                if "write" in sval or "admin" in sval or "repo:write" in sval:
+                    raise forms.ValidationError({
+                        "hf_token": (
+                            "Please provide a token with READ permissions only. "
+                            "Tokens with write or admin scopes are not accepted."
+                        ),
+                    })
+    except forms.ValidationError:
+        raise
+    except Exception:
+        # Don't fail validation just because token metadata shape is unexpected.
+        # In that case the token will be validated below by attempting to access the repo.
+        log.debug("Could not fully inspect token scopes from whoami(): %s", whoami_result)
 
     # ── NEW: Enforce token user == repo owner/namespace ──────
     repo_namespace = repo_id.split("/")[0].strip()
