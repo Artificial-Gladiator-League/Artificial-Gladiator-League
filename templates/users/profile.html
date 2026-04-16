@@ -24,6 +24,24 @@
   html:not(.dark) .profile-tab { color: #6b7280; }
   html:not(.dark) .profile-tab:hover { color: #5a9a3c; }
   html:not(.dark) .profile-tab.active { color: #5a9a3c; border-color: #5a9a3c; }
+  /* ── AI Models subtab styling (small horizontal subtabs) ── */
+  .ai-subtab {
+    padding: 0.45rem 0.9rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #9ca3af;
+    border-bottom: 2px solid transparent;
+    background: none;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+    margin-right: 0.5rem;
+    white-space: nowrap;
+  }
+  .ai-subtab:hover { color: #77b255; }
+  .ai-subtab.active { color: #77b255; border-color: #77b255; }
+  html:not(.dark) .ai-subtab { color: #6b7280; }
+  html:not(.dark) .ai-subtab:hover { color: #5a9a3c; }
+  html:not(.dark) .ai-subtab.active { color: #5a9a3c; border-color: #5a9a3c; }
   /* Format stats sub-card */
   .format-section { border-left: 3px solid #77b255; padding-left: 1rem; margin-bottom: 1.5rem; }
   .tc-badge {
@@ -334,8 +352,18 @@
           verification and is <strong>never stored</strong> on our servers.
         </div>
 
+        <!-- Subtabs: one per game -->
+        <div class="mb-4">
+          <div class="flex items-center gap-2 overflow-x-auto pb-2">
+            {% for game in game_configs %}
+            <button class="ai-subtab {% if forloop.first %}active{% endif %}" data-game="{{ game.type }}">{{ game.label }}</button>
+            {% endfor %}
+          </div>
+        </div>
+
         {% for game in game_configs %}
-        <div class="card">
+        <div id="ai-game-{{ game.type }}" class="ai-subtab-panel {% if not forloop.first %}hidden{% endif %}">
+          <div class="card">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-semibold">{{ game.label }}</h2>
             {% if game.model %}
@@ -429,16 +457,16 @@
             {% endif %}
 
             <div class="form-group">
-              <label for="id_token_{{ game.type }}">Hugging Face Access Token</label>
+              <label for="id_token_{{ game.type }}">Hugging Face Read-Only Token (read permission only)</label>
               <input type="password"
                      id="id_token_{{ game.type }}"
                      name="hf_token"
-                     placeholder="hf_abc123…"
+                     placeholder="hf_abc123… (read-only)"
                      class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
               <span class="text-xs text-gray-500 mt-1 block">
-                Used once to verify &mdash; <strong>never stored</strong>. Create one at
+                Used once to verify &mdash; <strong>never stored</strong>. Please provide a token with <strong>READ</strong> permissions only (do not use tokens with write/admin scopes). Create one at
                 <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener"
-                   class="text-brand hover:underline">huggingface.co/settings/tokens</a>.
+                   class="text-brand hover:underline">huggingface.co/settings/tokens</a> and select only the <em>read</em> scope.
               </span>
             </div>
 
@@ -448,7 +476,7 @@
           </form>
 
           {% if game.type == 'breakthrough' or game.type == 'chess' %}
-          <div class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">
+          <div id="repo-file-status-{{ game.type }}" class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">
             <h3 class="text-lg font-semibold text-gray-200">Repo File Status</h3>
             {% if game.model_files_status %}
               {% if game.model_files_status.revision_used %}
@@ -494,6 +522,7 @@
           </div>
           {% endif %}
 
+          </div>
         </div>
         {% endfor %}
 
@@ -712,6 +741,17 @@
       if (panel) panel.classList.remove('hidden');
       /* Lazy-load heatmap when Stats tab first opened */
       if (btn.dataset.tab === 'stats' && !heatmapLoaded) loadHeatmap();
+    });
+  });
+
+  /* ── AI Models: per-game subtabs ───────────────────────── */
+  document.querySelectorAll('.ai-subtab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.ai-subtab').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.ai-subtab-panel').forEach(p => p.classList.add('hidden'));
+      btn.classList.add('active');
+      const panel = document.getElementById('ai-game-' + btn.dataset.game);
+      if (panel) panel.classList.remove('hidden');
     });
   });
 

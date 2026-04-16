@@ -199,7 +199,7 @@ def activate(request, uidb64, token):
         if updated:
             user.refresh_from_db()
             login(request, user)
-            messages.success(request, "Your account has been activated! Welcome.")
+            messages.success(request, "Your account has been activated! Welcome.", extra_tags="activation")
             return redirect("games:lobby")
 
     messages.error(
@@ -235,6 +235,33 @@ def verify_model(request):
         if not hf_token:
             error = "Please paste your Hugging Face read token."
         else:
+            # Ensure token is read-only (reject write/admin scopes and unsafe tokens)
+            try:
+                from .forms import ensure_read_only_hf_token
+                from django import forms as _django_forms
+
+                ensure_read_only_hf_token(hf_token)
+            except _django_forms.ValidationError as exc:
+                # Extract first validation message for display
+                if hasattr(exc, "message_dict"):
+                    first = next(iter(exc.message_dict.values()))
+                    error = first[0] if first else str(exc)
+                elif hasattr(exc, "messages") and exc.messages:
+                    error = exc.messages[0]
+                else:
+                    error = str(exc)
+            except Exception:
+                # If scope-inspection fails unexpectedly, continue and let
+                # downstream checks surface any issues.
+                log.debug("Could not inspect token scopes before verification", exc_info=True)
+                error = None
+
+            if error:
+                return render(request, "users/verify_model.html", {
+                    "error": error,
+                    "model_card_warning": model_card_warning,
+                })
+
             ok = validate_all_models(request.user, hf_token)
             if ok:
                 # Check model cards (soft warning — does not block)
@@ -554,10 +581,10 @@ def _build_breakthrough_file_status(user, gm):
     data_error = ""
     found_any = False
 
-    # User's personal OAuth token (if they linked via HF OAuth).
-    # For gated repos we try the user's token first, then fall back to
-    # the platform token (settings.HF_PLATFORM_TOKEN) if configured.
-    hf_token_user = get_user_hf_token(user)
+    # For profile display we use ONLY the platform-level read token
+    # (HF_PLATFORM_TOKEN) rather than any user's personal token.
+    # This ensures we only use a read-only token when rendering
+    # profile.html.
     platform_token = settings.HF_PLATFORM_TOKEN or None
     hf_data_repo_id = gm.hf_data_repo_id or f"{user.username}/{gm.game_type}-data"
 
@@ -575,13 +602,8 @@ def _build_breakthrough_file_status(user, gm):
         )
 
         api = HfApi()
-        # Try tokens in order: user's token, then platform token, then anonymous.
-        tokens_to_try = []
-        if hf_token_user:
-            tokens_to_try.append(hf_token_user)
-        if platform_token and platform_token not in tokens_to_try:
-            tokens_to_try.append(platform_token)
-        tokens_to_try.append(None)  # anonymous fallback
+        # Use only the platform token (read-only) for profile checks.
+        tokens_to_try = [platform_token] if platform_token else [None]
 
         repo_files = None
         token_used = None
@@ -657,7 +679,23 @@ def _build_breakthrough_file_status(user, gm):
                 )
                 with open(config_path, "r") as fh:
                     config = _json.load(fh)
-                model_files = [{"name": f, "present": True} for f in config["files"]]
+                expected = config.get("files", [])
+                # Mark each expected file as present/absent based on the
+                # repo file listing we retrieved above.
+                present_map = [{"name": f, "present": (f in (repo_files or []))} for f in expected]
+                missing = [m["name"] for m in present_map if not m["present"]]
+                if missing:
+                    # Show a clear textual error to the user when any
+                    # listed file is missing (template will display
+                    # model_error when model_files is empty).
+                    model_error = (
+                        "The model repo is missing files listed in config_model.json: "
+                        + ", ".join(missing)
+                        + "."
+                    )
+                    model_files = []
+                else:
+                    model_files = present_map
                 found_any = True
 
     except RepositoryNotFoundError:
@@ -689,13 +727,15 @@ def _build_breakthrough_file_status(user, gm):
 
     # Data repo (public — no token needed, always uses main)
     try:
-        from huggingface_hub import hf_hub_download
+        from huggingface_hub import HfApi, hf_hub_download
         from huggingface_hub.utils import (
             EntryNotFoundError,
             HfHubHTTPError,
             RepositoryNotFoundError,
         )
 
+        # Download the data config and then verify each listed file exists
+        # in the public dataset repo.
         config_path = hf_hub_download(
             repo_id=hf_data_repo_id,
             filename="config_data.json",
@@ -704,7 +744,25 @@ def _build_breakthrough_file_status(user, gm):
         )
         with open(config_path, "r") as fh:
             config = _json.load(fh)
-        data_files = [{"name": f, "present": True} for f in config["files"]]
+        expected = config.get("files", [])
+        # List dataset repo files (public) and check presence
+        try:
+            data_api = HfApi()
+            data_repo_files = data_api.list_repo_files(repo_id=hf_data_repo_id, repo_type="dataset", token=None)
+        except Exception:
+            data_repo_files = None
+
+        present_map = [{"name": f, "present": (f in (data_repo_files or []))} for f in expected]
+        missing = [m["name"] for m in present_map if not m["present"]]
+        if missing:
+            data_error = (
+                "The data repo is missing files listed in config_data.json: "
+                + ", ".join(missing)
+                + "."
+            )
+            data_files = []
+        else:
+            data_files = present_map
         found_any = True
     except RepositoryNotFoundError:
         data_error = f"Data repo '{hf_data_repo_id}' not found."
@@ -989,17 +1047,27 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         gm.hf_data_repo_id = data_repo_id
                         gm.save(update_fields=["hf_model_repo_id", "hf_data_repo_id"])
 
-                    record_original_sha(gm, hf_token)
+                    # Use the platform read-only token when updating server-side
+                    platform_token = settings.HF_PLATFORM_TOKEN or None
 
-                    card_result = check_model_card(repo_id, hf_token)
+                    record_original_sha(gm, platform_token)
+
+                    card_result = check_model_card(repo_id, platform_token)
                     if not card_result["has_card"] or card_result["missing"]:
                         messages.warning(request, card_result["message"])
 
                     label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                    messages.success(
-                        request,
-                        f"{label} model connected and verified successfully.",
-                    )
+                    # For Breakthrough show the requested warning-style sentence.
+                    if game_type == 'breakthrough':
+                        messages.success(
+                            request,
+                            "Breakthrough will not operate correctly — one or more file is missing. See at the repo file status for information.",
+                        )
+                    else:
+                        messages.success(
+                            request,
+                            f"{label} model connected and verified successfully.",
+                        )
 
         return redirect("users:profile")
 

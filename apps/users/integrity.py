@@ -604,11 +604,8 @@ def check_model_card(repo_id: str, token: str) -> dict:
         if result["missing"]:
             formatted = ", ".join(f'"{s.title()}"' for s in result["missing"])
             log.info("[model-card] Missing sections (warning only): %s", formatted)
-            result["message"] = (
-                f"Tip: your model card is missing these recommended sections: {formatted}. "
-                "Adding them helps other players understand your AI agent. "
-                "See: " + MODEL_CARD_HELP_URL
-            )
+            # Per user request: remove the user-facing tip about missing sections.
+            result["message"] = ""
         else:
             log.info("[model-card] All recommended sections present!")
             result["message"] = "Model card looks great \u2014 all recommended sections found."
