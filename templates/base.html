@@ -239,10 +239,10 @@
     {% for message in messages %}
       <div class="rounded-lg px-4 py-2.5 text-sm flex items-center gap-2
         {% if 'activation' in message.tags %}bg-green-900/60 text-green-200 border border-green-800
-        {% elif message.tags == 'error' %}bg-red-900/60 text-red-200 border border-red-800
+        {% elif 'error' in message.tags or 'warning' in message.tags %}bg-red-900/60 text-red-200 border border-red-800
         {% elif 'success' in message.tags %}bg-green-900/60 text-green-200 border border-green-800
         {% else %}bg-gray-200 dark:bg-surfaceLight text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-borderDark{% endif %}">
-        {% if 'activation' in message.tags %}✅{% elif message.tags == 'error' %}⚠️{% elif 'success' in message.tags %}⚠️{% else %}ℹ️{% endif %}
+        {% if 'activation' in message.tags %}✅{% elif 'error' in message.tags or 'warning' in message.tags %}⚠️{% elif 'success' in message.tags %}✅{% else %}ℹ️{% endif %}
         {{ message }}
       </div>
     {% endfor %}

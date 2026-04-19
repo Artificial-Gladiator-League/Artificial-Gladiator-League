@@ -1057,12 +1057,59 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         messages.warning(request, card_result["message"])
 
                     label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                    # For Breakthrough show the requested warning-style sentence.
+                    # For Breakthrough/Chess: determine file-status and show success or warning.
                     if game_type == 'breakthrough':
-                        messages.success(
-                            request,
-                            "Breakthrough will not operate correctly — one or more file is missing. See at the repo file status for information.",
-                        )
+                        try:
+                            file_status = _build_breakthrough_file_status(request.user, gm)
+                        except Exception:
+                            file_status = None
+
+                        ok = False
+                        if file_status:
+                            model_files = file_status.get('model_files') or []
+                            data_files = file_status.get('data_files') or []
+                            model_error = file_status.get('model_error')
+                            data_error = file_status.get('data_error')
+                            model_present = any(f.get('present') for f in model_files)
+                            data_present = any(f.get('present') for f in data_files)
+                            ok = bool(model_present and data_present and not model_error and not data_error)
+
+                        if ok:
+                            messages.success(
+                                request,
+                                "Breakthrough is operating correctly—all required files are present",
+                            )
+                        else:
+                            messages.warning(
+                                request,
+                                "Breakthrough won't function properly—one or more files are missing. Check the repository's file status for details",
+                            )
+                    elif game_type == 'chess':
+                        try:
+                            file_status = _build_breakthrough_file_status(request.user, gm)
+                        except Exception:
+                            file_status = None
+
+                        ok = False
+                        if file_status:
+                            model_files = file_status.get('model_files') or []
+                            data_files = file_status.get('data_files') or []
+                            model_error = file_status.get('model_error')
+                            data_error = file_status.get('data_error')
+                            model_present = any(f.get('present') for f in model_files)
+                            data_present = any(f.get('present') for f in data_files)
+                            ok = bool(model_present and data_present and not model_error and not data_error)
+
+                        if ok:
+                            messages.success(
+                                request,
+                                "Chess is operating correctly—all required files are present",
+                            )
+                        else:
+                            messages.warning(
+                                request,
+                                "Chess won't function properly—one or more files are missing. Check the repository's file status for details",
+                            )
                     else:
                         messages.success(
                             request,

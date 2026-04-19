@@ -482,6 +482,22 @@
               {% if game.model_files_status.revision_used %}
               <p class="text-xs text-gray-500 mb-2">Revision: <code class="text-gray-400">{{ game.model_files_status.revision_used|truncatechars:16 }}</code></p>
               {% endif %}
+
+              {% if game.type == 'breakthrough' %}
+                {% if game.model_files_status.model_files and game.model_files_status.data_files %}
+                  <p class="text-sm text-green-400">✅ Breakthrough is operating correctly—all required files are present</p>
+                {% else %}
+                  <p class="text-sm text-yellow-400">⚠️ Breakthrough won't function properly—one or more files are missing. Check the repository's file status for details</p>
+                {% endif %}
+              {% endif %}
+
+              {% if game.type == 'chess' %}
+                {% if game.model_files_status.model_files and game.model_files_status.data_files %}
+                  <p class="text-sm text-green-400">✅ Chess is operating correctly—all required files are present</p>
+                {% else %}
+                  <p class="text-sm text-yellow-400">⚠️ Chess won't function properly—one or more files are missing. Check the repository's file status for details</p>
+                {% endif %}
+              {% endif %}
               <div>
                 <h4 class="text-sm font-medium text-gray-400 mb-2">Model Repo (gated) — <code class="text-gray-300">{{ game.model.hf_model_repo_id }}</code></h4>
                 {% if game.model_files_status.model_files %}
