@@ -1,7 +1,38 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
+from django import forms
 
 from .models import CustomUser, GDPRRequest, UserGameModel
+
+
+class UserGameModelForm(forms.ModelForm):
+    """Admin form that auto-populates endpoint fields so MySQL NOT NULL is satisfied."""
+
+    class Meta:
+        model = UserGameModel
+        fields = "__all__"
+
+    def clean(self):
+        cleaned = super().clean()
+        repo = cleaned.get("hf_model_repo_id") or ""
+        repo_slug = repo.split("/")[-1] if repo else "model"
+
+        user = cleaned.get("user") or getattr(self.instance, "user", None)
+        username = user.username if user else "unknown"
+
+        # Auto-populate endpoint_id if blank / null
+        if not cleaned.get("hf_inference_endpoint_id"):
+            cleaned["hf_inference_endpoint_id"] = f"{username}-{repo_slug}"
+
+        # Auto-populate endpoint_name if blank
+        if not cleaned.get("hf_inference_endpoint_name"):
+            cleaned["hf_inference_endpoint_name"] = repo_slug
+
+        # Default status to 'pending' if blank
+        if not cleaned.get("hf_inference_endpoint_status"):
+            cleaned["hf_inference_endpoint_status"] = "pending"
+
+        return cleaned
 
 # Fields permanently locked after registration.
 _ADMIN_LOCKED_FIELDS = (
@@ -59,6 +90,7 @@ class GDPRRequestAdmin(admin.ModelAdmin):
 
 @admin.register(UserGameModel)
 class UserGameModelAdmin(admin.ModelAdmin):
+    form = UserGameModelForm
     list_display = ("user", "game_type", "hf_model_repo_id", "model_integrity_ok", "rated_games_played")
     list_filter = ("game_type", "model_integrity_ok")
     search_fields = ("user__username", "hf_model_repo_id")
