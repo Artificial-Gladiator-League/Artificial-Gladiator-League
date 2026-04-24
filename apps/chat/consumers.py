@@ -1,6 +1,18 @@
 import json
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from asgiref.sync import sync_to_async
+
+
+@sync_to_async
+def _preload_for_ws_user(user_id: int):
+    try:
+        from apps.games.model_preloader import preload_user_models
+        preload_user_models(user_id)
+    except Exception:
+        # Let caller decide how to handle failures; log locally
+        import logging
+        logging.getLogger(__name__).exception("WS preload failed for user %s", user_id)
 
 
 def notif_group_name(user_id: int) -> str:
@@ -21,6 +33,8 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         self.user = self.scope.get("user")
         self.group_name = None
         if self.user and not getattr(self.user, "is_anonymous", True):
+            # Ensure models are preloaded for WS-authenticated users
+            await _preload_for_ws_user(self.user.pk)
             self.group_name = notif_group_name(self.user.pk)
             await self.channel_layer.group_add(self.group_name, self.channel_name)
 

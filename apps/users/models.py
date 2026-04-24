@@ -363,6 +363,24 @@ class UserGameModel(models.Model):
         help_text="DEPRECATED. Kept for backwards compatibility.",
     )
 
+    # Add hf_inference_endpoint_id for compatibility with DB
+    hf_inference_endpoint_id = models.CharField(
+        max_length=120,
+        blank=True,
+        null=True,
+        default="",
+        help_text="HF Inference Endpoint ID (for compatibility with DB, can be blank)",
+    )
+
+    # Add hf_inference_endpoint_status to avoid DB IntegrityError when column exists
+    hf_inference_endpoint_status = models.CharField(
+        max_length=40,
+        blank=True,
+        null=True,
+        default="",
+        help_text="HF Inference Endpoint status (compatibility field, can be blank)",
+    )
+
     # ── Docker sandbox verification ────────────
     class VerificationStatus(models.TextChoices):
         PENDING = "pending", "Pending"

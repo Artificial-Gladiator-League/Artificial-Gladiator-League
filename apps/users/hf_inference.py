@@ -1,15 +1,15 @@
 # ──────────────────────────────────────────────
 # apps/users/hf_inference.py
 #
-# Compatibility shim — the canonical implementation
-# now lives in ``apps.games.local_sandbox_inference``.
-#
-# Re-exports the public API so that existing imports
-# in apps/users/ (hf_oauth.py, views.py, etc.)
-# continue to work.
+# Shim — re-exports from apps.games.hf_inference
+# so that existing imports in apps/users/ continue
+# to work without modification.
 # ──────────────────────────────────────────────
-from apps.games.local_sandbox_inference import (  # noqa: F401
+from apps.games.hf_inference import (  # noqa: F401
     verify_model,
-    get_move_local,
     reverify_model,
+    get_move_local,
+    download_model,
+    scan_model,
 )
+

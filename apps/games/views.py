@@ -681,3 +681,45 @@ def add_comment(request, game_id):
     # Out-of-band swap to update the visible comment count
     html += f'\n<span id="comment-count" hx-swap-oob="true">{comment_count}</span>'
     return HttpResponse(html)
+
+import requests
+from django.views.decorators.csrf import csrf_exempt
+
+@csrf_exempt
+def chess_mcvs_move(request):
+    """YOUR ChessMCVS Space API"""
+    fen = request.GET.get('fen')
+    if not fen:
+        return JsonResponse({'error': 'Missing FEN'}, status=400)
+    
+    # YOUR Space URL
+    space_url = "https://typical-cyber-typical-cyber.hf.space"
+    
+    try:
+        resp = requests.get(space_url, params={'FEN': fen}, timeout=10)
+        uci_move = resp.text.strip()
+        
+        # Validate with python-chess
+        board = chess.Board(fen)
+        board.push_uci(uci_move)
+        
+        return JsonResponse({
+            'move': uci_move,
+            'new_fen': board.fen(),
+            'success': True
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+# Replace AI move logic in game_detail/create_game etc.
+def ai_make_move(game):
+    """Call YOUR ChessMCVS for game AI"""
+    fen = game.current_fen or chess.STARTING_FEN
+    response = chess_mcvs_move({'GET': {'fen': fen}})
+    if response.status_code == 200:
+        data = response.json()
+        game.move_list.append(data['move'])
+        game.current_fen = data['new_fen']
+        game.save()
+        return data['move']
+    return None

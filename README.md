@@ -115,6 +115,38 @@ HF_OAUTH_CLIENT_ID=""             # HF OAuth app credentials
 HF_OAUTH_CLIENT_SECRET=""
 ```
 
+### Disable startup pre-warm in development
+
+The application pre-warms verified user models at startup by default. To avoid downloading models when running the local development server, set `PREWARM_MODELS=false`.
+
+- Persistently (add to `.env` next to `manage.py`):
+
+```bash
+PREWARM_MODELS=false
+```
+
+- Temporarily (PowerShell):
+
+```powershell
+$env:PREWARM_MODELS = "false"
+python manage.py runserver
+```
+
+- Temporarily (bash / zsh):
+
+```bash
+PREWARM_MODELS=false python manage.py runserver
+```
+
+- Temporarily (Windows CMD):
+
+```cmd
+set PREWARM_MODELS=false
+python manage.py runserver
+```
+
+Note: `manage.py` now defaults to skipping the pre-warm when you run `python manage.py runserver`. To force pre-warming in development set `PREWARM_MODELS=true`.
+
 ### 5. Migrations & Static Files
 
 ```bash

@@ -1,20 +1,17 @@
-# ──────────────────────────────────────────────
+﻿# ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€
 # apps/games/predict_breakthrough.py
 #
-# Breakthrough prediction interface for Agladiator.
-#
-# All AI inference runs inside a Docker sandbox
-# on the VPS — no model is loaded in the main
-# Django process.
+# Breakthrough prediction ג€” calls the HF Inference API.
 #
 # Priority order:
-#   1. Call get_move_local (Docker sandbox)
+#   1. HF Inference API (dedicated endpoint or serverless)
 #   2. Random legal move fallback
-# ──────────────────────────────────────────────
+# ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€ג”€
 from __future__ import annotations
 
 import logging
 import random
+import time as _time
 
 from apps.games.breakthrough_engine import (
     legal_moves,
@@ -24,9 +21,9 @@ from apps.games.breakthrough_engine import (
 log = logging.getLogger(__name__)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
 #  Public API
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
 def get_move(
     fen: str,
     player: str,
@@ -35,152 +32,108 @@ def get_move(
     *,
     endpoint_url: str | None = None,
 ) -> str:
-    """Return a UCI move string (e.g. 'a2a3') for the given Breakthrough position.
+    """Return a UCI move string for the given Breakthrough position.
+
+    Calls the HF Inference API for ``hf_repo_id``.  Falls back to a
+    random legal move if the API is unreachable or returns an invalid move.
 
     Parameters
     ----------
-    fen : str
-        Breakthrough FEN string, e.g.
-        ``'BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w'``
-    player : str
+    fen:
+        Breakthrough position string.
+    player:
         ``'w'`` or ``'b'``.
-    hf_repo_id : str, optional
+    hf_repo_id:
         The user's HuggingFace model repository.
-    hf_token : str, optional
-        Ignored — kept for signature compatibility.
-    endpoint_url : str, optional
-        Ignored — kept for signature compatibility.
-
-    Returns
-    -------
-    str
-        A legal UCI move.  Never returns an illegal move, never crashes.
+    hf_token:
+        Optional override HF token.
+    endpoint_url:
+        Dedicated endpoint URL (overrides serverless API).
     """
-    import time as _time
-
     _t0 = _time.monotonic()
-    _short_fen = fen[:60] + ("..." if len(fen) > 60 else "")
-    log.info(
-        "📡 [BT] get_move called — player=%s repo=%s fen=%s",
-        player, hf_repo_id or "(none)", _short_fen,
-    )
 
     all_legal = legal_moves(fen)
     if not all_legal:
-        log.error("❌ No legal moves available — position: %s", fen)
+        log.error("No legal moves available ג€” position: %s", fen)
         return "0000"
 
-    # ── Priority 1: Docker sandbox inference ──
+    log.info("[BT] get_move: fen=%.60s player=%s repo=%s", fen, player, hf_repo_id)
+
+    # ג”€ג”€ Priority 1: HF Inference API ג”€ג”€
     if hf_repo_id:
-        data_repo_id = _lookup_data_repo_id(hf_repo_id)
-        move = _try_sandbox(hf_repo_id, fen, player, all_legal, data_repo_id)
+        endpoint_url = endpoint_url or _lookup_endpoint_url(hf_repo_id)
+        move = _try_hf_api(hf_repo_id, fen, player, all_legal, token=hf_token, endpoint_url=endpoint_url)
         if move:
-            _elapsed = _time.monotonic() - _t0
             log.info(
-                "✅ [BT] Priority 1 (sandbox) returned move: %s (%.2fs)",
-                move, _elapsed,
+                "[BT] HF API returned move: %s (%.2fs) repo=%s",
+                move, _time.monotonic() - _t0, hf_repo_id,
             )
             return move
 
-        # Explicit fallback logging when cache is missing or sandbox fails
-        try:
-            from apps.users.models import UserGameModel
-            gm = UserGameModel.objects.filter(hf_model_repo_id=hf_repo_id, game_type='breakthrough').first()
-            if gm is None:
-                log.warning("CACHE_MISS: No UserGameModel found for repo=%s — using random fallback.", hf_repo_id)
-            elif not getattr(gm, 'cached_path', None):
-                log.warning("CACHE_MISS: No cached model for repo=%s — using random fallback.", hf_repo_id)
-            else:
-                log.warning("SANDBOX_ERROR: Cached model present at %s but sandbox/handler failed — using random fallback.", gm.cached_path)
-        except Exception:
-            log.debug("Could not query UserGameModel for cache status", exc_info=True)
-
-    # ── Priority 2: safe random fallback ──
+    # ג”€ג”€ Priority 2: random legal move ג”€ג”€
     move = _random_legal_move(all_legal)
-    _elapsed = _time.monotonic() - _t0
     log.warning(
-        "⚠️ [BT] Priority 2 (random fallback) returned move: %s (%.2fs)",
-        move, _elapsed,
+        "[BT] Random fallback move: %s (%.2fs) repo=%s",
+        move, _time.monotonic() - _t0, hf_repo_id,
     )
     return move
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Priority 1 — Docker sandbox call
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def _try_sandbox(
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
+#  HF API call
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
+def _lookup_endpoint_url(hf_repo_id: str) -> str | None:
+    """Return the dedicated endpoint URL stored on UserGameModel, if any."""
+    try:
+        from apps.users.models import UserGameModel
+        gm = UserGameModel.objects.filter(
+            hf_model_repo_id=hf_repo_id, game_type="breakthrough",
+        ).first()
+        if gm:
+            return gm.hf_inference_endpoint_url or None
+    except Exception:
+        pass
+    return None
+
+
+def _try_hf_api(
     hf_repo_id: str,
     fen: str,
     player: str,
     all_legal: list[str],
-    data_repo_id: str = "",
+    *,
+    token: str | None = None,
+    endpoint_url: str | None = None,
 ) -> str | None:
-    """Run inference in the Docker sandbox and return a legal move, or None."""
+    """Call HF Inference API and return a validated legal move, or None."""
     try:
-        from apps.games.local_sandbox_inference import get_move_local
-        # Log if a cached model path exists for diagnostics (official handler will be used)
-        try:
-            from apps.users.models import UserGameModel
-            gm = UserGameModel.objects.filter(hf_model_repo_id=hf_repo_id, game_type='breakthrough').first()
-            if gm and getattr(gm, 'cached_path', None):
-                log.info("✅ Loading model weights from cache: %s", gm.cached_path)
-        except Exception:
-            pass
-
-        move = get_move_local(
-            repo_id=hf_repo_id,
-            fen=fen,
-            player=player,
-            game_type="breakthrough",
-            data_repo_id=data_repo_id,
+        from apps.games.hf_inference import get_move_api
+        raw = get_move_api(
+            hf_repo_id, fen,
+            token=token, endpoint_url=endpoint_url,
         )
-        if move and is_legal_move(fen, move):
-            return move
-        if move:
-            log.warning(
-                "Sandbox returned illegal move '%s' for FEN=%s — falling through.",
-                move, fen,
-            )
+        if not raw:
+            return None
+        move_str = raw.strip()
+        if is_legal_move(fen, move_str):
+            return move_str
+        log.warning(
+            "[BT] HF API returned illegal move %r for fen=%.60s repo=%s",
+            move_str, fen, hf_repo_id,
+        )
     except Exception:
-        log.exception("Sandbox call failed for repo=%s", hf_repo_id)
+        log.exception("[BT] HF API call failed for repo=%s", hf_repo_id)
     return None
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Data repo lookup
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def _lookup_data_repo_id(hf_repo_id: str) -> str:
-    """Look up the data repo ID from UserGameModel by model repo ID."""
-    try:
-        from apps.users.models import UserGameModel
-
-        gm = UserGameModel.objects.filter(
-            hf_model_repo_id=hf_repo_id,
-            game_type="breakthrough",
-        ).first()
-        if gm and gm.hf_data_repo_id:
-            return gm.hf_data_repo_id
-    except Exception:
-        log.debug("Could not look up data repo for %s", hf_repo_id, exc_info=True)
-    return ""
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
 #  Random legal move fallback
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”ג”
 def _random_legal_move(all_legal: list[str]) -> str:
-    """Pick a random legal move, preferring captures."""
+    """Pick a random legal move, preferring captures (diagonal moves)."""
     if not all_legal:
-        log.error("No legal moves for fallback!")
         return "0000"
-
-    # In Breakthrough, a capture is a diagonal move (files differ)
-    captures = [m for m in all_legal if m[0] != m[2]]
+    captures = [m for m in all_legal if len(m) >= 4 and m[0] != m[2]]
     if captures:
-        move = random.choice(captures)
-        log.info("Fallback chose capture: %s", move)
-        return move
-
-    move = random.choice(all_legal)
-    log.info("Fallback chose random move: %s", move)
-    return move
+        return random.choice(captures)
+    return random.choice(all_legal)

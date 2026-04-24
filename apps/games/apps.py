@@ -11,7 +11,4 @@ class GamesConfig(AppConfig):
     verbose_name = "Games & Quick Pairing"
 
     def ready(self):
-        # Models are no longer loaded locally.  All AI inference is
-        # handled via HF Inference Endpoints (see apps/users/hf_inference.py),
-        # so there is nothing to preload at server startup.
-        log.info("GamesConfig.ready() — no local model preloading (using HF Inference Endpoints).")
+        log.info("GamesConfig ready — inference via HF API.")

@@ -18,12 +18,18 @@ import threading
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.contrib.auth.signals import user_logged_in, user_logged_out
+import os
+import shutil
+from apps.games.model_preloader import preload_user_models, clear_user_models
+from django.conf import settings
+from pathlib import Path
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
 from apps.games.chess_engine import compute_elo_deltas
 from apps.games.models import Game
+from apps.users.models import CustomUser, UserGameModel
 
 log = logging.getLogger(__name__)
 
@@ -194,53 +200,88 @@ def update_stats_after_game(sender, instance, **kwargs):
 
 # ── Login-time model verification ──────────────
 
-def _preload_for_user(user):
-    """Background verification of all user models (Chess + Breakthrough) at login.
+def _verify_local_models_for_user(user) -> None:
+    """Verify committed local model files are present for all of the user's game models.
 
-    Uses the Docker sandbox pipeline from local_sandbox_inference:
-      Phase 1 — Download to /tmp/verification/{user_id}_{game_type}_{ts}/
-      Phase 2 — Security scan (bandit + modelscan + fickling + picklescan)
-      Phase 3 — Test in Docker (--network=none, --read-only)
-    Zero persistent storage: all temp files are deleted after every run.
+    Replaces the old HF-download-based _preload_for_user().
+    No network I/O — reads only from the git-committed repo paths.
+
+    For each UserGameModel:
+      1. Call verify_local_files() — checks files exist and are non-empty.
+      2. Set local_path on the record if files are present.
+      3. Optionally run the full sandbox verification (scan + smoke test)
+         in a nested thread (non-blocking, best-effort).
     """
     try:
-        from apps.games.local_sandbox_inference import verify_model
-        from apps.users.models import UserGameModel
-        from apps.users.hf_oauth import get_user_hf_token
-
-        hf_token = get_user_hf_token(user)
-
-        # Verify all game models the user has registered
-        game_models = UserGameModel.objects.filter(
-            user=user, hf_model_repo_id__gt="",
+        from apps.games.local_inference import (
+            verify_local_files,
+            _game_type_dir,
+            verify_model as _verify_model,
         )
+        from apps.users.models import UserGameModel
+
+        game_models = UserGameModel.objects.filter(user=user)
         if not game_models.exists():
-            print(f"[ONLINE] {user.username} — no models registered, skipping verification")
+            log.info("[local] %s — no game models registered, skipping local file check", user.username)
             return
 
         for gm in game_models:
             game_type = gm.game_type
-            repo_id = gm.hf_model_repo_id
+            ok, msg = verify_local_files(gm)
+            if not ok:
+                log.warning(
+                    "[local] %s/%s — local files missing: %s",
+                    user.username, game_type, msg,
+                )
+                print(f"⚠️ [local] {user.username}/{game_type} — local files missing: {msg}")
+                _notify_user_verification_failed(user, game_type, msg)
+                continue
 
-            print(f"🔄 [ONLINE] {user.username} — Starting {game_type} model verification...")
-            print(f"📥 Downloading model repo {repo_id} ...")
-
+            # Files exist — set local_path so inference can find them fast.
             try:
-                passed, msg, report = verify_model(gm, token=hf_token)
+                gt_dir = _game_type_dir(gm.user_id, game_type)
+                if gm.local_path != str(gt_dir):
+                    gm.local_path = str(gt_dir)
+                    gm.save(update_fields=["local_path"])
+                    log.info(
+                        "[local] %s/%s — local_path set: %s",
+                        user.username, game_type, gt_dir,
+                    )
+            except Exception:
+                log.exception("[local] Failed to update local_path for %s/%s", user.username, game_type)
 
-                if passed:
-                    print(f"✅ [ONLINE] {user.username}/{game_type} — Verification complete — model approved and ready to play")
-                else:
-                    print(f"❌ [ONLINE] {user.username}/{game_type} — Verification FAILED: {msg}")
-                    _notify_user_verification_failed(user, game_type, msg)
-            except Exception as e:
-                print(f"❌ [ONLINE] {user.username}/{game_type} — Verification error: {e}")
-                _notify_user_verification_failed(user, game_type, str(e))
+            print(f"✅ [local] {user.username}/{game_type} — local model files confirmed at {gm.local_path}")
 
-            print(f"🗑️ Cleaning up temporary files (zero persistent storage)")
+            # Background verification (non-blocking, best-effort).
+            def _sandbox_verify(_gm=gm, _user=user):
+                try:
+                    passed, vmsg, _ = _verify_model(_gm)
+                    if passed:
+                        print(
+                            f"[local] {_user.username}/{_gm.game_type} "
+                            f"— verification passed"
+                        )
+                    else:
+                        print(
+                            f"[local] {_user.username}/{_gm.game_type} "
+                            f"— verification failed: {vmsg}"
+                        )
+                        _notify_user_verification_failed(_user, _gm.game_type, vmsg)
+                except Exception:
+                    log.exception(
+                        "[local] Verify failed for %s/%s",
+                        _user.username, _gm.game_type,
+                    )
 
-    except Exception as e:
-        print(f"[ONLINE] {user.username} — ❌ verification setup failed: {e}")
+            t = threading.Thread(
+                target=_sandbox_verify,
+                daemon=True,
+                name=f"verify-{user.pk}-{game_type}",
+            )
+            t.start()
+
+    except Exception:
+        log.exception("[local] _verify_local_models_for_user failed for %s", getattr(user, "username", "?"))
 
 
 def _notify_user_verification_failed(user, game_type: str, error_msg: str):
@@ -270,30 +311,44 @@ def _notify_user_verification_failed(user, game_type: str, error_msg: str):
 
 @receiver(user_logged_in)
 def preload_breakthrough_on_login(sender, request, user, **kwargs):
-    """Download & verify models for the user after login.
+    """Verify local model files for the user after login.
 
-    Always runs ``download_and_scan_for_user`` directly in a background
-    thread so it works regardless of whether a Celery worker is running.
+    Runs in a background thread so login is never delayed or blocked.
+    Steps performed (all non-fatal):
+      1. Ensure per-user directory skeleton exists.
+      2. Verify committed local model files are present (no HF downloads).
+      3. Set local_path on each UserGameModel so inference can resolve
+         model directories without hitting the database repeatedly.
+
+    Note: HF snapshot_download() is NOT called here. All model files
+    must be pre-committed to user_models/user_{id}/{game}/model/.
     """
     if user is None:
         return
-    try:
-        from apps.users.model_lifecycle import download_and_scan_for_user
 
-        user_pk = getattr(user, "pk", None)
-        if user_pk is None:
-            return
+    user_pk = getattr(user, "pk", None)
+    if user_pk is None:
+        return
 
-        def _bg():
+    def _background():
+        try:
+            # Ensure per-user dirs exist (creates placeholders if absent).
             try:
-                download_and_scan_for_user(user_pk)
+                from apps.users.model_lifecycle import ensure_user_dirs
+                ensure_user_dirs(user_pk)
             except Exception:
-                log.exception("Background login scan failed for user=%s", user_pk)
+                log.exception("Failed to ensure user dirs for user=%s on login", user_pk)
 
-        threading.Thread(target=_bg, daemon=True).start()
-        log.info("Started background download_and_scan for user %s", user.username)
-    except Exception:
-        log.exception("Failed to start download task for user %s", getattr(user, "username", "?"))
+            # Verify local committed model files and update local_path.
+            _verify_local_models_for_user(user)
+
+        except Exception:
+            log.exception(
+                "Background login task failed for user %s", getattr(user, "username", "?"),
+            )
+
+    t = threading.Thread(target=_background, daemon=True, name=f"local-login-{user_pk}")
+    t.start()
 
 
 # ── Logout handler (no-op — zero persistent storage) ──
@@ -308,19 +363,39 @@ def clear_breakthrough_on_logout(sender, request, user, **kwargs):
     if user is None:
         return
     try:
-        from apps.users.model_lifecycle import cleanup_for_user
-
         user_id = getattr(user, "pk", None)
         if user_id is None:
             return
 
-        def _bg():
-            try:
-                cleanup_for_user(user_id)
-            except Exception:
-                log.exception("Background logout cleanup failed for user=%s", user_id)
-
-        threading.Thread(target=_bg, daemon=True).start()
-        log.info("Started background cleanup for user %s", user.username)
+        try:
+            clear_user_models(user_id)
+            log.info("Removed preloaded models for user %s on logout", user.username)
+        except Exception:
+            log.exception("Failed to remove preloaded models for user %s on logout", user.username)
     except Exception:
         log.exception("Failed to start logout cleanup for user %s", getattr(user, "username", "?"))
+
+
+# ── Ensure per-user dirs created on user creation and on new UserGameModel ──
+@receiver(post_save, sender=CustomUser)
+def create_user_dirs_on_create(sender, instance, created, **kwargs):
+    if not created:
+        return
+    try:
+        from apps.users.model_lifecycle import ensure_user_dirs
+        ensure_user_dirs(instance.pk)
+        log.info("Ensured model dirs for new user %s", instance.pk)
+    except Exception:
+        log.exception("Failed to create user dirs for %s", instance.pk)
+
+
+@receiver(post_save, sender=UserGameModel)
+def ensure_game_dirs_on_gamemodel_create(sender, instance, created, **kwargs):
+    if not created:
+        return
+    try:
+        from apps.users.model_lifecycle import ensure_user_dirs
+        ensure_user_dirs(instance.user_id)
+        log.info("Ensured model dirs for user %s game %s", instance.user_id, instance.game_type)
+    except Exception:
+        log.exception("Failed to ensure game dirs for user %s game %s", instance.user_id, instance.game_type)

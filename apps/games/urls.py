@@ -18,4 +18,5 @@ urlpatterns = [
     path("<int:game_id>/comments/", views.game_comments, name="game_comments"),
     path("<int:game_id>/comments/add/", views.add_comment, name="add_comment"),
     path("history/", views.game_history, name="history"),
+    path("api/chess_mcvs/", views.chess_mcvs_move, name="chess_mcvs_move"),
 ]

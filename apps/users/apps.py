@@ -1,6 +1,7 @@
 from django.apps import AppConfig
 import threading
 import logging
+import os
 
 
 class UsersConfig(AppConfig):
@@ -21,6 +22,14 @@ class UsersConfig(AppConfig):
         # thread to avoid blocking process startup.
         def _startup_warm():
             log = logging.getLogger(__name__)
+            # Respect PREWARM_MODELS environment toggle (set to 'false' to skip)
+            try:
+                if os.environ.get("PREWARM_MODELS") == "false":
+                    log.info("Pre-warm skipped")
+                    return
+            except Exception:
+                # If environment access fails for any reason, proceed with warm
+                pass
             try:
                 from django.db.models import Q
                 from apps.users.models import UserGameModel

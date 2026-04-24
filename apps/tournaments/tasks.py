@@ -62,8 +62,7 @@ def check_stale_tournaments() -> str:
 
     # Start any tournament marked FULL
     for t in Tournament.objects.filter(status=Tournament.Status.FULL):
-        start_tournament(t)
-        started.append(t.name)
+        _integrity_gate_and_start(t, started)
         log.info("Auto-started FULL tournament: %s", t.name)
 
     # Handle OPEN tournaments past their start_time
@@ -72,8 +71,7 @@ def check_stale_tournaments() -> str:
         start_time__lte=now,
     ):
         if t.participant_count >= 2:
-            start_tournament(t)
-            started.append(t.name)
+            _integrity_gate_and_start(t, started)
             log.info("Auto-started overdue tournament: %s (%d players)", t.name, t.participant_count)
         else:
             t.status = Tournament.Status.COMPLETED
@@ -81,6 +79,24 @@ def check_stale_tournaments() -> str:
             log.info("Aborted tournament with <2 players: %s", t.name)
 
     return f"Checked tournaments. Started: {started or 'none'}"
+
+
+def _integrity_gate_and_start(tournament, started: list) -> None:
+    """Run integrity checks then start *tournament*, appending its name to *started*."""
+    from apps.tournaments.engine import start_tournament
+    # Run synchronous integrity gate (fire-and-forget already happened in the task)
+    try:
+        result = run_pre_tournament_integrity_checks(tournament.pk)
+        failed = result.get("failed", [])
+        if failed:
+            log.warning(
+                "Tournament %s: %d participant(s) removed after integrity failure before start: %s",
+                tournament.name, len(failed), [f["user_id"] for f in failed],
+            )
+    except Exception:
+        log.exception("Integrity gate failed for tournament %s — starting anyway", tournament.name)
+    start_tournament(tournament)
+    started.append(tournament.name)
 
 
 @shared_task
@@ -103,3 +119,76 @@ def run_gladiator_gauntlet(
         time_control=time_control,
     )
     return "Gladiator Gauntlet completed."
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Pre-tournament integrity gate
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@shared_task(bind=True, max_retries=0)
+def run_pre_tournament_integrity_checks(self, tournament_id: int) -> dict:
+    """Verify local model file integrity for every participant of a tournament.
+
+    Called automatically before a tournament is started (see
+    ``check_stale_tournaments``).  Participants whose models fail the
+    integrity check have their entry removed and are notified.
+
+    Returns a summary dict::
+
+        {
+            "tournament_id": <int>,
+            "passed": [<user_id>, ...],
+            "failed": [{"user_id": <int>, "reason": <str>}, ...],
+        }
+    """
+    from apps.tournaments.models import Tournament, TournamentParticipant
+    from apps.users.models import UserGameModel
+    from apps.users.integrity import check_local_integrity
+
+    try:
+        tournament = Tournament.objects.get(pk=tournament_id)
+    except Tournament.DoesNotExist:
+        log.error("run_pre_tournament_integrity_checks: tournament %s not found", tournament_id)
+        return {"tournament_id": tournament_id, "passed": [], "failed": [], "error": "not found"}
+
+    game_type = getattr(tournament, "game_type", "chess")
+    participants = list(
+        TournamentParticipant.objects.select_related("user")
+        .filter(tournament=tournament)
+    )
+
+    passed: list[int] = []
+    failed: list[dict] = []
+
+    for participant in participants:
+        user_id = participant.user_id
+        gm = UserGameModel.objects.filter(user_id=user_id, game_type=game_type).first()
+        if gm is None:
+            # No model configured — nothing to check (default AI / no user model).
+            passed.append(user_id)
+            continue
+
+        ok, reason = check_local_integrity(gm, alert_admins=True)
+        if ok:
+            passed.append(user_id)
+            log.info(
+                "Integrity OK for user=%s game=%s tournament=%s",
+                user_id, game_type, tournament_id,
+            )
+        else:
+            failed.append({"user_id": user_id, "reason": reason})
+            log.warning(
+                "Integrity FAIL for user=%s game=%s tournament=%s — removing from tournament: %s",
+                user_id, game_type, tournament_id, reason,
+            )
+            # Remove participant from tournament
+            try:
+                participant.delete()
+            except Exception:
+                log.exception("Could not remove participant user=%s from tournament=%s", user_id, tournament_id)
+
+    log.info(
+        "Pre-tournament integrity check done for tournament=%s: %d passed, %d failed",
+        tournament_id, len(passed), len(failed),
+    )
+    return {"tournament_id": tournament_id, "passed": passed, "failed": failed}

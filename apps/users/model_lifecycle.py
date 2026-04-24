@@ -1,11 +1,19 @@
 # ──────────────────────────────────────────────
 # apps/users/model_lifecycle.py
 #
-# Celery tasks for the full model lifecycle:
-#   1. download_and_scan_on_login  — pull & scan on user login
-#   2. cleanup_on_logout           — delete files on logout
-#   3. daily_integrity_check       — scheduled daily at 12:00
-#   4. cleanup_orphaned_dirs       — every 30 min, prune stale dirs
+# Model lifecycle helpers for the local-repo architecture.
+#
+# Post-refactor:  model files are git-committed under
+#   user_models/user_{id}/{game}/model/
+#   user_models/user_{id}/{game}/data/
+# No HF downloads occur at runtime.
+#
+# Key public functions
+# ────────────────────
+#   ensure_user_dirs(user_id)       — create directory skeleton
+#   verify_local_model_files(gm)    — check committed files exist
+#   sync_hf_repo_to_local(…)        — compat stub (no-op / local verify)
+#   download_hf_repo_files(…)       — compat stub (no-op)
 # ──────────────────────────────────────────────
 from __future__ import annotations
 
@@ -21,18 +29,18 @@ from django.utils import timezone
 
 log = logging.getLogger(__name__)
 
+try:
+    from huggingface_hub import hf_hub_download, snapshot_download
+except ImportError:  # pragma: no cover
+    hf_hub_download = None  # type: ignore[assignment]
+    snapshot_download = None  # type: ignore[assignment]
+
 
 def _user_base_dir(user_id: int) -> Path:
-    """Return per-user model cache base directory.
-
-    Preferred root is `settings.MODEL_CACHE_ROOT` (new). Falls back to
-    `settings.USER_MODELS_BASE_DIR` for backwards compatibility.
-    Directory layout: {root}/user_{user_id}/
-    """
+    """Return per-user model cache base directory."""
     base = getattr(settings, "MODEL_CACHE_ROOT", None)
     if not base:
         base = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
-    # Ensure a stable folder name so it's easy to reason about on-disk
     return Path(base) / f"user_{user_id}"
 
 
@@ -41,20 +49,153 @@ def _game_dest_dir(user_id: int, game_type: str) -> Path:
     return _user_base_dir(user_id) / game_type
 
 
-def _repo_folder_name(repo_id: str) -> str:
-    """Sanitize a HF repo id to a filesystem-friendly folder name.
+def ensure_user_dirs(user_id: int) -> Path:
+    """Ensure the per-user directory skeleton exists for both game types.
 
-    Example: 'austindavis/MyModel' -> 'austindavis__MyModel'
+    Creates:
+      {root}/user_{id}/chess/{model,data}/
+      {root}/user_{id}/breakthrough/{model,data}/
+
+    Returns the base user dir Path.
     """
+    base = _user_base_dir(user_id)
+    try:
+        for game in ("chess", "breakthrough"):
+            game_dir = base / game
+            model_dir = game_dir / "model"
+            data_dir = game_dir / "data"
+            model_dir.mkdir(parents=True, exist_ok=True)
+            data_dir.mkdir(parents=True, exist_ok=True)
+
+            for d in (model_dir, data_dir):
+                try:
+                    (d / ".placeholder").write_text("Auto-created placeholder\n")
+                except Exception:
+                    try:
+                        (d / "README.md").write_text(f"Auto-created for user {user_id} ({game})\n")
+                    except Exception:
+                        pass
+    except Exception:
+        log.exception("Failed to ensure user dirs for %s", user_id)
+    return base
+
+
+def _repo_folder_name(repo_id: str) -> str:
+    """Sanitize a HF repo id to a filesystem-friendly folder name."""
     return (repo_id or "").replace("/", "__")
 
 
-def get_user_model_cache_dir(user, game_type: str) -> Path:
-    """Public helper: return the per-user cache directory for a game type.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Local-repo file verification (post-refactor)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    Accepts either a `CustomUser` instance or a numeric user id.
+def verify_local_model_files(game_model) -> tuple[bool, str]:
+    """Verify that committed model/data files exist for a UserGameModel.
+
+    Delegates to ``apps.games.local_inference.verify_local_files``.
+    Updates ``local_path`` and ``model_integrity_ok`` on success.
+
+    Returns ``(ok, message)``.  Never raises.
+    """
+    try:
+        from apps.games.local_inference import (
+            verify_local_files,
+            _game_type_dir,
+        )
+
+        ok, msg = verify_local_files(game_model)
+        if ok:
+            gt_dir = _game_type_dir(game_model.user_id, game_model.game_type)
+            update_fields: list[str] = ["model_integrity_ok"]
+            game_model.model_integrity_ok = True
+
+            if hasattr(game_model, "local_path") and game_model.local_path != str(gt_dir):
+                game_model.local_path = str(gt_dir)
+                update_fields.append("local_path")
+
+            if hasattr(game_model, "cached_path") and not game_model.cached_path:
+                game_model.cached_path = str(gt_dir)
+                update_fields.append("cached_path")
+
+            try:
+                game_model.save(update_fields=update_fields)
+            except Exception:
+                log.exception(
+                    "verify_local_model_files: could not save game_model for user=%s game=%s",
+                    game_model.user_id, game_model.game_type,
+                )
+        else:
+            try:
+                game_model.model_integrity_ok = False
+                game_model.save(update_fields=["model_integrity_ok"])
+            except Exception:
+                pass
+
+        return ok, msg
+    except Exception as exc:
+        log.exception(
+            "verify_local_model_files: unexpected error for user=%s game=%s",
+            getattr(game_model, "user_id", "?"),
+            getattr(game_model, "game_type", "?"),
+        )
+        return False, str(exc)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Compatibility stubs (HF download replaced by local verify)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def download_hf_repo_files(user, game_model, *, token: str | None = None) -> None:
+    """DEPRECATED — model files are now git-committed, not downloaded at runtime.
+
+    This stub calls verify_local_model_files() to confirm committed files
+    exist.  No network I/O is performed.
+    """
+    user_id = getattr(user, "pk", user)
+    log.info(
+        "download_hf_repo_files (stub): skipping HF download for user=%s game=%s — "
+        "checking local committed files instead",
+        user_id, getattr(game_model, "game_type", "?"),
+    )
+    verify_local_model_files(game_model)
+
+
+def sync_hf_repo_to_local(user, game_model, *, token: str | None = None) -> tuple[bool, str]:
+    """DEPRECATED — model files are now git-committed, not downloaded at runtime.
+
+    This stub calls verify_local_model_files() and returns its result.
+    No network I/O is performed.
+
+    Returns ``(bool, message)`` for backwards compatibility.
+    """
+    user_id = getattr(user, "pk", user)
+    log.info(
+        "sync_hf_repo_to_local (stub): skipping HF snapshot for user=%s game=%s — "
+        "checking local committed files instead",
+        user_id, getattr(game_model, "game_type", "?"),
+    )
+    return verify_local_model_files(game_model)
+
+def get_user_model_cache_dir(
+    user,
+    game_type: str,
+    *,
+    repo_id: str | None = None,
+) -> Path:
+    """Return the model cache dir, preferring the shared HF hub cache.
+
+    If ``repo_id`` is supplied and a snapshot for that repo exists in
+    ``settings.HF_HUB_CACHE``, that snapshot path is returned directly —
+    no per-user copy is needed.  Falls back to the per-user game-type dir.
+
+    Accepts either a ``CustomUser`` instance or a numeric user id.
     """
     uid = getattr(user, "pk", user)
+    if repo_id:
+        from apps.games.local_inference import _find_hf_cache_snapshot
+        snap = _find_hf_cache_snapshot(repo_id)
+        if snap is not None:
+            return snap
     return _game_dest_dir(uid, game_type)
 
 
@@ -95,9 +236,7 @@ def download_model_to_cache(
 
     Returns (ok, message, model_dir).
     """
-    try:
-        from huggingface_hub import snapshot_download
-    except Exception:
+    if snapshot_download is None:
         return False, "huggingface_hub not available", None
 
     repo_id = (game_model.hf_model_repo_id or "").strip()
@@ -186,197 +325,48 @@ def _diff_file_lists(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @shared_task(bind=True, max_retries=0)
 def download_and_scan_on_login(self, user_id: int):
-    # Delegate to the synchronous helper so callers can reuse the same logic
-    # both from Celery tasks and from synchronous code paths.
     download_and_scan_for_user(user_id)
 
 
 def download_and_scan_for_user(user_id: int) -> None:
-    """Download and scan all UserGameModel repos for *user_id* (synchronous).
+    """No-op: models are served from the shared HF hub cache; no per-user copies.
 
-    This is the same work performed by the Celery task wrapper and is
-    exposed so callers (or tests) can run the pre-warm logic synchronously
-    without relying on a running Celery worker.
+    Previously this function downloaded HF repos into per-user directories.
+    After the local-cache refactor, inference reads directly from
+    ``settings.HF_HUB_CACHE`` snapshots resolved by
+    ``local_inference._find_hf_cache_snapshot()``.  Calling this is safe
+    but does nothing — the shared cache is populated via:
+
+        huggingface-cli download <repo_id>
     """
-    from apps.users.models import CustomUser, UserGameModel
-    from apps.games.local_sandbox_inference import (
-        download_model,
-        _download_data_repo,
-        scan_model,
-        _get_current_commit_sha,
-        _cleanup_temp_dir,
+    log.info(
+        "download_and_scan_for_user: no-op for user=%s "
+        "— models served from shared HF hub cache",
+        user_id,
     )
+    # Update cached_path to point at the HF cache snapshot for each game model.
+    try:
+        from apps.users.models import UserGameModel
+        from apps.games.local_inference import _find_hf_cache_snapshot
+        for gm in UserGameModel.objects.filter(user_id=user_id, hf_model_repo_id__gt=""):
+            repo_id = (gm.hf_model_repo_id or "").strip()
+            snap = _find_hf_cache_snapshot(repo_id) if repo_id else None
+            if snap and (any(snap.rglob("*.safetensors")) or any(snap.rglob("*.py"))):
+                if gm.cached_path != str(snap):
+                    gm.cached_path = str(snap)
+                    gm.model_integrity_ok = True
+                    gm.save(update_fields=["cached_path", "model_integrity_ok"])
+                    log.info(
+                        "Pointed cached_path at HF cache for user=%s game=%s: %s",
+                        user_id, gm.game_type, snap,
+                    )
+    except Exception:
+        log.exception("download_and_scan_for_user: failed to update cached_path for user=%s", user_id)
 
-    game_models = list(UserGameModel.objects.select_related("user").filter(user_id=user_id))
-    if not game_models:
-        log.info("User %s has no UserGameModel entries — skipping login scan.", user_id)
-        return
 
-    user = game_models[0].user
-    token = _resolve_token(user)
+# ─── dead code kept only for import-compatibility ───────────────────────────
+_DEAD_CODE_PLACEHOLDER = None  # replaced old HF-download body
 
-    for gm in game_models:
-        game_type = gm.game_type
-        repo_id = (gm.hf_model_repo_id or "").strip()
-        if not repo_id:
-            log.debug("No repo configured for user=%s game=%s — skipping", user_id, game_type)
-            continue
-
-        # Efficient skip: if we already have a verified cached snapshot and
-        # the commit matches the last verified commit (or the cache is recent),
-        # skip re-downloading.
-        try:
-            skip = False
-            if gm.model_integrity_ok and gm.cached_path:
-                # Support both old layout (base/model) and new layout (base itself).
-                # Old layout: cached_path -> .../repo_folder/  and model files under repo_folder/model/
-                # New layout: cached_path -> repo_folder/ (contains handler.py, config_model.json, or safetensors)
-                p = Path(gm.cached_path)
-                model_dir = p / "model"
-                cache_exists = False
-                try:
-                    if model_dir.exists():
-                        cache_exists = True
-                    elif p.exists():
-                        # Heuristic for new layout: presence of handler.py, config_model.json,
-                        # safetensors, or source files indicates the repo root layout.
-                        # We include .py files for Breakthrough-style repos.
-                        if (p / "handler.py").exists() \
-                                or (p / "config_model.json").exists() \
-                                or any(p.glob("*.safetensors")) \
-                                or any(p.glob("*.py")):
-                            cache_exists = True
-                except Exception:
-                    # Defensive: if filesystem check fails, don't assume cached
-                    cache_exists = False
-
-                if cache_exists:
-                    if gm.last_verified_commit and gm.cached_commit and gm.cached_commit == gm.last_verified_commit:
-                        skip = True
-                    elif gm.cached_at:
-                        # Consider the cache fresh for up to 7 days to avoid
-                        # repeated HF requests on frequent logins.
-                        from django.utils import timezone as _tz
-                        if (_tz.now() - gm.cached_at).days < 7:
-                            skip = True
-            if skip:
-                cache_key = f"model_status_{user_id}_{game_type}"
-                cache.set(cache_key, "model_ready", timeout=None)
-                log.info("Skipping download — cached model present for user=%s game=%s", user_id, game_type)
-                continue
-        except Exception:
-            log.debug("Error checking cache status for user=%s game=%s", user_id, game_type, exc_info=True)
-
-        # Download into the per-user persistent cache and verify in-place.
-        game_dir = _game_dest_dir(user_id, game_type)
-
-        ok, msg, repo_path = download_model_to_cache(gm, token=token, force=False)
-        if not ok or repo_path is None:
-            log.warning(
-                "Cache download failed for user=%s game=%s repo=%s: %s",
-                user_id, game_type, gm.hf_model_repo_id, msg,
-            )
-            gm.model_integrity_ok = False
-            gm.save(update_fields=["model_integrity_ok"])
-            # Best-effort cleanup — remove the whole game-type directory
-            try:
-                if game_dir.exists():
-                    shutil.rmtree(game_dir, ignore_errors=True)
-            except Exception:
-                log.debug("Failed to remove game_dir after failed download: %s", game_dir, exc_info=True)
-            continue
-
-        # ── Download data repo (if any) into game_dir/data ──
-        data_dir = None
-        if gm.hf_data_repo_id:
-            d_ok, d_msg, d_path = _download_data_repo(
-                gm.hf_data_repo_id,
-                game_dir,
-                token=token,
-            )
-            if not d_ok:
-                log.warning(
-                    "Data download failed for user=%s game=%s: %s",
-                    user_id, game_type, d_msg,
-                )
-            else:
-                data_dir = d_path
-
-        # ── Scan model ──
-        scan_passed, report = scan_model(repo_path)
-
-        # Build current file list for diffing
-        current_file_list = _build_file_list(repo_path)
-        report["file_list"] = current_file_list
-
-        # ── Compare commit SHA ──
-        current_sha = _get_current_commit_sha(gm.hf_model_repo_id, token)
-
-        if not scan_passed:
-            # Scan failed — log warning but still cache the files.
-            # The model runs in an isolated subprocess so code-level
-            # patterns are not an actual risk.  The real safety gate is
-            # the sandbox test in verify_model().  Keeping the files
-            # avoids a re-download loop on every game move.
-            log.warning(
-                "Scan warnings for user=%s game=%s repo=%s — caching anyway (sandbox is the safety gate)",
-                user_id, game_type, gm.hf_model_repo_id,
-            )
-            gm.scan_report = report
-
-        if gm.last_verified_commit and current_sha and current_sha != gm.last_verified_commit:
-            # Commit changed since last verification
-            old_file_list = gm.scan_report.get("file_list", []) if gm.scan_report else []
-            changed_files = _diff_file_lists(old_file_list, current_file_list)
-            report["changed_files"] = changed_files
-
-            log.warning(
-                "Model CHANGED for user=%s game=%s: %d files differ (old SHA=%s new SHA=%s)",
-                user_id, game_type, len(changed_files),
-                gm.last_verified_commit[:8], current_sha[:8] if current_sha else "?",
-            )
-
-            gm.verification_status = "suspicious"
-            gm.model_integrity_ok = False
-            gm.scan_report = report
-            gm.rated_games_since_revalidation = 0
-            gm.save(update_fields=[
-                "verification_status",
-                "model_integrity_ok",
-                "scan_report",
-                "rated_games_since_revalidation",
-            ])
-            # Keep files for re-verification — do NOT delete
-        else:
-            # Same commit or first-time verification — scan passed
-            gm.model_integrity_ok = True
-            gm.scan_report = report
-            if current_sha:
-                gm.last_verified_commit = current_sha
-            gm.last_verified_at = timezone.now()
-            gm.last_model_validation_date = timezone.now().date()
-            # Persist the cached path so _find_cached_model() can locate these files during live-game inference.
-            # cached_path points to the game-type dir (parent of model/ and data/).
-            gm.cached_path = str(game_dir)
-            gm.cached_at = timezone.now()
-            gm.cached_commit = current_sha or ""
-            gm.save(update_fields=[
-                "model_integrity_ok",
-                "scan_report",
-                "last_verified_commit",
-                "last_verified_at",
-                "last_model_validation_date",
-                "cached_path",
-                "cached_at",
-                "cached_commit",
-            ])
-
-            cache_key = f"model_status_{user_id}_{game_type}"
-            cache.set(cache_key, "model_ready", timeout=None)
-            log.info(
-                "Model OK for user=%s game=%s (SHA=%s)",
-                user_id, game_type, current_sha[:8] if current_sha else "n/a",
-            )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -421,12 +411,7 @@ def cleanup_on_logout(self, user_id: int):
 def daily_integrity_check(self):
     """Check every UserGameModel for commit SHA changes."""
     from apps.users.models import UserGameModel
-    from apps.games.local_sandbox_inference import (
-        download_model,
-        scan_model,
-        _get_current_commit_sha,
-        _cleanup_temp_dir,
-    )
+    from apps.games.local_sandbox_inference import _get_current_commit_sha
 
     all_models = UserGameModel.objects.select_related("user").all()
     checked = 0
@@ -448,57 +433,16 @@ def daily_integrity_check(self):
             checked += 1
             continue
 
-        # Commit changed — download to temp dir, scan and diff
-        log.info(
+        # Commit changed — flag for re-verification
+        log.warning(
             "Daily check: SHA changed for user=%s game=%s (old=%s new=%s)",
             gm.user_id, gm.game_type,
             (gm.last_verified_commit or "none")[:8], current_sha[:8],
         )
-
-        import tempfile
-        temp_base = Path(tempfile.mkdtemp(prefix="aglad_daily_"))
-        try:
-            ok, msg, model_dir = download_model(
-                repo_id,
-                gm.game_type,
-                token=token,
-                dest_dir=temp_base,
-            )
-            if not ok:
-                log.warning("Daily download failed for %s: %s", repo_id, msg)
-                gm.model_integrity_ok = False
-                gm.save(update_fields=["model_integrity_ok"])
-                continue
-
-            scan_passed, report = scan_model(model_dir)
-
-            # Build file list and diff against stored list
-            current_file_list = _build_file_list(model_dir)
-            report["file_list"] = current_file_list
-
-            old_file_list = gm.scan_report.get("file_list", []) if gm.scan_report else []
-            changed_files = _diff_file_lists(old_file_list, current_file_list)
-            report["changed_files"] = changed_files
-
-            gm.verification_status = "suspicious"
-            gm.model_integrity_ok = False
-            gm.scan_report = report
-            gm.rated_games_since_revalidation = 0
-            gm.save(update_fields=[
-                "verification_status",
-                "model_integrity_ok",
-                "scan_report",
-                "rated_games_since_revalidation",
-            ])
-            flagged += 1
-            log.warning(
-                "Daily check FLAGGED user=%s game=%s: %d files changed",
-                gm.user_id, gm.game_type, len(changed_files),
-            )
-        finally:
-            # Always clean up temp files after daily scan
-            _cleanup_temp_dir(temp_base)
-
+        gm.verification_status = "suspicious"
+        gm.model_integrity_ok = False
+        gm.save(update_fields=["verification_status", "model_integrity_ok"])
+        flagged += 1
         checked += 1
 
     log.info("Daily integrity check complete: %d checked, %d flagged.", checked, flagged)

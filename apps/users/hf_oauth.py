@@ -187,6 +187,31 @@ def hf_oauth_callback(request):
         user.hf_oauth_token_encrypted = encrypted
         user.hf_oauth_linked_at = now
         user.save(update_fields=["hf_oauth_token_encrypted", "hf_oauth_linked_at"])
+        # Attempt to preload models but do not block login on failure
+        try:
+            from apps.games.model_preloader import preload_user_models
+            try:
+                preload_user_models(user.pk)
+            except Exception as e:
+                log.exception("Preload failed (non-critical) for existing OAuth user %s: %s", user.pk, e)
+        except Exception:
+            log.exception("Model preload import failed during OAuth callback for user %s", user.pk)
+
+        # Trigger snapshot download for all registered models in a background thread
+        import threading as _threading
+        def _bg_sync_case1():
+            try:
+                from apps.users.models import UserGameModel
+                from apps.users.model_lifecycle import sync_hf_repo_to_local
+                for gm in UserGameModel.objects.filter(user=user, hf_model_repo_id__gt=""):
+                    try:
+                        sync_hf_repo_to_local(user, gm, token=access_token)
+                    except Exception:
+                        log.exception("OAuth Case1: sync_hf_repo_to_local failed for user=%s game=%s", user.pk, gm.game_type)
+            except Exception:
+                log.exception("OAuth Case1: background sync failed for user=%s", user.pk)
+        _threading.Thread(target=_bg_sync_case1, daemon=True, name=f"hf-oauth-{user.pk}").start()
+
         login(request, user)
         messages.success(request, f"Welcome back, {user.username}!")
         return redirect("games:lobby")
@@ -204,6 +229,31 @@ def hf_oauth_callback(request):
             "hf_oauth_token_encrypted",
             "hf_oauth_linked_at",
         ])
+        # Attempt to preload models for linked user; don't block linking on failure
+        try:
+            from apps.games.model_preloader import preload_user_models
+            try:
+                preload_user_models(user.pk)
+            except Exception as e:
+                log.exception("Preload failed (non-critical) when linking HF account for user %s: %s", user.pk, e)
+        except Exception:
+            log.exception("Model preload import failed when linking HF account for user %s", user.pk)
+
+        # Trigger snapshot download in background (non-blocking)
+        import threading as _threading
+        def _bg_sync_case2():
+            try:
+                from apps.users.models import UserGameModel
+                from apps.users.model_lifecycle import sync_hf_repo_to_local
+                for gm in UserGameModel.objects.filter(user=user, hf_model_repo_id__gt=""):
+                    try:
+                        sync_hf_repo_to_local(user, gm, token=access_token)
+                    except Exception:
+                        log.exception("OAuth Case2: sync_hf_repo_to_local failed for user=%s game=%s", user.pk, gm.game_type)
+            except Exception:
+                log.exception("OAuth Case2: background sync failed for user=%s", user.pk)
+        _threading.Thread(target=_bg_sync_case2, daemon=True, name=f"hf-link-{user.pk}").start()
+
         messages.success(request, f"Your Hugging Face account ({hf_username}) has been linked.")
         return redirect("users:profile")
 
@@ -297,17 +347,29 @@ def hf_oauth_complete(request):
             except Exception:
                 log.exception("Could not pin model for OAuth user %s", username)
 
-            # Run sandbox verification for this model
+            # Verify committed/cached files exist — no download triggered
             try:
-                from apps.games.local_sandbox_inference import verify_model
-                raw_token_for_verify = decrypt_token(encrypted_token)
-                verify_model(gm, token=raw_token_for_verify)
-                log.info("Sandbox verification completed for OAuth user %s", username)
+                from apps.games.local_inference import verify_local_files
+                ok, msg = verify_local_files(gm)
+                if ok:
+                    log.info("Local model files verified for OAuth user %s", username)
+                else:
+                    log.warning("Local model files not found for OAuth user %s: %s", username, msg)
             except Exception:
-                log.exception("Sandbox verification failed for OAuth user %s", username)
+                log.exception("Model verification failed for OAuth user %s", username)
 
         # Clear the pending session data
         request.session.pop("hf_oauth_pending", None)
+
+        # Attempt to preload models before completing login, but do not block
+        try:
+            from apps.games.model_preloader import preload_user_models
+            try:
+                preload_user_models(user.pk)
+            except Exception as e:
+                log.exception("Preload failed (non-critical) for new OAuth user %s: %s", user.pk, e)
+        except Exception:
+            log.exception("Model preload import failed for new OAuth user %s", user.pk)
 
         login(request, user)
         messages.success(request, f"Welcome to Artificial Gladiator, {username}!")

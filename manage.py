@@ -6,6 +6,14 @@ import sys
 from dotenv import load_dotenv
 load_dotenv()
 
+# When running the development server, avoid heavy startup downloads.
+# Default to skipping the startup pre-warm unless explicitly overridden.
+try:
+    if any("runserver" in a for a in sys.argv[1:]):
+        os.environ.setdefault("PREWARM_MODELS", "false")
+except Exception:
+    pass
+
 # Prevent OpenBLAS memory allocation failures on Windows.
 # Must be set before numpy/torch are imported anywhere.
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")

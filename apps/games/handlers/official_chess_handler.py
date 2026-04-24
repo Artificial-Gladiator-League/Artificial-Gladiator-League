@@ -60,7 +60,7 @@ class EndpointHandler:
                     )
                     self.model.eval()
                     self._loaded = True
-                    log.info("Official chess model loaded from cache: %s", str(self.path))
+                        log.info("Official chess model loaded from PRE-CACHED path: %s", str(self.path))
                 except Exception:
                     log.exception("Failed to load model from %s", self.path)
                     self.model = None

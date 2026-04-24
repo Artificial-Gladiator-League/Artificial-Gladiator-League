@@ -1,28 +1,36 @@
 # ──────────────────────────────────────────────
 # apps/users/integrity.py
 #
-# Revision-pinned model-integrity verification.
+# Model integrity verification — local-repo edition.
 #
-# Business rules
-# ──────────────
-# 1. At registration the user chooses a ref (branch
-#    or tag).  We resolve it to an exact full SHA
-#    and store that as the approved revision.
-# 2. On the first login each day the user supplies
-#    their HF read token so we can re-check the ref.
-# 3. If the resolved SHA ≠ approved SHA the repo
-#    has a new revision available — the user must
-#    submit the new revision for approval before
-#    resuming rated/tournament play.
+# Two integrity modes
+# ──────────────────
+# 1. LOCAL HASH (primary, post-refactor)
+#    Files are git-committed under user_models/user_{id}/{game}/.
+#    Integrity = SHA-256 of each model/data file compared to a
+#    stored baseline (UserGameModel.local_integrity_baseline).
+#    No network I/O.  Run ONLY before tournament entry.
+#
+# 2. HF REVISION (legacy, kept for backwards compat)
+#    Resolves HF branch/tag to a commit SHA.  Used when
+#    local_integrity_baseline is empty (old records).
+#
+# Tournament gate (IMPORTANT)
+# ───────────────────────────
+# check_local_integrity() is called by the tournament engine
+# (tournaments/tasks.py → run_pre_tournament_integrity_checks)
+# ONLY, NOT on every login or move.
 #
 # Security
 # ────────
-# The HF token is received only as a runtime
-# argument and is NEVER stored.
+# HF tokens are received only as runtime args, never stored.
 # ──────────────────────────────────────────────
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.conf import settings
@@ -33,6 +41,216 @@ if TYPE_CHECKING:
     from apps.users.models import CustomUser, UserGameModel
 
 log = logging.getLogger(__name__)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Local hash-based integrity (primary)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def compute_file_hashes(root: Path) -> dict[str, str]:
+    """Return a dict mapping relative file paths → SHA-256 hex digests.
+
+    Walks *root* recursively, skipping:
+      - Hidden files/dirs (names starting with ``.``)
+      - Internal runner scripts (names starting with ``_agl_``)
+      - The ``__pycache__`` directory
+
+    The returned keys are POSIX-style relative paths (forward slashes).
+    """
+    hashes: dict[str, str] = {}
+    if not root or not root.exists():
+        return hashes
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        parts = p.relative_to(root).parts
+        if any(part.startswith(".") or part == "__pycache__" or part.startswith("_agl_") for part in parts):
+            continue
+        rel = p.relative_to(root).as_posix()
+        try:
+            sha = hashlib.sha256(p.read_bytes()).hexdigest()
+            hashes[rel] = sha
+        except OSError as exc:
+            log.warning("Could not hash file %s: %s", p, exc)
+    return hashes
+
+
+def record_local_baseline(game_model: "UserGameModel") -> tuple[bool, str]:
+    """Compute SHA-256 hashes of all committed model/data files and persist them.
+
+    Stores the result as JSON in ``UserGameModel.local_integrity_baseline``.
+    Call this once at submission/approval time.
+
+    Returns ``(ok, message)``.
+    """
+    from apps.games.local_inference import resolve_model_path
+
+    user_id = game_model.user_id
+    game_type = game_model.game_type
+    model_dir, data_dir = resolve_model_path(user_id, game_type)
+
+    if model_dir is None:
+        return False, f"No local model files found for user={user_id} game={game_type}"
+
+    hashes: dict[str, str] = {}
+    # Hash model files with prefix "model/"
+    for rel, sha in compute_file_hashes(model_dir).items():
+        hashes[f"model/{rel}"] = sha
+    # Hash data files with prefix "data/"
+    if data_dir:
+        for rel, sha in compute_file_hashes(data_dir).items():
+            hashes[f"data/{rel}"] = sha
+
+    if not hashes:
+        return False, "No files to hash — model directory appears empty"
+
+    baseline_json = json.dumps(hashes, sort_keys=True)
+    try:
+        game_model.local_integrity_baseline = baseline_json
+        update_fields = ["local_integrity_baseline"]
+        # Also record the git commit SHA if available (best-effort)
+        git_sha = _get_git_commit_sha()
+        if git_sha and hasattr(game_model, "original_model_commit_sha"):
+            game_model.original_model_commit_sha = git_sha
+            update_fields.append("original_model_commit_sha")
+        game_model.save(update_fields=update_fields)
+        log.info(
+            "Recorded local integrity baseline for user=%s game=%s (%d files)",
+            user_id, game_type, len(hashes),
+        )
+    except Exception as exc:
+        log.exception("Failed to save integrity baseline for user=%s game=%s", user_id, game_type)
+        return False, f"DB save failed: {exc}"
+
+    return True, f"Baseline recorded ({len(hashes)} files)"
+
+
+def check_local_integrity(
+    game_model: "UserGameModel",
+    *,
+    alert_admins: bool = True,
+) -> tuple[bool, str]:
+    """Compare current file hashes against the stored baseline.
+
+    Called ONLY before tournament entry (not on every login/move).
+
+    Returns ``(ok, message)``.
+    If files changed, sets ``model_integrity_ok = False`` on the record
+    and optionally emails admins.
+    """
+    from apps.games.local_inference import resolve_model_path
+
+    user_id = game_model.user_id
+    game_type = game_model.game_type
+    baseline_json = getattr(game_model, "local_integrity_baseline", "") or ""
+
+    # No baseline yet → record it now (first tournament for this model).
+    if not baseline_json:
+        log.info(
+            "No local integrity baseline for user=%s game=%s — recording now",
+            user_id, game_type,
+        )
+        ok, msg = record_local_baseline(game_model)
+        if not ok:
+            return False, f"Could not record baseline: {msg}"
+        # Baseline just recorded — this is the approved state.
+        return True, "Baseline established; integrity OK"
+
+    try:
+        baseline: dict[str, str] = json.loads(baseline_json)
+    except json.JSONDecodeError:
+        log.error("Corrupt integrity baseline for user=%s game=%s", user_id, game_type)
+        return False, "Integrity baseline is corrupt — please re-submit your model"
+
+    model_dir, data_dir = resolve_model_path(user_id, game_type)
+    if model_dir is None:
+        _mark_integrity_failed(game_model, "model files missing")
+        return False, f"Model files missing for user={user_id} game={game_type}"
+
+    # Compute current hashes
+    current: dict[str, str] = {}
+    for rel, sha in compute_file_hashes(model_dir).items():
+        current[f"model/{rel}"] = sha
+    if data_dir:
+        for rel, sha in compute_file_hashes(data_dir).items():
+            current[f"data/{rel}"] = sha
+
+    # Compare
+    added = sorted(set(current) - set(baseline))
+    removed = sorted(set(baseline) - set(current))
+    changed = sorted(k for k in (set(current) & set(baseline)) if current[k] != baseline[k])
+
+    if not added and not removed and not changed:
+        # Update last-checked date
+        try:
+            game_model.last_model_validation_date = timezone.now().date()
+            game_model.model_integrity_ok = True
+            game_model.save(update_fields=["last_model_validation_date", "model_integrity_ok"])
+        except Exception:
+            pass
+        return True, "Integrity OK — all hashes match"
+
+    diff_summary = []
+    if added:
+        diff_summary.append(f"added: {added}")
+    if removed:
+        diff_summary.append(f"removed: {removed}")
+    if changed:
+        diff_summary.append(f"changed: {changed}")
+    msg = "Model files changed since baseline — " + "; ".join(diff_summary)
+
+    log.warning(
+        "Integrity check FAILED for user=%s game=%s: %s",
+        user_id, game_type, msg,
+    )
+    _mark_integrity_failed(game_model, msg)
+
+    if alert_admins:
+        try:
+            mail_admins(
+                subject=f"[AGL] Integrity FAIL — user={user_id} game={game_type}",
+                message=(
+                    f"User {user_id} game={game_type} failed pre-tournament integrity check.\n\n"
+                    f"Details: {msg}\n\n"
+                    f"Repo: {getattr(game_model, 'hf_model_repo_id', '?')}"
+                ),
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+
+    return False, msg
+
+
+def _mark_integrity_failed(game_model: "UserGameModel", reason: str) -> None:
+    """Persist model_integrity_ok=False on a UserGameModel."""
+    try:
+        game_model.model_integrity_ok = False
+        game_model.save(update_fields=["model_integrity_ok"])
+    except Exception:
+        log.exception("Failed to mark integrity_ok=False for user=%s", getattr(game_model, "user_id", "?"))
+
+
+def _get_git_commit_sha() -> str | None:
+    """Return the current Git HEAD commit SHA of the repo (best-effort).
+
+    Used to version model file snapshots. Returns None if git is
+    unavailable or the directory is not a Git repo.
+    """
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=str(getattr(settings, "BASE_DIR", ".")),
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return None
 
 
 def _resolve_ref_sha(
@@ -329,9 +547,9 @@ def run_daily_integrity_check() -> dict:
         else:
             stats["failed"] += 1
 
-    # ── Docker sandbox re-verification for approved models ──
+    # HF API re-verification for approved models
     try:
-        from apps.games.local_sandbox_inference import reverify_model
+        from apps.games.hf_inference import reverify_model
 
         approved_models = UserGameModel.objects.filter(
             hf_model_repo_id__gt="",

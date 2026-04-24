@@ -92,6 +92,12 @@ class Game(models.Model):
         help_text="Increment per move in seconds.",
     )
 
+    # Maximum time (seconds) allotted for an AI to think per move.
+    ai_thinking_seconds = models.FloatField(
+        default=1.0,
+        help_text="Maximum seconds allowed for AI to think per move.",
+    )
+
     # ── Status / result ─────────────────────────
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.WAITING,

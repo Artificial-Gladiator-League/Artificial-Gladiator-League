@@ -263,10 +263,14 @@ HF_OAUTH_AUTHORIZE_URL = "https://huggingface.co/oauth/authorize"
 HF_OAUTH_TOKEN_URL = "https://huggingface.co/oauth/token"
 HF_OAUTH_USERINFO_URL = "https://huggingface.co/oauth/userinfo"
 
-# ── AI model preloading (DEPRECATED) ──────────
-# No longer used — models run in Docker sandbox on demand.
-CHESS_PRELOAD_REPOS: list[str] = []
-BREAKTHROUGH_PRELOAD_REPOS: list[str] = []
+# ── AI model preloading ───────────────────────────────
+# Downloaded once at startup into HF_HUB_CACHE; no per-user copies.
+# Override via AGL_CHESS_PRELOAD / AGL_BREAKTHROUGH_PRELOAD env vars
+# (comma-separated repo IDs, e.g. "test1978/chess-model,other/repo").
+_chess_env = os.environ.get("AGL_CHESS_PRELOAD", "test1978/chess-model")
+_bt_env = os.environ.get("AGL_BREAKTHROUGH_PRELOAD", "test1978/breakthrough-model")
+CHESS_PRELOAD_REPOS: list[str] = [r.strip() for r in _chess_env.split(",") if r.strip()]
+BREAKTHROUGH_PRELOAD_REPOS: list[str] = [r.strip() for r in _bt_env.split(",") if r.strip()]
 
 # ── WhiteNoise (static files in production) ───
 try:

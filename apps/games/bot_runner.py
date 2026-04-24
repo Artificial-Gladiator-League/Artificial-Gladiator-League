@@ -39,10 +39,18 @@ def _get_repo_for_user(user, game_type: str) -> str | None:
     if user is None:
         return None
     try:
-        return user.get_repo_for_game(game_type) or None
+        repo = user.get_repo_for_game(game_type) or None
     except Exception:
         log.debug("Could not look up repo for %s/%s", user, game_type)
-        return None
+        repo = None
+
+    # If no per-user model is configured for Breakthrough, fall back to
+    # a sensible default so bot games don't always hit the random fallback.
+    if not repo and game_type == "breakthrough":
+        default_repo = getattr(settings, "DEFAULT_BREAKTHROUGH_REPO", "typical-cyber/breakthrough-model")
+        log.info("No repo configured for user %s (%s) — falling back to default: %s", getattr(user, 'username', user), game_type, default_repo)
+        return default_repo
+    return repo
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -74,13 +82,19 @@ def _get_bot_move(
             from apps.games.predict_chess import get_move as chess_get_move
             log.info("\U0001f4e1 [bot] Requesting %s move — repo='%s' fen=%.60s",
                      game_type, hf_repo_id, fen)
-            _t0 = _MOVE_TIMER()
-            move = chess_get_move(fen, player, hf_repo_id)
-            _elapsed = _MOVE_TIMER() - _t0
+            move, _elapsed = chess_get_move(fen, player, hf_repo_id)
             log.info("\u2705 [bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
                      move, _elapsed, game_type, hf_repo_id)
             return move
-    except Exception:
+    except Exception as exc:
+        # Propagate pre-cache errors so callers fail loudly; otherwise
+        # log and return None for unexpected exceptions.
+        try:
+            from apps.games.exceptions import ModelNotPrecachedError
+            if isinstance(exc, ModelNotPrecachedError):
+                raise
+        except Exception:
+            pass
         log.exception(
             "\u274c _get_bot_move failed — game_type=%s repo=%s", game_type, hf_repo_id
         )
@@ -201,11 +215,11 @@ def _run_chess_game(game) -> None:
         if white_repo:
             w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='chess').first()
             if w_gm and getattr(w_gm, 'cached_path', None):
-                log.info("[game %s] ✅ Loading white model weights from cache: %s", game.pk, w_gm.cached_path)
+                log.info("[game %s] ✅ PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
         if black_repo:
             b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='chess').first()
             if b_gm and getattr(b_gm, 'cached_path', None):
-                log.info("[game %s] ✅ Loading black model weights from cache: %s", game.pk, b_gm.cached_path)
+                log.info("[game %s] ✅ PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
     except Exception:
         log.debug("Could not query UserGameModel cached paths", exc_info=True)
 
@@ -313,11 +327,11 @@ def _run_breakthrough_game(game) -> None:
         if white_repo:
             w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='breakthrough').first()
             if w_gm and getattr(w_gm, 'cached_path', None):
-                log.info("[game %s] ✅ Loading white model weights from cache: %s", game.pk, w_gm.cached_path)
+                log.info("[game %s] ✅ PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
         if black_repo:
             b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='breakthrough').first()
             if b_gm and getattr(b_gm, 'cached_path', None):
-                log.info("[game %s] ✅ Loading black model weights from cache: %s", game.pk, b_gm.cached_path)
+                log.info("[game %s] ✅ PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
     except Exception:
         log.debug("Could not query UserGameModel cached paths", exc_info=True)
 

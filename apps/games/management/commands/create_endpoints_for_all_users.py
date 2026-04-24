@@ -19,13 +19,13 @@ from __future__ import annotations
 
 from django.core.management.base import BaseCommand
 
-from apps.games.local_sandbox_inference import verify_model
+from apps.games.hf_inference import verify_model
 from apps.users.models import UserGameModel
 
 
 class Command(BaseCommand):
     help = (
-        "Bulk-verify models via Docker sandbox for UserGameModels "
+        "Bulk-verify models via HF API for UserGameModels "
         "that have a model repo but have not been verified yet."
     )
 

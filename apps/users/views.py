@@ -1,5 +1,7 @@
 import json
 import logging
+import shutil
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
@@ -198,6 +200,16 @@ def activate(request, uidb64, token):
         )
         if updated:
             user.refresh_from_db()
+            # Preload models before finalizing login (non-blocking).
+            try:
+                from apps.games.model_preloader import preload_user_models
+                try:
+                    preload_user_models(user.pk)
+                except Exception as e:
+                    log.exception("Preload failed (non-critical) during activation for user %s: %s", user.pk, e)
+            except Exception:
+                log.exception("Model preload import failed during activation for user %s", user.pk)
+
             login(request, user)
             messages.success(request, "Your account has been activated! Welcome.", extra_tags="activation")
             return redirect("games:lobby")
@@ -456,13 +468,13 @@ def ai_models(request):
 
                     record_original_sha(gm, hf_token)
 
-                    # Run sandbox verification (download, scan, test)
+                    # Run integrity verification via HF API
                     try:
-                        from apps.games.local_sandbox_inference import verify_model
-                        verify_model(gm, token=hf_token)
+                        from apps.games.hf_inference import verify_model as _hf_verify
+                        _hf_verify(gm, token=hf_token)
                     except Exception:
                         log.exception(
-                            "Sandbox verification failed for %s/%s",
+                            "Verification failed for %s/%s",
                             request.user.username, game_type,
                         )
                         messages.warning(
@@ -520,18 +532,74 @@ class UserLoginView(LoginView):
     redirect_authenticated_user = True
 
     def form_valid(self, form):
-        # Model download/verification is scheduled by the user_logged_in
-        # signal in apps.users.signals. Keep the login response fast.
-        return super().form_valid(form)
+        # Attempt to preload models before finalizing login, but do not block.
+        user = getattr(form, "get_user", lambda: None)()
+        try:
+            if user and getattr(user, "pk", None) is not None:
+                from apps.games.model_preloader import preload_user_models, ensure_user_folders
+                try:
+                    preload_user_models(user.pk)
+                except Exception as e:
+                    # Log a warning and ensure minimal folders exist so login proceeds.
+                    log.warning("Preload failed for user %s: %s", getattr(user, "pk", None), e)
+                    try:
+                        ensure_user_folders(user.pk)
+                    except Exception:
+                        log.exception("ensure_user_folders failed for user %s", getattr(user, "pk", None))
+        except Exception:
+            log.exception("Model preload import failed during login for user %s", getattr(user, "pk", None))
+
+        # Proceed with regular login now that models are preloaded
+        response = super().form_valid(form)
+
+        # Best-effort: create a per-session live models directory for this user.
+        try:
+            user = getattr(self.request, "user", None)
+            if user and getattr(user, "pk", None) is not None:
+                live_root = getattr(settings, "LIVE_MODELS_ROOT", None)
+                if live_root:
+                    live_dir = Path(live_root) / f"user_{user.pk}"
+                    live_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        (live_dir / ".placeholder").write_text("Live models dir\n")
+                    except Exception:
+                        # Non-fatal; directory existence is the important part
+                        pass
+        except Exception:
+            log.exception("Failed to create live models directory for user on login")
+
+        return response
 
 
 class UserLogoutView(LogoutView):
     next_page = "/"
 
     def dispatch(self, request, *args, **kwargs):
-        # Logout cleanup is scheduled by the user_logged_out signal in
+        # Best-effort: remove the per-session live models directory for this user.
+        try:
+            user = getattr(request, "user", None)
+            if user and getattr(user, "pk", None) is not None:
+                live_root = getattr(settings, "LIVE_MODELS_ROOT", None)
+                if live_root:
+                    live_dir = Path(live_root) / f"user_{user.pk}"
+                    if live_dir.exists():
+                        shutil.rmtree(live_dir, ignore_errors=True)
+        except Exception:
+            log.exception("Failed to remove live models directory for user on logout")
+
+        # Logout cleanup is also scheduled by the user_logged_out signal in
         # apps.users.signals which captures the user id and schedules
         # `cleanup_on_logout` asynchronously.
+        # As a best-effort additional cleanup, remove preloaded models now.
+        try:
+            if user and getattr(user, "pk", None) is not None:
+                from apps.games.model_preloader import clear_user_models
+                try:
+                    clear_user_models(user.pk)
+                except Exception:
+                    log.exception("Best-effort clear_user_models failed for user %s", user.pk)
+        except Exception:
+            log.exception("Could not perform best-effort clear_user_models")
         return super().dispatch(request, *args, **kwargs)
 
 
