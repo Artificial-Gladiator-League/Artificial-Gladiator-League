@@ -399,3 +399,75 @@ def ensure_game_dirs_on_gamemodel_create(sender, instance, created, **kwargs):
         log.info("Ensured model dirs for user %s game %s", instance.user_id, instance.game_type)
     except Exception:
         log.exception("Failed to ensure game dirs for user %s game %s", instance.user_id, instance.game_type)
+
+
+# ── Auto-populate HF Space URL ─────────────────────────────────────────────
+
+def _derive_space_url(repo_id: str) -> str:
+    """Derive the HF Gradio Space base URL from a model repo ID.
+
+    HF Space URL convention: spaces named ``owner/owner`` produce
+    ``https://owner-owner.hf.space``. This matches the pattern used
+    by verify_chess_models._space_base_url() as its generic fallback.
+    """
+    owner = repo_id.split("/")[0] if "/" in repo_id else repo_id
+    return f"https://{owner}-{owner}.hf.space"
+
+
+@receiver(post_save, sender=UserGameModel)
+def populate_hf_space_url(sender, instance, **kwargs):
+    """Auto-populate hf_inference_endpoint_url when a model repo is registered.
+
+    Runs synchronously on save (no network I/O — pure string derivation).
+    A background thread then probes the derived URL and updates
+    hf_inference_endpoint_status to 'ready' or 'failed'.
+
+    Uses .update() instead of .save() to avoid re-triggering this signal.
+    """
+    if not instance.hf_model_repo_id:
+        return
+    if instance.hf_inference_endpoint_url:
+        return  # already set — respect explicit overrides
+
+    derived_url = _derive_space_url(instance.hf_model_repo_id)
+    UserGameModel.objects.filter(pk=instance.pk).update(
+        hf_inference_endpoint_url=derived_url,
+        hf_inference_endpoint_status="pending",
+    )
+    log.info(
+        "Auto-derived Space URL for UGM %s (user=%s repo=%s): %s",
+        instance.pk,
+        getattr(instance, "user_id", "?"),
+        instance.hf_model_repo_id,
+        derived_url,
+    )
+
+    # Kick off a non-blocking probe in a background thread so we can
+    # immediately mark the endpoint 'ready' or 'failed' without
+    # blocking the save path or requiring Celery.
+    def _probe(ugm_pk: int, url: str, game_type: str) -> None:
+        import requests as _req
+        try:
+            resp = _req.post(
+                f"{url}/gradio_api/call/get_move",
+                json={"data": ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]},
+                headers={"Content-Type": "application/json"},
+                timeout=15,
+            )
+            new_status = "ready" if resp.status_code < 500 else "failed"
+        except Exception as exc:
+            log.warning("Space probe failed for UGM %s url=%s: %s", ugm_pk, url, exc)
+            new_status = "failed"
+
+        UserGameModel.objects.filter(pk=ugm_pk).update(
+            hf_inference_endpoint_status=new_status,
+        )
+        log.info("Space probe result for UGM %s: status=%s", ugm_pk, new_status)
+
+    t = threading.Thread(
+        target=_probe,
+        args=(instance.pk, derived_url, instance.game_type),
+        daemon=True,
+        name=f"space-probe-{instance.pk}",
+    )
+    t.start()

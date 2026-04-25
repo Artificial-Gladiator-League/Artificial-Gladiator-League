@@ -8,6 +8,14 @@ re-verification).
 Runs the full Docker sandbox pipeline: download → security scan →
 sandbox test positions.
 
+Also fills the HF inference endpoint fields for ALL game types:
+    hf_inference_endpoint_name   — "{owner}-{game_type}"
+    hf_inference_endpoint_id     — "{owner}-{game_type}"
+    hf_inference_endpoint_status — "ready" | "failed" | "pending"
+
+These fields are derived purely from the model repo ID; nothing is
+hardcoded.
+
 Usage:
     python manage.py create_endpoints_for_all_users
     python manage.py create_endpoints_for_all_users --game-type breakthrough
@@ -18,22 +26,34 @@ Usage:
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
+from django.db import transaction
 
 from apps.games.hf_inference import verify_model
 from apps.users.models import UserGameModel
 
 
+def _derive_endpoint_name(repo_id: str, game_type: str) -> str:
+    """Derive a stable endpoint name from the repo owner and game type.
+
+    Example: repo_id="alice/chess-model", game_type="chess"
+             → "alice-chess"
+    """
+    owner = repo_id.split("/")[0] if "/" in repo_id else repo_id
+    return f"{owner}-{game_type}"
+
+
 class Command(BaseCommand):
     help = (
         "Bulk-verify models via HF API for UserGameModels "
-        "that have a model repo but have not been verified yet."
+        "that have a model repo but have not been verified yet. "
+        "Also fills hf_inference_endpoint_name/id/status for all game types."
     )
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--game-type",
             type=str,
-            choices=["chess", "breakthrough"],
+            choices=[gt for gt, _ in UserGameModel.GameType.choices],
             default="",
             help="Limit to a specific game type (default: all).",
         )
@@ -82,7 +102,7 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(
-            f"Found {len(models)} model(s) needing verification.\n"
+            f"Found {len(models)} model(s) to process.\n"
         )
 
         verified = 0
@@ -90,31 +110,56 @@ class Command(BaseCommand):
 
         for gm in models:
             label = f"{gm.user.username}/{gm.game_type} ({gm.hf_model_repo_id})"
+
+            # Derive endpoint identifiers from the repo ID — no hardcoding.
+            endpoint_name = _derive_endpoint_name(gm.hf_model_repo_id, gm.game_type)
+
             if options["dry_run"]:
-                self.stdout.write(f"  [DRY RUN] Would verify {label}")
+                self.stdout.write(
+                    f"  [DRY RUN] Would verify {label}\n"
+                    f"            endpoint_name/id → {endpoint_name!r}"
+                )
                 continue
 
+            # ── Run integrity verification ───────────────────────────────
+            new_status = "pending"
             try:
                 result = verify_model(gm, force=options["force"])
-                status = gm.verification_status
-                if status == "approved":
-                    self.stdout.write(self.style.SUCCESS(
-                        f"  ✔ {label} → {status}"
-                    ))
+                ok, msg = (result[0], result[1]) if isinstance(result, tuple) else (bool(result), "")
+                new_status = "ready" if ok else "failed"
+
+                if ok:
+                    self.stdout.write(self.style.SUCCESS(f"  ✔ {label} → approved"))
                     verified += 1
                 else:
-                    self.stderr.write(self.style.ERROR(
-                        f"  ✖ {label} → {status}"
-                    ))
+                    self.stderr.write(self.style.ERROR(f"  ✖ {label} → {msg}"))
                     failed += 1
             except Exception as exc:
-                self.stderr.write(self.style.ERROR(
-                    f"  ✖ {label} — {exc}"
-                ))
+                new_status = "failed"
+                self.stderr.write(self.style.ERROR(f"  ✖ {label} — {exc}"))
                 failed += 1
 
+            # ── Fill endpoint fields (only overwrite blanks unless --force) ─
+            update_fields: dict[str, str] = {}
+
+            if not gm.hf_inference_endpoint_name or options["force"]:
+                update_fields["hf_inference_endpoint_name"] = endpoint_name
+
+            if not gm.hf_inference_endpoint_id or options["force"]:
+                update_fields["hf_inference_endpoint_id"] = endpoint_name
+
+            if not gm.hf_inference_endpoint_status or options["force"]:
+                update_fields["hf_inference_endpoint_status"] = new_status
+
+            if update_fields:
+                with transaction.atomic():
+                    UserGameModel.objects.filter(pk=gm.pk).update(**update_fields)
+                self.stdout.write(
+                    f"    saved endpoint fields: {update_fields}"
+                )
+
         if options["dry_run"]:
-            self.stdout.write(f"\nDry run complete. {len(models)} model(s) would be verified.")
+            self.stdout.write(f"\nDry run complete. {len(models)} model(s) would be processed.")
         else:
             self.stdout.write(
                 f"\nDone. Verified: {verified}, Failed: {failed}"

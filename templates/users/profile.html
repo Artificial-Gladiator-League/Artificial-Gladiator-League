@@ -456,6 +456,56 @@
             </div>
             {% endif %}
 
+            <!-- ── HF Space Link ───────────────────────────────────────── -->
+            <div class="form-group">
+              <label for="id_space_url_{{ game.type }}" class="flex items-center gap-2">
+                HF Space Link
+                <span class="text-xs font-normal text-red-400">*required</span>
+                {% if game.model %}
+                  {% if game.model.hf_inference_endpoint_status == 'ready' %}
+                    <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Live
+                    </span>
+                  {% elif game.model.hf_inference_endpoint_status == 'failed' %}
+                    <span class="inline-flex items-center gap-1 text-xs text-red-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-4a1 1 0 11-2 0v4zm1-8a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd"/></svg>
+                      Unreachable
+                    </span>
+                  {% elif game.model.hf_inference_endpoint_status == 'pending' %}
+                    <span class="inline-flex items-center gap-1 text-xs text-yellow-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
+                      Pending
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </label>
+              <div class="relative">
+                <input type="url"
+                       id="id_space_url_{{ game.type }}"
+                       name="hf_space_url"
+                       value="{{ game.model.hf_inference_endpoint_url|default:'' }}"
+                       placeholder="https://owner-myspace.hf.space"
+                       autocomplete="off"
+                       required
+                       class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition pr-10">
+                <span id="id_space_preview_{{ game.type }}" class="absolute right-3 top-1/2 -translate-y-1/2 text-sm hidden"></span>
+              </div>
+              <span class="text-xs text-gray-500 mt-1 block">
+                Required. The public URL of your Hugging Face Gradio Space (e.g.
+                <code>https://john-chess-space.hf.space</code>).
+                Must belong to your HF account — verified against your token on save.
+                On save, we'll probe the Space and mark it Live or Unreachable.
+              </span>
+              {% if game.model and game.model.hf_inference_endpoint_url %}
+              <a href="{{ game.model.hf_inference_endpoint_url }}" target="_blank" rel="noopener"
+                 class="text-xs text-brand hover:underline mt-1 inline-block">
+                ↗ Open Space
+              </a>
+              {% endif %}
+            </div>
+            <!-- ─────────────────────────────────────────────────────────── -->
+
             <div class="form-group">
               <label for="id_token_{{ game.type }}">Hugging Face Read-Only Token (read permission only)</label>
               <input type="password"
@@ -478,6 +528,31 @@
           {% if game.type == 'breakthrough' or game.type == 'chess' %}
           <div id="repo-file-status-{{ game.type }}" class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">
             <h3 class="text-lg font-semibold text-gray-200">Repo File Status</h3>
+            {% if game.model %}
+              <div class="flex items-center gap-2 text-sm">
+                {% if game.model.hf_inference_endpoint_status == 'ready' %}
+                  <span class="inline-flex items-center gap-1.5 text-green-400">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                    HF Space verified —
+                    <a href="{{ game.model.hf_inference_endpoint_url }}" target="_blank" rel="noopener"
+                       class="underline hover:text-green-300 truncate max-w-xs">{{ game.model.hf_inference_endpoint_url }}</a>
+                  </span>
+                {% elif game.model.hf_inference_endpoint_url %}
+                  <span class="inline-flex items-center gap-1.5 text-red-400">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-2a1 1 0 11-2 0v2zm1-8a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd"/></svg>
+                    HF Space not verified —
+                    <span class="truncate max-w-xs text-red-300">{{ game.model.hf_inference_endpoint_url }}</span>
+                    <span class="text-gray-500">({{ game.model.hf_inference_endpoint_status|default:"no status" }})</span>
+                  </span>
+                {% else %}
+                  <span class="inline-flex items-center gap-1.5 text-gray-500">
+                    <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-2a1 1 0 11-2 0v2zm1-8a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd"/></svg>
+                    HF Space not set — add a Space URL above and save
+                  </span>
+                {% endif %}
+              </div>
+            {% endif %}
+
             {% if game.model_files_status %}
               {% if game.model_files_status.revision_used %}
               <p class="text-xs text-gray-500 mb-2">Revision: <code class="text-gray-400">{{ game.model_files_status.revision_used|truncatechars:16 }}</code></p>
@@ -545,21 +620,50 @@
         <script>
         (function () {
           ['breakthrough','chess'].forEach(function(t) {
+            // ── Repo → data repo auto-fill ──────────────────────────────
             const modelInput = document.getElementById('id_repo_' + t);
             const dataInput = document.getElementById('id_data_repo_' + t);
-            if (!modelInput || !dataInput) return;
-            let autoFilled = !dataInput.value;
-            dataInput.addEventListener('input', function () { autoFilled = false; });
-            modelInput.addEventListener('input', function () {
-              if (!autoFilled) return;
-              const val = modelInput.value;
-              const slash = val.indexOf('/');
-              if (slash > 0) {
-                dataInput.value = val.substring(0, slash) + '/' + t + '-data';
+            if (modelInput && dataInput) {
+              let autoFilled = !dataInput.value;
+              dataInput.addEventListener('input', function () { autoFilled = false; });
+              modelInput.addEventListener('input', function () {
+                if (!autoFilled) return;
+                const val = modelInput.value;
+                const slash = val.indexOf('/');
+                if (slash > 0) {
+                  dataInput.value = val.substring(0, slash) + '/' + t + '-data';
+                } else {
+                  dataInput.value = '';
+                }
+              });
+            }
+
+            // ── Space URL live format preview ────────────────────────────
+            const spaceInput = document.getElementById('id_space_url_' + t);
+            const spacePreview = document.getElementById('id_space_preview_' + t);
+            if (!spaceInput || !spacePreview) return;
+
+            spaceInput.addEventListener('input', function () {
+              const val = spaceInput.value.trim();
+              if (!val) {
+                spacePreview.className = 'absolute right-3 top-1/2 -translate-y-1/2 text-sm hidden';
+                spaceInput.classList.remove('border-red-500', 'border-green-500');
+                return;
+              }
+              const valid = /^https:\/\/[a-zA-Z0-9._-]+\.hf\.space$/.test(val);
+              spaceInput.classList.toggle('border-red-500', !valid);
+              spaceInput.classList.toggle('border-green-500', valid);
+              if (valid) {
+                spacePreview.textContent = '✓';
+                spacePreview.className = 'absolute right-3 top-1/2 -translate-y-1/2 text-sm text-green-400';
               } else {
-                dataInput.value = '';
+                spacePreview.textContent = '✗';
+                spacePreview.className = 'absolute right-3 top-1/2 -translate-y-1/2 text-sm text-red-400';
               }
             });
+
+            // Trigger on page load if field is pre-filled
+            if (spaceInput.value.trim()) spaceInput.dispatchEvent(new Event('input'));
           });
         })();
         </script>

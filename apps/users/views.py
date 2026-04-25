@@ -1066,11 +1066,13 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         import re as _re
         from .forms import validate_gated_hf_repo
         from .integrity import record_original_sha, check_model_card
+        from apps.games.hf_inference import probe_space_url
 
         game_type = request.POST.get("game_type", "").strip()
         repo_id = request.POST.get("hf_model_repo_id", "").strip()
         data_repo_id = request.POST.get("hf_data_repo_id", "").strip()
         hf_token = request.POST.get("hf_token", "").strip()
+        hf_space_url = request.POST.get("hf_space_url", "").strip().rstrip("/")
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
@@ -1080,6 +1082,10 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
+        elif not hf_space_url:
+            messages.error(request, "HF Space Link is required. Enter the full URL of your Hugging Face Gradio Space (e.g. https://owner-myspace.hf.space).")
+        elif not _re.match(r'^https://[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
+            messages.error(request, "HF Space URL must be a full URL ending in .hf.space (e.g. https://owner-myspace.hf.space).")
         elif not hf_token:
             messages.error(request, "Please enter your Hugging Face access token.")
         else:
@@ -1096,6 +1102,37 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 else:
                     messages.error(request, str(exc))
             else:
+                # ── Verify the Space URL belongs to this HF account ──────
+                try:
+                    from huggingface_hub import HfApi as _HfApi
+                    _api = _HfApi()
+                    _whoami = _api.whoami(token=hf_token)
+                    hf_username = (_whoami.get("name") or _whoami.get("login") or "").strip()
+                    if hf_username:
+                        # HF slugifies usernames: lowercase, underscores/dots → hyphens
+                        import re as _re2
+                        _slug = _re2.sub(r'[_.]', '-', hf_username.lower())
+                        # Extract subdomain from https://subdomain.hf.space
+                        _subdomain = hf_space_url.split("//")[-1].split(".hf.space")[0].lower()
+                        if not (_subdomain == _slug or _subdomain.startswith(_slug + "-")):
+                            messages.error(
+                                request,
+                                f"HF Space is not verified — this HF token does not belong to the owner "
+                                f"of this Space. Token belongs to @{hf_username} but the Space subdomain "
+                                f"\u201c{_subdomain}\u201d does not match. "
+                                f"Please provide a Space that you own.",
+                            )
+                            return redirect("users:profile")
+                except Exception:
+                    log.exception("Could not verify Space URL ownership for user=%s", request.user.username)
+                    # Non-fatal — proceed and warn
+                    messages.warning(
+                        request,
+                        "HF Space is not verified — could not confirm Space ownership (HF API unavailable). "
+                        "Please ensure the Space belongs to your Hugging Face account.",
+                    )
+                # ─────────────────────────────────────────────────────────
+
                 dup = UserGameModel.objects.filter(
                     hf_model_repo_id=repo_id,
                 ).exclude(user=request.user)
@@ -1114,6 +1151,25 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         gm.hf_model_repo_id = repo_id
                         gm.hf_data_repo_id = data_repo_id
                         gm.save(update_fields=["hf_model_repo_id", "hf_data_repo_id"])
+
+                    # ── HF Space URL: validate, probe, and persist ─────────
+                    if hf_space_url:
+                        space_ok, space_msg = probe_space_url(hf_space_url)
+                        new_status = "ready" if space_ok else "failed"
+                        UserGameModel.objects.filter(pk=gm.pk).update(
+                            hf_inference_endpoint_url=hf_space_url,
+                            hf_inference_endpoint_status=new_status,
+                        )
+                        gm.hf_inference_endpoint_url = hf_space_url
+                        gm.hf_inference_endpoint_status = new_status
+                        if space_ok:
+                            messages.success(request, f"HF Space verified and saved — Space is reachable.")
+                        else:
+                            messages.error(
+                                request,
+                                f"HF Space is not verified — Space is not reachable: {space_msg}. "
+                                "Check the URL and ensure your Space is running on Hugging Face.",
+                            )
 
                     # Use the platform read-only token when updating server-side
                     platform_token = settings.HF_PLATFORM_TOKEN or None

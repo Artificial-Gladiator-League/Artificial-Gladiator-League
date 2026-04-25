@@ -129,10 +129,19 @@ def _extract_move(data) -> str | None:
 def verify_model(game_model, *, token: str | None = None, force: bool = False):
     """Stub: SHA-based integrity check via HF API (no local files)."""
     from apps.users.integrity import validate_model_integrity
+    from apps.users.models import UserGameModel
+    from django.utils import timezone
     hf_token = token or _platform_token() or ""
     try:
-        ok = validate_model_integrity(game_model.user, hf_token)
-        msg = "OK" if ok else "SHA mismatch or unreachable"
+        result = validate_model_integrity(game_model, hf_token)
+        # validate_model_integrity returns (bool, str)
+        ok, msg = result if isinstance(result, tuple) else (bool(result), "")
+        new_vs = "approved" if ok else "rejected"
+        UserGameModel.objects.filter(pk=game_model.pk).update(
+            verification_status=new_vs,
+            last_verified_at=timezone.now(),
+        )
+        game_model.verification_status = new_vs
         return ok, msg, {}
     except Exception as exc:
         return False, str(exc), {}
@@ -155,4 +164,43 @@ def download_model(*args, **kwargs):
 def scan_model(*args, **kwargs):
     """No-op stub."""
     return True, {}
+
+
+# ── Space URL probe ─────────────────────────────────────────────────────────
+
+_PROBE_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+_SPACE_PROBE_TIMEOUT = 20
+
+
+def probe_space_url(base_url: str) -> tuple[bool, str]:
+    """Probe a Gradio Space base URL via the /gradio_api/call/get_move endpoint.
+
+    Returns ``(success, message)``.  Does NOT raise — always returns a bool.
+    Used by profile view to validate user-supplied Space URLs before saving.
+
+    Only HTTP 2xx responses are treated as success.  4xx responses (including
+    404 Not Found) mean the Space does not exist or is not running — these are
+    treated as failure so the caller can surface a clear error to the user.
+    """
+    submit_url = f"{base_url.rstrip('/')}/gradio_api/call/get_move"
+    try:
+        resp = requests.post(
+            submit_url,
+            json={"data": [_PROBE_FEN]},
+            headers={"Content-Type": "application/json"},
+            timeout=_SPACE_PROBE_TIMEOUT,
+        )
+        if 200 <= resp.status_code < 300:
+            return True, f"Space reachable (HTTP {resp.status_code})"
+        if resp.status_code == 404:
+            return False, "Space not found (HTTP 404) — check the URL or deploy your Space first"
+        if resp.status_code == 401 or resp.status_code == 403:
+            return False, f"Space access denied (HTTP {resp.status_code}) — Space may be private"
+        return False, f"Space returned HTTP {resp.status_code}"
+    except requests.exceptions.ConnectionError as exc:
+        return False, f"Cannot connect to Space: {exc}"
+    except requests.exceptions.Timeout:
+        return False, f"Space did not respond within {_SPACE_PROBE_TIMEOUT}s"
+    except requests.exceptions.RequestException as exc:
+        return False, f"Request failed: {exc}"
 
