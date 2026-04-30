@@ -11,13 +11,98 @@ returns silently.
 """
 from __future__ import annotations
 
+import glob
 import logging
+import os
 import shutil
 from pathlib import Path
 
 from django.conf import settings
+from django.utils import timezone
 
 log = logging.getLogger(__name__)
+
+
+def _resolve_revision(gm) -> str:
+    """Pick the best revision/SHA to pin a snapshot_download against."""
+    return (
+        (getattr(gm, "approved_full_sha", "") or "").strip()
+        or (getattr(gm, "submitted_ref", "") or "").strip()
+        or "main"
+    )
+
+
+def _resolve_hf_token(gm) -> str | None:
+    """Return the best available HF token (per-user OAuth, else platform)."""
+    try:
+        from apps.users.hf_oauth import get_user_hf_token
+        tok = get_user_hf_token(gm.user)
+        if tok:
+            return tok
+    except Exception:
+        log.debug("Could not resolve user HF token for user=%s", getattr(gm, "user_id", "?"), exc_info=True)
+    plat = getattr(settings, "HF_PLATFORM_TOKEN", None) or os.environ.get("HF_TOKEN")
+    return plat or None
+
+
+def ensure_hf_snapshot(gm) -> Path | None:
+    """Ensure the shared HF hub cache contains a snapshot for *gm*.
+
+    Mirrors ``gm.hf_model_repo_id`` into ``settings.HF_HUB_CACHE`` using
+    ``huggingface_hub.snapshot_download`` so that subsequent calls to
+    :func:`apps.games.local_inference._find_hf_cache_snapshot` succeed and
+    inference can read weights locally instead of round-tripping the HF API.
+
+    Returns the snapshot directory on success, else ``None``.
+    """
+    repo_id = (getattr(gm, "hf_model_repo_id", "") or "").strip()
+    if not repo_id:
+        return None
+
+    from apps.games.local_inference import _find_hf_cache_snapshot
+
+    revision = _resolve_revision(gm)
+
+    # Already cached?
+    snap = _find_hf_cache_snapshot(repo_id)
+    if snap is not None and (
+        any(snap.rglob("*.safetensors"))
+        or any(snap.rglob("*.py"))
+        or any(snap.rglob("*.npz"))
+    ):
+        return snap
+
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore
+    except Exception:
+        log.warning("ensure_hf_snapshot: huggingface_hub unavailable; cannot mirror %s", repo_id)
+        return None
+
+    cache_dir = str(getattr(settings, "HF_HUB_CACHE", ""))
+    if not cache_dir:
+        log.warning("ensure_hf_snapshot: HF_HUB_CACHE not configured; skipping %s", repo_id)
+        return None
+
+    token = _resolve_hf_token(gm)
+    try:
+        snap_path = snapshot_download(
+            repo_id=repo_id,
+            repo_type=getattr(gm, "submission_repo_type", "model") or "model",
+            revision=revision,
+            cache_dir=cache_dir,
+            token=token,
+        )
+        sha = Path(snap_path).name
+        msg = f"Cached snapshot for {repo_id} at {sha}"
+        print(msg)
+        log.info(msg)
+        return Path(snap_path)
+    except Exception:
+        log.exception(
+            "ensure_hf_snapshot: snapshot_download failed for repo=%s revision=%s",
+            repo_id, revision,
+        )
+        return None
 
 
 def preload_user_models(user_id: int) -> None:
@@ -27,6 +112,10 @@ def preload_user_models(user_id: int) -> None:
     Updates ``UserGameModel.cached_path`` to the snapshot path so that
     predict_chess / predict_breakthrough can locate the weights without
     querying the filesystem each move.
+
+    If a repo is not yet present in the local cache, this function will
+    attempt to mirror it via :func:`ensure_hf_snapshot` before falling back
+    to the HF API at inference time.
     """
     from apps.games.local_inference import _find_hf_cache_snapshot
     try:
@@ -40,30 +129,53 @@ def preload_user_models(user_id: int) -> None:
         repo_id = (gm.hf_model_repo_id or "").strip()
         if not repo_id:
             continue
+
+        def _has_weights(p: Path) -> bool:
+            return (
+                any(p.rglob("*.safetensors"))
+                or any(p.rglob("*.py"))
+                or any(p.rglob("*.npz"))
+            )
+
         snap = _find_hf_cache_snapshot(repo_id)
-        if snap is None or not (
-            any(snap.rglob("*.safetensors"))
-            or any(snap.rglob("*.py"))
-            or any(snap.rglob("*.npz"))
-        ):
+        if snap is None or not _has_weights(snap):
+            # Try to mirror the repo into HF_HUB_CACHE so inference is local.
+            snap = ensure_hf_snapshot(gm)
+
+        if snap is None or not _has_weights(snap):
             log.warning(
                 "preload_user_models: no HF cache snapshot for "
                 "user=%s game=%s repo=%s — will use HF API directly",
                 user_id, gm.game_type, repo_id,
             )
             continue
+
         log.info(
             "preload_user_models: HF cache snapshot ready for user=%s game=%s: %s",
             user_id, gm.game_type, snap,
         )
-        if gm.cached_path != str(snap):
+
+        update_fields: list[str] = []
+        snap_str = str(snap)
+        if gm.cached_path != snap_str:
+            gm.cached_path = snap_str
+            update_fields.append("cached_path")
+        if not gm.model_integrity_ok:
+            gm.model_integrity_ok = True
+            update_fields.append("model_integrity_ok")
+        snap_sha = snap.name
+        if snap_sha and gm.cached_commit != snap_sha:
+            gm.cached_commit = snap_sha
+            update_fields.append("cached_commit")
+        if gm.cached_at is None or "cached_commit" in update_fields:
+            gm.cached_at = timezone.now()
+            update_fields.append("cached_at")
+        if update_fields:
             try:
-                gm.cached_path = str(snap)
-                gm.model_integrity_ok = True
-                gm.save(update_fields=["cached_path", "model_integrity_ok"])
+                gm.save(update_fields=update_fields)
             except Exception:
                 log.exception(
-                    "preload_user_models: failed to update cached_path for user=%s game=%s",
+                    "preload_user_models: failed to update cache fields for user=%s game=%s",
                     user_id, gm.game_type,
                 )
 

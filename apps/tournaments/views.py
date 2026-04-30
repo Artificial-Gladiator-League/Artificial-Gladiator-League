@@ -2,14 +2,19 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
+from django.views.decorators.http import require_POST
+import logging
 
 from apps.games.models import Game
 
 from .models import Match, Tournament, TournamentParticipant, TournamentChatMessage
+
+log = logging.getLogger(__name__)
 
 
 def tournament_list(request):
@@ -44,36 +49,59 @@ def tournament_list(request):
         if tid not in active_game_map:
             active_game_map[tid] = game
 
-    # Attach active game to each tournament for template access
+    # Attach active game and eligibility info to each tournament for template access.
+    # For authenticated users, run the eligibility check for every open tournament
+    # they haven't joined yet so the list page can disable the Join button exactly
+    # the same way the detail page does.
     tournament_list_items = list(tournaments)
+
+    # Local eligibility check — uses rated_games_since_revalidation which resets
+    # to 0 for brand-new users and after any repo change, so no HF API call is
+    # needed here (keeping the list page fast with many open tournaments).
+    from apps.users.integrity import REVALIDATION_GAMES_REQUIRED
+    from apps.users.models import UserGameModel
+
     for t in tournament_list_items:
         t.active_game = active_game_map.get(t.pk)
+        t.join_blocked = False
+        t.join_blocked_reason = ""
+        t.games_remaining = 0
 
-    # ── Integrity check: compute join eligibility per tournament ──
-    if request.user.is_authenticated:
-        from apps.users.integrity import can_join_tournament, REVALIDATION_GAMES_REQUIRED
-        from apps.users.models import UserGameModel
-
-        for t in tournament_list_items:
-            if t.status == Tournament.Status.OPEN and t.pk not in joined_tournament_ids:
-                allowed, reason = can_join_tournament(request.user, t.game_type)
-                t.join_blocked = not allowed
-                t.join_blocked_reason = reason if not allowed else ""
-            else:
-                t.join_blocked = False
-                t.join_blocked_reason = ""
-
-            # Compute games remaining for tournament eligibility
+        if (
+            request.user.is_authenticated
+            and t.pk not in joined_tournament_ids
+            and t.status == Tournament.Status.OPEN
+            and t.type != Tournament.Type.QA  # QA tournaments have no eligibility gate
+        ):
             gm = UserGameModel.objects.filter(
                 user=request.user, game_type=t.game_type,
             ).first()
-            if gm:
-                t.games_remaining = max(
-                    0,
-                    REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation,
+
+            if not gm or not gm.hf_model_repo_id:
+                t.join_blocked = True
+                t.join_blocked_reason = (
+                    f"No {t.game_type} model registered. "
+                    "Upload a model before joining."
                 )
-            else:
-                t.games_remaining = REVALIDATION_GAMES_REQUIRED
+            elif not gm.is_verified:
+                t.join_blocked = True
+                t.join_blocked_reason = "ownership_unverified"
+            elif gm.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED:
+                t.join_blocked = True
+                remaining = REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation
+                t.games_remaining = remaining
+                if not gm.locked_commit_id:
+                    t.join_blocked_reason = (
+                        f"New player: play {remaining} more rated "
+                        f"{t.game_type} game{'s' if remaining != 1 else ''} to qualify "
+                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} played)."
+                    )
+                else:
+                    t.join_blocked_reason = (
+                        f"Repo changed: play {remaining} more rated "
+                        f"{t.game_type} game{'s' if remaining != 1 else ''} to qualify "
+                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update)."
+                    )
 
     return render(
         request, "tournaments/list.html", {
@@ -167,7 +195,7 @@ def tournament_detail(request, pk):
             fide = p.user.get_fide_title()
             qa_participants.append({
                 "username": p.user.username,
-                "elo": p.user.elo,
+                "elo": p.user.get_elo_for_game(tournament.game_type),
                 "flag": p.user.country_flag,
                 "ready": p.ready,
                 "fide_abbr": fide["abbr"],
@@ -212,17 +240,56 @@ def tournament_detail(request, pk):
     # Live matches (for "Watch" buttons)
     live_matches = matches.filter(match_status=Match.MatchStatus.LIVE)
 
-    # ── Integrity check for join eligibility ──────────────────
     can_join = False
     join_blocked_reason = ""
-    if request.user.is_authenticated and not is_participant:
-        from apps.users.integrity import can_join_tournament
+    games_remaining = 0
+    user_is_verified = True  # default: don't show the badge for non-applicable cases
 
-        can_join, join_blocked_reason = can_join_tournament(
-            request.user, tournament.game_type,
-        )
-        if can_join:
-            join_blocked_reason = ""
+    if (
+        request.user.is_authenticated
+        and not is_participant
+        and tournament.status == Tournament.Status.OPEN
+    ):
+        if tournament.type == Tournament.Type.QA:
+            can_join = True
+        else:
+            # Local eligibility pre-check — mirrors the list page logic so the
+            # disabled button and progress bar are always consistent.
+            from apps.users.integrity import REVALIDATION_GAMES_REQUIRED
+            from apps.users.models import UserGameModel
+
+            gm = UserGameModel.objects.filter(
+                user=request.user, game_type=tournament.game_type,
+            ).first()
+
+            if not gm or not gm.hf_model_repo_id:
+                can_join = False
+                join_blocked_reason = (
+                    f"No {tournament.game_type} model registered. "
+                    "Upload a model before joining."
+                )
+            elif not gm.is_verified:
+                can_join = False
+                join_blocked_reason = "ownership_unverified"
+                user_is_verified = False
+            elif gm.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED:
+                can_join = False
+                remaining = REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation
+                games_remaining = remaining
+                if not gm.locked_commit_id:
+                    join_blocked_reason = (
+                        f"New player: play {remaining} more rated "
+                        f"{tournament.game_type} game{'s' if remaining != 1 else ''} to qualify "
+                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} played)."
+                    )
+                else:
+                    join_blocked_reason = (
+                        f"Repo changed: play {remaining} more rated "
+                        f"{tournament.game_type} game{'s' if remaining != 1 else ''} to qualify "
+                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update)."
+                    )
+            else:
+                can_join = True
 
     return render(
         request,
@@ -239,6 +306,9 @@ def tournament_detail(request, pk):
             "qa_match": qa_match,
             "can_join": can_join,
             "join_blocked_reason": join_blocked_reason,
+            "games_remaining": games_remaining,
+            "user_is_verified": user_is_verified,
+            "REVALIDATION_GAMES_REQUIRED": 30,
         },
     )
 
@@ -361,68 +431,223 @@ def resign_match(request, pk, match_id):
 
 
 @login_required
+@require_POST
 def join_tournament(request, pk):
+    """Register the current user for *pk* tournament.
+
+    Hard Block (all tournament types): every eligibility check runs
+    before any participant logic. Failures redirect the user back to
+    the games lobby with a Django ``messages`` notification — never
+    HTTP 403 — so the user always lands somewhere actionable.
+
+    Special case: QA tournaments allow a user whose ONLY problem is a
+    recent repo change to join, but still surface a warning message.
+    Every other failure (no model, unverified, < 30 rated games for a
+    new player, ELO range) blocks for ALL tournament types including QA.
+    """
+    print(f"DEBUG: join_tournament check for {request.user.username}, tournament={pk}")
+
+    from apps.users.integrity import (
+        can_join_tournament,
+        live_sha_check,
+        REVALIDATION_GAMES_REQUIRED,
+    )
+    from apps.users.models import UserGameModel
+
     tournament = get_object_or_404(Tournament, pk=pk, status=Tournament.Status.OPEN)
 
-    # ── Model integrity & 30-game gate (QA exempt) ──────────
-    if tournament.type != Tournament.Type.QA:
-        from apps.users.integrity import can_join_tournament
-        from apps.users.models import UserGameModel
+    log.info(
+        "join_tournament: user=%s tournament=%s game_type=%s type=%s",
+        request.user.username, tournament.pk, tournament.game_type, tournament.type,
+    )
 
-        allowed, reason = can_join_tournament(request.user, tournament.game_type)
-        if not allowed:
-            messages.error(request, reason)
-            return redirect("tournaments:detail", pk=pk)
+    # ══════════════════════════════════════════════════════════════
+    # ELIGIBILITY WALL — ALL tournament types (QA included).
+    # Failures redirect to the games lobby with a Django messages
+    # notification (NOT HTTP 403). This keeps the user on a usable
+    # page where the alert renders inline.
+    # ══════════════════════════════════════════════════════════════
 
+    # Standard message for any "repo changed / unverified / cooldown"
+    # failure — the user always needs the same recovery path.
+    REVERIFY_MSG = (
+        "Your AI model repo was changed since approval. Re-verify at "
+        "/users/aimodels/ and complete 30 rated games before joining tournaments."
+    )
+
+    # ── Gate A: model record exists ───────────────────────────────
+    game_model = UserGameModel.objects.filter(
+        user=request.user, game_type=tournament.game_type,
+    ).first()
+    if game_model is None:
+        log.warning(
+            "join_tournament BLOCKED (no game model): user=%s t=%s",
+            request.user.username, tournament.pk,
+        )
+        messages.error(
+            request,
+            "You must register a model for this game type before joining tournaments.",
+        )
+        return redirect("games:lobby")
+
+    # ── Gate B: ownership verified ────────────────────────────────
+    if not game_model.is_verified:
+        log.warning(
+            "join_tournament BLOCKED (unverified): user=%s t=%s",
+            request.user.username, tournament.pk,
+        )
+        messages.error(request, REVERIFY_MSG)
+        return redirect("games:lobby")
+
+    # ── Gate B.5: live HF SHA check ──────────────────────────────
+    # Hits the HF Hub API to compare the approved SHA stored on
+    # UserGameModel against the latest commit on the user's repo.
+    # We always run the check so the operator sees the result line
+    # in the terminal, but the BLOCK behaviour differs by type:
+    #
+    #   * Non-QA tournaments  → mismatch redirects to /games/lobby/.
+    #   * QA tournaments      → mismatch is informational only. The
+    #     mid-tournament audit (running every round) is the real test
+    #     bench for the anti-cheat pipeline; gating join would lock
+    #     out testers like yuval whose stored approved_full_sha may
+    #     simply be stale, even though they never edited their repo.
+    sha_check_ctx = "join-qa" if tournament.type == Tournament.Type.QA else "join"
+    sha_ok, db_sha, latest_sha = live_sha_check(game_model, context=sha_check_ctx)
+    is_qa = tournament.type == Tournament.Type.QA
+    if not sha_ok:
+        # Highly visible terminal banner so the operator sees the
+        # integrity test fire in real time, regardless of outcome.
+        verdict = "WARNING (QA: allowed to join)" if is_qa else "BLOCKED → /games/lobby/"
+        banner_lines = [
+            "",
+            "!" * 78,
+            "!!  JOIN-TIME SHA MISMATCH",
+            "!!  Tournament : #{} {!r} (type={})".format(
+                tournament.pk, tournament.name, tournament.type,
+            ),
+            "!!  User       : {} (id={})".format(
+                request.user.username, request.user.pk,
+            ),
+            "!!  Repo       : {}".format(game_model.hf_model_repo_id or "<no-repo>"),
+            "!!  DB SHA     : {}".format(db_sha or "<none>"),
+            "!!  HF SHA     : {}".format(latest_sha or "<none>"),
+            "!!  Action     : {}".format(verdict),
+            "!" * 78,
+            "",
+        ]
+        banner = "\n".join(banner_lines)
         try:
-            game_model = UserGameModel.objects.get(
-                user=request.user, game_type=tournament.game_type,
+            print(banner, flush=True)
+        except UnicodeEncodeError:
+            print(banner.encode("ascii", "replace").decode("ascii"), flush=True)
+        log.warning(
+            "join_tournament SHA mismatch: user=%s t=%s type=%s "
+            "db_sha=%s hf_sha=%s qa_allow=%s",
+            request.user.username, tournament.pk, tournament.type,
+            (db_sha or "")[:12], (latest_sha or "")[:12], is_qa,
+        )
+
+        if not is_qa:
+            messages.error(
+                request,
+                "Integrity check failed: your Hugging Face repository "
+                "changed since it was approved. You have been redirected "
+                "to the lobby.",
             )
-        except UserGameModel.DoesNotExist:
-            game_model = None
-    else:
-        game_model = None
+            return redirect("games:lobby")
 
-    # Check if already joined
-    if tournament.participants.filter(user=request.user).exists():
-        messages.info(request, "You are already registered in this tournament.")
-        return redirect("tournaments:detail", pk=pk)
+        # QA: surface a soft warning and continue. The mid-round
+        # audit will still catch any change that happens DURING the
+        # tournament and disqualify the user with the standard banner.
+        messages.warning(
+            request,
+            "[QA] Your stored model SHA differs from the live Hugging "
+            "Face SHA. You may join this QA tournament, but the live "
+            "audit will fire during play.",
+        )
 
-    # Validate ELO category eligibility (skip for QA tournaments)
+    # ── Gate C: rated-game / repo-change eligibility ──────────────
+    allowed, reason = can_join_tournament(
+        request.user, tournament.game_type,
+        tournament_type=tournament.type,
+    )
+    if not allowed:
+        # Identify whether this is specifically a "repo changed" failure
+        # vs a "new player has not played 30 games" failure.
+        # locked_commit_id is set the FIRST time integrity is locked, so
+        # a user who has it set + low cooldown counter = repo-changed user.
+        is_repo_change = bool(
+            game_model.locked_commit_id
+            and game_model.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED
+        )
+
+        if tournament.type == Tournament.Type.QA and is_repo_change:
+            # QA-only soft branch: warn the user but allow the join.
+            log.warning(
+                "join_tournament QA WARNING (repo changed): user=%s t=%s reason=%r",
+                request.user.username, tournament.pk, reason,
+            )
+            messages.warning(
+                request,
+                "⚠️ Your model repository was changed recently. You may join this "
+                "QA practice match, but you cannot join ranked tournaments until "
+                f"you have played {REVALIDATION_GAMES_REQUIRED} rated games "
+                f"({game_model.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} so far).",
+            )
+        else:
+            # All other failures (and all non-QA failures) → soft block:
+            # use the standard re-verify message when this is a repo
+            # change, otherwise surface the underlying reason.
+            log.warning(
+                "join_tournament BLOCKED (eligibility): user=%s t=%s type=%s reason=%r",
+                request.user.username, tournament.pk, tournament.type, reason,
+            )
+            messages.error(request, REVERIFY_MSG if is_repo_change else reason)
+            return redirect("games:lobby")
+
+    # ── Gate D: ELO category range (skip for QA — has no category) ──
     if tournament.category and tournament.type != Tournament.Type.QA:
         elo_min, elo_max = Tournament.CATEGORY_ELO_RANGE.get(
             tournament.category, (0, 99999)
         )
-        if not (elo_min <= request.user.elo <= elo_max):
+        user_elo = request.user.get_elo_for_game(tournament.game_type)
+        if not (elo_min <= user_elo <= elo_max):
+            log.warning(
+                "join_tournament BLOCKED (ELO range): user=%s t=%s elo=%s range=(%s,%s)",
+                request.user.username, tournament.pk, user_elo, elo_min, elo_max,
+            )
             messages.error(
                 request,
-                f"Your ELO ({request.user.elo}) is outside the "
+                f"Your {tournament.game_type.title()} ELO ({user_elo}) is outside the "
                 f"{tournament.get_category_display()} range ({elo_min}–{elo_max}).",
             )
-            return redirect("tournaments:detail", pk=pk)
+            return redirect("games:lobby")
 
-    # ── Model-lock check (30 rated games rule) ──────────────
-    # The user must supply their HF token so we can verify the
-    # model hasn't changed since it was locked.  The token is
-    # used only for this API call and never stored.
-    if tournament.type != Tournament.Type.QA:
-        from apps.users.rating_lock import can_play_rated_game, get_latest_commit_id
+    # ══════════════════════════════════════════════════════════════
+    # Past this point the user is fully qualified.
+    # ══════════════════════════════════════════════════════════════
 
-        hf_token = request.POST.get("hf_token", "")
-        allowed, reason = can_play_rated_game(request.user, hf_token, game_type=tournament.game_type)
-        if not allowed:
-            messages.error(request, reason)
-            return redirect("tournaments:detail", pk=pk)
+    # ── Already-joined guard ──────────────────────────────────────
+    if tournament.participants.filter(user=request.user).exists():
+        log.info("join_tournament: user=%s already registered in t=%s",
+                 request.user.username, tournament.pk)
+        messages.info(request, "You are already registered in this tournament.")
+        return redirect("tournaments:detail", pk=pk)
 
-        # Snapshot latest commit for future locking at game 30
-        if hf_token and game_model:
-            commit = get_latest_commit_id(game_model.hf_model_repo_id, hf_token)
-            if commit and commit != game_model.last_known_commit_id:
-                game_model.last_known_commit_id = commit
-                game_model.save(update_fields=["last_known_commit_id"])
+    # ── Snapshot repo commit time at registration (non-fatal) ─────
+    if game_model:
+        try:
+            from apps.users.ownership_verification import snapshot_repo_commit_time
+            snapshot_repo_commit_time(game_model)
+        except Exception:
+            pass
 
     if not tournament.is_full:
         tournament.players.add(request.user)
+        log.info(
+            "join_tournament SUCCESS: user=%s registered for t=%s",
+            request.user.username, tournament.pk,
+        )
 
         # Auto‑close registration and start when full
         if tournament.is_full:
@@ -625,7 +850,7 @@ def _broadcast_qa_ready_state(tournament):
     ).select_related("user"):
         participants.append({
             "username": p.user.username,
-            "elo": p.user.elo,
+            "elo": p.user.get_elo_for_game(tournament.game_type),
             "flag": p.user.country_flag,
             "ready": p.ready,
         })
@@ -814,3 +1039,54 @@ def gauntlet_standings_partial(request, pk):
 #         "messages": msgs,
 #         "tournament": tournament,
 #     })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Fair Play / Integrity Policy page
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def fair_play(request):
+    """Static page explaining the tournament integrity policy to users."""
+    return render(request, "tournaments/fair_play.html", {})
+
+
+def how_it_works(request):
+    """Informational page explaining how tournaments work and the anti-cheat system."""
+    return render(request, "tournaments/how_it_works.html", {})
+
+
+@login_required
+def disqualified(request):
+    """Trap page shown to users disqualified for an SHA mismatch.
+
+    The actual interception happens in
+    ``apps.tournaments.middleware.DisqualificationInterceptMiddleware`` —
+    this view just renders the page. Context is pulled from the
+    session keys the middleware sets, with a graceful fallback so a
+    direct visit (e.g. via bookmark) still produces a coherent page.
+    """
+    from .disqualification import find_active_dq_participant
+
+    tournament_name = request.session.get("dq_tournament_name") or ""
+    reason = ""
+
+    participant = find_active_dq_participant(request.user)
+    if participant is not None:
+        tournament_name = participant.tournament.name
+        reason = getattr(participant, "disqualified_reason", "") or (
+            "Repository commit SHA changed during a live tournament round."
+        )
+
+    return render(request, "tournaments/disqualified.html", {
+        "tournament_name": tournament_name,
+        "reason": reason,
+        "redirect_url": "/games/lobby/",
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Private helpers
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+import logging as _log_module
+_log = _log_module.getLogger(__name__)

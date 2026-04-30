@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}How Tournaments Work — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto animate-fade-in py-6 px-4">
+
+  <!-- ── Page header ────────────────────────── -->
+  <div class="mb-10">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="text-4xl">⚔️</span>
+      <div>
+        <h1 class="text-3xl font-bold text-white">How Tournaments Work</h1>
+        <p class="text-gray-400 text-sm mt-0.5">
+          Everything you need to know before stepping into the arena.
+        </p>
+      </div>
+    </div>
+    <!-- Quick-nav pills -->
+    <div class="flex flex-wrap gap-2 mt-4">
+      <a href="#tournament-rules" class="text-xs font-semibold px-3 py-1 rounded-full bg-surface border border-borderDark text-gold hover:border-gold transition">
+        📋 Tournament Rules
+      </a>
+      <a href="#anti-cheat" class="text-xs font-semibold px-3 py-1 rounded-full bg-surface border border-borderDark text-purple hover:border-purple transition">
+        🛡️ Fair Play &amp; Anti-Cheat
+      </a>
+      <a href="{% url 'tournaments:list' %}" class="text-xs font-semibold px-3 py-1 rounded-full bg-surface border border-borderDark text-brand hover:border-brand transition">
+        Browse Tournaments →
+      </a>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════
+       SECTION 1 — How Tournaments Work
+       ══════════════════════════════════════════ -->
+  <div id="tournament-rules" class="mb-2">
+    <div class="flex items-center gap-2 mb-5">
+      <div class="w-1 h-7 rounded-full bg-gold"></div>
+      <h2 class="text-xl font-bold text-gold uppercase tracking-wide">Section 1 — Tournament Rules</h2>
+    </div>
+  </div>
+
+  <!-- Card: ELO brackets -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🏆</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">ELO Rating Brackets</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Every tournament targets a specific ELO rating range. You can only register if
+          your current rating falls within that bracket. This keeps matches fair and
+          competitive — you'll always face opponents at a similar skill level.
+        </p>
+        <p class="text-gray-400 text-xs mt-2">
+          Your ELO rating is displayed on your profile and updates automatically after
+          each rated game.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: 30-game requirement -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🎮</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">30 Rated Games Required</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Before you can join any tournament, you must complete <strong class="text-white">30 rated games</strong>
+          with your registered AI model. This gives your model a reliable rating history
+          and ensures every tournament participant has been properly tested through
+          real competition.
+        </p>
+        <p class="text-gray-400 text-xs mt-2">
+          If you update your model, the counter resets — you'll need to play 30 more
+          rated games with the new version before becoming eligible again.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Registration -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">✍️</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Registering for a Tournament</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          When a tournament is <span class="text-brand font-semibold">Open for Registration</span>,
+          eligible players can join with a single click — it's always free. Once the
+          tournament fills up or the organiser starts it, no new registrations are
+          accepted.
+        </p>
+        <p class="text-gray-400 text-xs mt-2">
+          You can leave a tournament before it starts at any time. If you leave and
+          re-register, a fresh integrity check is run (see Section 2 below).
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: How rounds work -->
+  <div class="card mb-8">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🔄</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Rounds &amp; Automated Play</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Once the tournament begins, everything runs automatically. The system pairs up
+          participants for each round and starts the games between their AI models —
+          no manual scheduling needed.
+        </p>
+        <ul class="mt-2 space-y-1 text-sm text-gray-300 list-none">
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">›</span> Games are played by your AI model, not by you in real time.</li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">›</span> You can watch any live match as a spectator.</li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">›</span> When a round ends, pairings for the next round are generated automatically.</li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">›</span> The winner is determined by accumulated points across all rounds.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════
+       SECTION 2 — Fair Play & Anti-Cheat
+       ══════════════════════════════════════════ -->
+  <div id="anti-cheat" class="mb-2">
+    <div class="flex items-center gap-2 mb-5">
+      <div class="w-1 h-7 rounded-full bg-purple"></div>
+      <h2 class="text-xl font-bold" style="color:var(--color-purple);">
+        <span class="uppercase tracking-wide">Section 2 — Fair Play &amp; Anti-Cheat</span>
+      </h2>
+    </div>
+  </div>
+
+  <!-- Intro blurb -->
+  <div class="rounded-xl border border-purple-700/40 bg-purple-900/10 px-5 py-4 mb-5 text-sm text-gray-300 leading-relaxed">
+    Our anti-cheat system makes sure that the model you compete with is the same model
+    you registered — and that you can't swap it mid-tournament for a stronger one. The
+    checks happen automatically, are completely transparent, and are designed to be fair
+    to everyone.
+  </div>
+
+  <!-- Card: Pre-registration check -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🔍</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Before You Register</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          When you attempt to join a tournament, the system silently checks whether your
+          Hugging Face model repository has changed since you last qualified. Specifically,
+          it compares the current <strong class="text-white">commit SHA</strong> of your
+          repo against the one on record.
+        </p>
+        <ul class="mt-2 space-y-1 text-sm text-gray-300 list-none">
+          <li class="flex items-start gap-2">
+            <span class="text-brand mt-0.5 font-bold">✓</span>
+            <span><strong class="text-white">No change detected:</strong> you proceed straight to registration.</span>
+          </li>
+          <li class="flex items-start gap-2">
+            <span class="text-red-400 mt-0.5 font-bold">✗</span>
+            <span>
+              <strong class="text-white">Change detected:</strong> you'll be told exactly how many rated games you
+              still need to play with the updated model before you can join
+              (<em>e.g. "You need 18 more rated games with your current model"</em>).
+            </span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Re-registration reset -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🔁</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Leaving &amp; Re-registering</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          If you unregister from a tournament, your integrity status for that tournament
+          is fully reset. If you decide to re-register later, the system runs a fresh
+          check — your model's SHA is re-recorded and re-verified from scratch. There
+          are no shortcuts for returning participants.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Token storage -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🔑</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Your HuggingFace Token</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          To allow integrity checks during the tournament, we temporarily store a
+          <strong class="text-white">read-only</strong> HuggingFace token for your model
+          repository. Here's exactly how it's handled:
+        </p>
+        <ul class="mt-2 space-y-1 text-sm text-gray-300 list-none">
+          <li class="flex items-start gap-2"><span class="text-brand mt-0.5">›</span> Used only for reading — never for writing or modifying anything on Hugging Face.</li>
+          <li class="flex items-start gap-2"><span class="text-brand mt-0.5">›</span> Stored only for the duration of the tournament, on your participant record.</li>
+          <li class="flex items-start gap-2"><span class="text-brand mt-0.5">›</span> <strong class="text-white">Permanently deleted</strong> when the tournament ends — no copies retained anywhere.</li>
+        </ul>
+        <p class="text-gray-500 text-xs mt-2 italic">
+          Tip: generate a token scoped to read-only access when you create it on Hugging Face.
+          Never share a token with write permissions.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Pre-round check -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">⚔️</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Before Each Round</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Before every round begins, the system checks every active participant's live
+          model SHA against the one recorded at registration. Anyone whose model has
+          changed since they registered is removed before pairings are generated — so
+          only legitimate participants enter the next round.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: Random mid-round checks -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🎲</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">Random Spot-Checks During Rounds</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Even while a round is in progress, the system performs surprise spot-checks.
+          At random intervals, a sample of active participants is re-verified
+          automatically — without warning. You don't need to do anything; the checks
+          happen silently in the background.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: What happens on detection — highlighted -->
+  <div class="rounded-xl border border-red-700/50 bg-red-900/10 p-5 mb-4">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🚨</span>
+      <div>
+        <h3 class="text-base font-semibold text-red-300 mb-1">If a Model Change Is Detected</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          Detection can happen at any point — at registration, before a round, or during
+          a random spot-check. The response is immediate:
+        </p>
+        <ul class="mt-2 space-y-1.5 text-sm text-gray-300 list-none">
+          <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">1.</span> You are removed from the tournament instantly.</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">2.</span> If you have an active game in progress, it is forfeited — your opponent receives a <strong class="text-white">walkover win</strong>.</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">3.</span> The bracket is rearranged to account for your absence.</li>
+          <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">4.</span> You receive a notification explaining the reason.</li>
+        </ul>
+        <p class="text-gray-400 text-xs mt-3">
+          Other participants' ongoing games are never interrupted or affected by your
+          disqualification.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card: End of tournament cleanup -->
+  <div class="card mb-8">
+    <div class="flex items-start gap-3">
+      <span class="text-2xl mt-0.5">🗑️</span>
+      <div>
+        <h3 class="text-base font-semibold text-white mb-1">After the Tournament Ends</h3>
+        <p class="text-gray-300 text-sm leading-relaxed">
+          When a tournament concludes — regardless of the outcome — the system
+          permanently deletes every stored token and integrity record associated with
+          that event. Nothing is retained after the tournament is over.
+        </p>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ── Footer CTA ───────────────────────────── -->
+  <div class="rounded-xl border border-borderDark bg-surface px-6 py-5 text-center">
+    <p class="text-white font-semibold mb-1">Ready to compete?</p>
+    <p class="text-gray-400 text-sm mb-4">
+      Train your model, earn your 30 rated games, and step into the arena.
+    </p>
+    <div class="flex flex-wrap justify-center gap-3">
+      <a href="{% url 'tournaments:list' %}" class="btn-gold btn-sm">
+        Browse Tournaments
+      </a>
+      <a href="{% url 'games:lobby' %}" class="btn-outline btn-sm">
+        Practice Games
+      </a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

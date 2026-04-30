@@ -17,6 +17,12 @@ CATEGORY_FILTERS = {
     "expert":       {"elo__gt": 2000},
 }
 
+# Per-game ELO filters — used when a game_type is selected on the leaderboard.
+GAME_ELO_FIELD = {
+    "chess":        "elo_chess",
+    "breakthrough": "elo_breakthrough",
+}
+
 CATEGORY_META = {
     "global":       {"label": "Global",       "icon": "🌍", "css": "text-brand"},
     "beginner":     {"label": "Beginner",     "icon": "🥉", "css": "text-amber-600",  "tier": "Novice",      "elo": "≤ 1200"},
@@ -28,13 +34,19 @@ CATEGORY_META = {
 LEADERBOARD_LIMIT = 100
 
 
-def _ranked_qs(tab: str):
-    """Return a queryset filtered and ordered for the given tab."""
-    filt = CATEGORY_FILTERS.get(tab, {})
+def _ranked_qs(tab: str, game_type: str = "chess"):
+    """Return a queryset filtered and ordered for the given tab and game type."""
+    elo_field = GAME_ELO_FIELD.get(game_type, "elo_chess")
+    # Remap legacy category filters to use the correct per-game ELO field.
+    raw_filt = CATEGORY_FILTERS.get(tab, {})
+    filt = {}
+    for k, v in raw_filt.items():
+        new_key = k.replace("elo", elo_field, 1)
+        filt[new_key] = v
     return (
         CustomUser.objects
         .filter(**filt, is_active=True, total_games__gt=0)
-        .order_by("-elo", "-wins", "username")[:LEADERBOARD_LIMIT]
+        .order_by(f"-{elo_field}", "-wins", "username")[:LEADERBOARD_LIMIT]
     )
 
 
@@ -172,13 +184,17 @@ def leaderboard(request):
     tab = request.GET.get("tab", "global")
     if tab not in CATEGORY_FILTERS:
         tab = "global"
+    game_type = request.GET.get("game_type", "chess")
+    if game_type not in GAME_ELO_FIELD:
+        game_type = "chess"
 
-    players = _ranked_qs(tab)
+    players = _ranked_qs(tab, game_type)
     counts = _category_counts()
 
     return render(request, "core/leaderboard.html", {
         "players": players,
         "active_tab": tab,
+        "active_game_type": game_type,
         "tabs": CATEGORY_META,
         "counts": counts,
     })
@@ -189,8 +205,12 @@ def leaderboard_json(request):
     tab = request.GET.get("tab", "global")
     if tab not in CATEGORY_FILTERS:
         tab = "global"
+    game_type = request.GET.get("game_type", "chess")
+    if game_type not in GAME_ELO_FIELD:
+        game_type = "chess"
+    elo_field = GAME_ELO_FIELD[game_type]
 
-    players = _ranked_qs(tab)
+    players = _ranked_qs(tab, game_type)
     rows = []
     for rank, p in enumerate(players, 1):
         cat = p.get_category()
@@ -199,7 +219,9 @@ def leaderboard_json(request):
             "username": p.username,
             "flag": p.country_flag,
             "ai_name": p.ai_name or "—",
-            "elo": p.elo,
+            "elo": getattr(p, elo_field),
+            "elo_chess": p.elo_chess,
+            "elo_breakthrough": p.elo_breakthrough,
             "wins": p.wins,
             "losses": p.losses,
             "draws": p.draws,
@@ -210,7 +232,7 @@ def leaderboard_json(request):
             "tier_css": cat["css"],
         })
 
-    return JsonResponse({"tab": tab, "rows": rows, "counts": _category_counts()})
+    return JsonResponse({"tab": tab, "game_type": game_type, "rows": rows, "counts": _category_counts()})
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

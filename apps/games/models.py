@@ -94,7 +94,8 @@ class Game(models.Model):
 
     # Maximum time (seconds) allotted for an AI to think per move.
     ai_thinking_seconds = models.FloatField(
-        default=1.0,
+        default=0.0,
+        db_default=1.0,
         help_text="Maximum seconds allowed for AI to think per move.",
     )
 

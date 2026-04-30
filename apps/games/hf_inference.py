@@ -127,24 +127,8 @@ def _extract_move(data) -> str | None:
 # ── Compat stubs so old imports don't break ──────────────────────────────────
 
 def verify_model(game_model, *, token: str | None = None, force: bool = False):
-    """Stub: SHA-based integrity check via HF API (no local files)."""
-    from apps.users.integrity import validate_model_integrity
-    from apps.users.models import UserGameModel
-    from django.utils import timezone
-    hf_token = token or _platform_token() or ""
-    try:
-        result = validate_model_integrity(game_model, hf_token)
-        # validate_model_integrity returns (bool, str)
-        ok, msg = result if isinstance(result, tuple) else (bool(result), "")
-        new_vs = "approved" if ok else "rejected"
-        UserGameModel.objects.filter(pk=game_model.pk).update(
-            verification_status=new_vs,
-            last_verified_at=timezone.now(),
-        )
-        game_model.verification_status = new_vs
-        return ok, msg, {}
-    except Exception as exc:
-        return False, str(exc), {}
+    """Stub: integrity checks removed — verification only runs at tournament registration."""
+    return True, "OK", {}
 
 
 def reverify_model(game_model, *, token: str | None = None):

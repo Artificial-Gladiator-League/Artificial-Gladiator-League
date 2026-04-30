@@ -114,11 +114,18 @@ def update_stats_after_game(sender, instance, **kwargs):
     white = instance.white
     black = instance.black
 
-    # Compute ELO deltas (uses provisional K-factor for new players)
+    # Compute ELO deltas using the per-game ELO fields so Chess and
+    # Breakthrough ratings never bleed into each other.
+    game_type = getattr(instance, "game_type", "chess") or "chess"
+    white_game_elo = white.get_elo_for_game(game_type)
+    black_game_elo = black.get_elo_for_game(game_type)
+
     delta_w, delta_b = compute_elo_deltas(
         winner=instance.winner, loser=None,
         white=white, black=black,
         result=instance.result,
+        white_elo=white_game_elo,
+        black_elo=black_game_elo,
     )
 
     # Persist deltas on the game row (use update to avoid re‑triggering)
@@ -145,20 +152,28 @@ def update_stats_after_game(sender, instance, **kwargs):
     _update_player_stats(white, w_won, is_draw)
     _update_player_stats(black, b_won, is_draw)
 
-    white.elo += delta_w
-    black.elo += delta_b
+    # Apply per-game ELO deltas; set_elo_for_game also keeps the legacy
+    # user.elo as max(elo_chess, elo_breakthrough) for backward compat.
+    white.set_elo_for_game(game_type, white_game_elo + delta_w)
+    black.set_elo_for_game(game_type, black_game_elo + delta_b)
 
-    white.save(update_fields=["elo", "wins", "losses", "draws", "total_games", "current_streak"])
-    black.save(update_fields=["elo", "wins", "losses", "draws", "total_games", "current_streak"])
+    white.save(update_fields=[
+        "elo", "elo_chess", "elo_breakthrough",
+        "wins", "losses", "draws", "total_games", "current_streak",
+    ])
+    black.save(update_fields=[
+        "elo", "elo_chess", "elo_breakthrough",
+        "wins", "losses", "draws", "total_games", "current_streak",
+    ])
 
     # ── Rated-game tracking & model locking ───────
-    # Every finished game counts as a rated game.  Once a user reaches
-    # MANDATORY_RATED_GAMES (30), their model commit SHA is frozen.
+    # Tournament games DO NOT count toward the 30-game qualification
+    # threshold — only casual (non-tournament) games do.
     from apps.users.rating_lock import record_rated_game
     from apps.users.models import UserGameModel
     from django.db.models import F
 
-    game_type = getattr(instance, "game_type", "chess") or "chess"
+    is_tournament_game = bool(instance.is_tournament_game)
 
     # Auto-create UserGameModel for legacy users who only have
     # hf_model_repo_id on CustomUser but no per-game entry yet.
@@ -182,13 +197,15 @@ def update_stats_after_game(sender, instance, **kwargs):
                     player.username, game_type, repo,
                 )
 
-    record_rated_game(white, game_type=game_type)
-    record_rated_game(black, game_type=game_type)
+    if not is_tournament_game:
+        # Only non-tournament games count toward the qualification gate.
+        record_rated_game(white, game_type=game_type)
+        record_rated_game(black, game_type=game_type)
 
-    # Increment per-game revalidation counter for both players
-    UserGameModel.objects.filter(
-        user__in=[white, black], game_type=game_type,
-    ).update(rated_games_since_revalidation=F("rated_games_since_revalidation") + 1)
+        # Increment per-game revalidation counter for both players
+        UserGameModel.objects.filter(
+            user__in=[white, black], game_type=game_type,
+        ).update(rated_games_since_revalidation=F("rated_games_since_revalidation") + 1)
 
     _broadcast_leaderboard_refresh(white, black)
 
@@ -196,6 +213,111 @@ def update_stats_after_game(sender, instance, **kwargs):
     if instance.is_tournament_game and instance.tournament_match:
         from apps.tournaments.engine import handle_game_result
         handle_game_result(instance)
+
+
+# ── Auto-pin SHA for legacy models on first finished game ──────
+
+def _auto_pin_legacy_sha(player, game_type: str) -> None:
+    """Resolve and persist ``approved_full_sha`` for a legacy UGM row.
+
+    Called after a finished Game when the player's UserGameModel for
+    *game_type* still has an empty ``approved_full_sha``. Mirrors the
+    write set performed by the ``pin_chess_model_shas`` management
+    command so manual backfill and signal-driven backfill stay in sync.
+
+    Errors are logged and swallowed — this must never crash the post_save
+    chain for a Game.
+    """
+    try:
+        from apps.users.integrity import _get_stored_token, _resolve_ref_sha
+        from apps.users.models import UserGameModel
+    except Exception:
+        log.exception("auto_pin: import failed")
+        return
+
+    try:
+        gm = UserGameModel.objects.filter(
+            user=player, game_type=game_type,
+        ).first()
+    except Exception:
+        log.exception("auto_pin: DB lookup failed for user=%s game=%s",
+                      getattr(player, "username", "?"), game_type)
+        return
+
+    if gm is None:
+        return
+    if (gm.approved_full_sha or "").strip():
+        return  # already pinned
+    repo_id = (gm.hf_model_repo_id or "").strip()
+    if not repo_id:
+        return
+
+    token = _get_stored_token(player) or ""
+    if not token:
+        log.info(
+            "auto_pin: skipped user=%s repo=%s — no HF token available",
+            getattr(player, "username", "?"), repo_id,
+        )
+        return
+
+    ref = (gm.submitted_ref or "main").strip() or "main"
+    repo_type = (gm.submission_repo_type or "model").strip() or "model"
+    try:
+        latest_sha = _resolve_ref_sha(repo_id, token, ref=ref, repo_type=repo_type)
+    except Exception:
+        log.exception("auto_pin: _resolve_ref_sha raised for repo=%s", repo_id)
+        return
+    if not latest_sha:
+        log.info("auto_pin: HF returned no sha for repo=%s ref=%s", repo_id, ref)
+        return
+
+    now = timezone.now()
+    gm.approved_full_sha = latest_sha
+    gm.original_model_commit_sha = gm.original_model_commit_sha or latest_sha
+    gm.last_known_commit_id = latest_sha
+    gm.model_integrity_ok = True
+    gm.last_model_validation_date = now.date()
+    if not gm.pinned_at:
+        gm.pinned_at = now
+    try:
+        gm.save(update_fields=[
+            "approved_full_sha",
+            "original_model_commit_sha",
+            "last_known_commit_id",
+            "model_integrity_ok",
+            "last_model_validation_date",
+            "pinned_at",
+        ])
+        log.info(
+            "auto_pin: pinned legacy SHA user=%s game=%s repo=%s sha=%s",
+            getattr(player, "username", "?"), game_type, repo_id, latest_sha[:12],
+        )
+    except Exception:
+        log.exception("auto_pin: save failed for user=%s repo=%s",
+                      getattr(player, "username", "?"), repo_id)
+
+
+@receiver(post_save, sender=Game)
+def auto_pin_sha_after_first_game(sender, instance, **kwargs):
+    """Backfill ``approved_full_sha`` the first time a finished Game is saved.
+
+    Targets legacy users whose UserGameModel still has an empty SHA. We
+    only run on terminal games and only for players whose SHA is missing,
+    so the HF lookup happens at most once per (user, game_type).
+    """
+    if instance.result in ("*", ""):
+        return
+    if instance.white is None or instance.black is None:
+        return
+    game_type = getattr(instance, "game_type", "chess") or "chess"
+    for player in (instance.white, instance.black):
+        try:
+            _auto_pin_legacy_sha(player, game_type)
+        except Exception:
+            log.exception(
+                "auto_pin_sha_after_first_game: unexpected error for user=%s",
+                getattr(player, "username", "?"),
+            )
 
 
 # ── Login-time model verification ──────────────
@@ -213,12 +335,19 @@ def _verify_local_models_for_user(user) -> None:
          in a nested thread (non-blocking, best-effort).
     """
     try:
+        from django.conf import settings
         from apps.games.local_inference import (
             verify_local_files,
             _game_type_dir,
             verify_model as _verify_model,
         )
         from apps.users.models import UserGameModel
+
+        # Local-inference is opt-in. When it isn't required globally we
+        # still set local_path on success (cheap, harmless) but we do
+        # NOT warn / notify on missing files — those users run via the
+        # remote HF inference path and missing local files are expected.
+        local_required = bool(getattr(settings, "LOCAL_MODEL_REQUIRED", False))
 
         game_models = UserGameModel.objects.filter(user=user)
         if not game_models.exists():
@@ -229,12 +358,20 @@ def _verify_local_models_for_user(user) -> None:
             game_type = gm.game_type
             ok, msg = verify_local_files(gm)
             if not ok:
-                log.warning(
-                    "[local] %s/%s — local files missing: %s",
-                    user.username, game_type, msg,
-                )
-                print(f"⚠️ [local] {user.username}/{game_type} — local files missing: {msg}")
-                _notify_user_verification_failed(user, game_type, msg)
+                if local_required:
+                    log.warning(
+                        "[local] %s/%s — local files missing: %s",
+                        user.username, game_type, msg,
+                    )
+                    print(f"⚠️ [local] {user.username}/{game_type} — local files missing: {msg}")
+                    _notify_user_verification_failed(user, game_type, msg)
+                else:
+                    # Expected when local inference isn't enabled —
+                    # downgrade to info and skip the user notification.
+                    log.info(
+                        "[local] %s/%s — local files not present (local inference not required): %s",
+                        user.username, game_type, msg,
+                    )
                 continue
 
             # Files exist — set local_path so inference can find them fast.

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -31,9 +30,6 @@ LARGE_ROTATION = [
     Tournament.Category.ADVANCED,
     Tournament.Category.EXPERT,
 ]
-
-SMALL_PRIZE = Decimal("15.00")
-LARGE_PRIZE = Decimal("60.00")  # $30 + $20 + $10
 
 
 class Command(BaseCommand):
@@ -71,7 +67,6 @@ class Command(BaseCommand):
                 name=name,
                 type=Tournament.Type.SMALL,
                 category=cat_value,
-                prize_pool=SMALL_PRIZE,
                 start_time=now + timedelta(hours=1),
                 status=Tournament.Status.OPEN,
             )
@@ -109,7 +104,6 @@ class Command(BaseCommand):
                 name=large_name,
                 type=Tournament.Type.LARGE,
                 category=next_cat,
-                prize_pool=LARGE_PRIZE,
                 start_time=now + timedelta(hours=2),
                 status=Tournament.Status.OPEN,
             )

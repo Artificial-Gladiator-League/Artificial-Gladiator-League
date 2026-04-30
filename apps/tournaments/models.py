@@ -100,16 +100,6 @@ class Tournament(models.Model):
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.OPEN
     )
-    prize_pool = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=0,
-        help_text="Prize pool in platform currency. Rolls over if not fully awarded.",
-    )
-    rollover_amount = models.DecimalField(
-        max_digits=12, decimal_places=2, default=0,
-        help_text="Unclaimed prize that rolls into the next tournament.",
-    )
     champion = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -200,13 +190,6 @@ class Tournament(models.Model):
                 return label
         return self.time_control
 
-    @property
-    def prize_breakdown(self):
-        """Return a human‑readable prize string."""
-        if self.type == self.Type.LARGE:
-            return "$30 / $20 / $10"
-        return f"${self.prize_pool} to 1st"
-
     def bracket_for_round(self, round_num):
         """Return matches for a given round, ordered by bracket position."""
         return self.matches.filter(round_num=round_num).order_by("bracket_position")
@@ -249,6 +232,68 @@ class TournamentParticipant(models.Model):
         help_text="The round number in which this player was eliminated.",
     )
     joined_at = models.DateTimeField(auto_now_add=True)
+    registered_sha = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        help_text=(
+            "HF commit SHA at tournament registration time. "
+            "Used to detect model changes during the tournament. "
+            "Deleted at tournament end."
+        ),
+    )
+    tournament_hf_token = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Read-only HF token stored for pre/mid-round integrity checks. "
+            "Never used for writes. Deleted at tournament end."
+        ),
+    )
+    round_pinned_sha = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        help_text=(
+            "Official pinned HF commit SHA captured at the start of the "
+            "current round. Compared against live HF SHA by the random "
+            "anti-cheat audit task."
+        ),
+    )
+    round_pinned_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when round_pinned_sha was last refreshed.",
+    )
+    disqualified_for_sha_mismatch = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when the participant was disqualified by the random "
+            "mid-round SHA audit (repo changed during a live round)."
+        ),
+    )
+
+    # ── Probabilistic SHA audit bookkeeping ─────────────
+    last_sha_check_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=(
+            "Timestamp of the last probabilistic SHA audit performed on "
+            "this participant. Used by run_probabilistic_sha_audit to "
+            "score 'time-since-last-check' as a check probability factor."
+        ),
+    )
+    sha_anomaly_history = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if this participant has ever triggered a SHA mismatch "
+            "that was manually cleared/forgiven by an admin. Increases "
+            "their probability of being audited again."
+        ),
+    )
+    disqualified_reason = models.TextField(
+        blank=True, default="",
+        help_text="Free-form reason recorded when this participant was disqualified.",
+    )
 
     class Meta:
         unique_together = ("tournament", "user")
@@ -442,3 +487,87 @@ class TournamentChatMessage(models.Model):
         overflow_ids = qs.values_list("pk", flat=True)[100:]
         if overflow_ids:
             TournamentChatMessage.objects.filter(pk__in=list(overflow_ids)).delete()
+
+
+class TournamentShaCheck(models.Model):
+    """Persistent audit log for every random anti-cheat SHA verification.
+
+    One row per check (PASS or FAIL) so the full forensic history of a
+    tournament round can be reconstructed and filtered in admin.
+
+    Failed checks always carry ``action_taken`` so an auditor can see at
+    a glance what the system did in response (typically
+    "disqualified_in_round").
+    """
+
+    class Result(models.TextChoices):
+        PASS = "pass", "Pass"
+        FAIL = "fail", "Fail (mismatch)"
+        ERROR = "error", "Error (HF unreachable / no token)"
+        SKIPPED = "skipped", "Skipped (no baseline)"
+
+    class Context(models.TextChoices):
+        ROUND_START = "round_start", "Round start baseline"
+        RANDOM_AUDIT = "random_audit", "Random mid-round audit"
+        MANUAL = "manual", "Manual / management command"
+
+    tournament = models.ForeignKey(
+        Tournament,
+        on_delete=models.CASCADE,
+        related_name="sha_checks",
+    )
+    participant = models.ForeignKey(
+        TournamentParticipant,
+        on_delete=models.CASCADE,
+        related_name="sha_checks",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sha_audit_entries",
+        help_text="Denormalised — kept after participant deletion for audit.",
+    )
+    round_num = models.PositiveIntegerField(
+        default=0,
+        help_text="Tournament round when the check ran (0 = pre-start).",
+    )
+    game_type = models.CharField(max_length=20, blank=True, default="")
+    repo_id = models.CharField(max_length=255, blank=True, default="")
+    expected_sha = models.CharField(
+        max_length=40, blank=True, default="",
+        help_text="Pinned/baseline SHA at the start of the round.",
+    )
+    current_sha = models.CharField(
+        max_length=40, blank=True, default="",
+        help_text="SHA returned by the live HF Hub call.",
+    )
+    result = models.CharField(
+        max_length=10, choices=Result.choices, default=Result.PASS,
+    )
+    context = models.CharField(
+        max_length=20, choices=Context.choices, default=Context.RANDOM_AUDIT,
+    )
+    action_taken = models.CharField(
+        max_length=80, blank=True, default="",
+        help_text="e.g. 'disqualified_in_round', 'logged_only', 'forfeited_match'.",
+    )
+    error_message = models.TextField(
+        blank=True, default="",
+        help_text="Populated on Result=ERROR with the underlying exception text.",
+    )
+    checked_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-checked_at"]
+        indexes = [
+            models.Index(fields=["tournament", "round_num"]),
+            models.Index(fields=["result", "-checked_at"]),
+        ]
+        verbose_name = "Tournament SHA Check"
+        verbose_name_plural = "Tournament SHA Checks"
+
+    def __str__(self):
+        return (
+            f"[{self.checked_at:%Y-%m-%d %H:%M:%S}] "
+            f"R{self.round_num} {self.user_id} {self.repo_id} → {self.result}"
+        )

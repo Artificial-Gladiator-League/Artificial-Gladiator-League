@@ -287,6 +287,7 @@ class Command(BaseCommand):
             status=Game.Status.ONGOING,
             is_tournament_game=True,
             tournament_match=match,
+            ai_thinking_seconds=1.0,
         )
 
         self.stdout.write(

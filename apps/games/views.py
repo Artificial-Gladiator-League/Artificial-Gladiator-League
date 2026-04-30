@@ -385,6 +385,15 @@ def create_lobby_game(request):
     if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
         messages.error(request, "You must set an AI model before creating a game.")
         return redirect("games:lobby")
+    # Proof-of-Ownership gate: repo must be verified
+    _gm = request.user.get_game_model(game_type)
+    if _gm and not _gm.is_verified:
+        messages.error(
+            request,
+            "Your model repository must be verified before creating games. "
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+        )
+        return redirect("games:lobby")
     base_minutes = request.POST.get("base_minutes", "3")
     increment_sec = request.POST.get("increment_seconds", "1")
     try:
@@ -425,6 +434,7 @@ def create_lobby_game(request):
         increment=inc,
         game_type=game_type,
         current_fen=starting_fen,
+        ai_thinking_seconds=1.0,
     )
     _broadcast_lobby_update("new_waiting_game", game)
     return redirect("games:game_detail", game_id=game.pk)
@@ -438,6 +448,15 @@ def create_game(request):
         game_type = Game.GameType.CHESS
     if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
         messages.error(request, "You must set an AI model before creating a game.")
+        return redirect("games:lobby")
+    # Proof-of-Ownership gate: repo must be verified
+    _gm = request.user.get_game_model(game_type)
+    if _gm and not _gm.is_verified:
+        messages.error(
+            request,
+            "Your model repository must be verified before creating games. "
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+        )
         return redirect("games:lobby")
     tc = request.POST.get("time_control", "3+1")
     parts = tc.split("+")
@@ -453,6 +472,7 @@ def create_game(request):
         increment=inc,
         game_type=game_type,
         current_fen=starting_fen,
+        ai_thinking_seconds=1.0,
     )
     _broadcast_lobby_update("new_waiting_game", game)
     return redirect("games:game_detail", game_id=game.pk)
@@ -471,6 +491,15 @@ def join_game(request, game_id):
         return redirect("games:game_detail", game_id=game.pk)
     if game.game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game.game_type):
         messages.error(request, "You must set an AI model before joining a game.")
+        return redirect("games:lobby")
+    # Proof-of-Ownership gate: repo must be verified
+    _gm = request.user.get_game_model(game.game_type)
+    if _gm and not _gm.is_verified:
+        messages.error(
+            request,
+            "Your model repository must be verified before joining games. "
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+        )
         return redirect("games:lobby")
     if game.black is None:
         game.black = request.user

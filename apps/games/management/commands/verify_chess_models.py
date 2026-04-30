@@ -177,10 +177,29 @@ class Command(BaseCommand):
         for ugm in qs.order_by("user_id"):
             base_url = _space_base_url(ugm)
             submit_url = f"{base_url}/gradio_api/call/{_GRADIO_FN}"
+
+            # Report local HF cache status before probing the Space, so it is
+            # obvious whether predict_* will read weights locally or fall
+            # back to the (slower) Space/HF-API path.
+            try:
+                from apps.games.local_inference import _find_hf_cache_snapshot
+                snap = _find_hf_cache_snapshot(ugm.hf_model_repo_id)
+            except Exception:
+                snap = None
+            cache_line = (
+                f"    cache: HIT {snap}"
+                f" (cached_commit={ugm.cached_commit or '?'},"
+                f" cached_at={ugm.cached_at})"
+                if snap is not None
+                else "    cache: MISS — run `manage.py populate_user_models --user-ids "
+                     f"{ugm.user_id}` to mirror snapshot"
+            )
+
             self.stdout.write(
                 f"  #{ugm.pk} user={ugm.user.username} repo={ugm.hf_model_repo_id}\n"
                 f"    endpoint_name={ugm.hf_inference_endpoint_name!r} "
                 f"status_before={ugm.hf_inference_endpoint_status!r}\n"
+                f"{cache_line}\n"
                 f"    → POST {submit_url}"
             )
 

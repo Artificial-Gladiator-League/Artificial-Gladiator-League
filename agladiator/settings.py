@@ -36,7 +36,6 @@ INSTALLED_APPS = [
     # Forum and chat apps removed
     # Third‑party
     "channels",
-    "django_apscheduler",
 ]
 
 # ── Middleware ─────────────────────────────────
@@ -47,6 +46,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "apps.users.middleware.ModelIntegrityMiddleware",
+    "apps.tournaments.middleware.DisqualificationInterceptMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -152,7 +152,13 @@ SANDBOX_ENABLE_LOCAL_FALLBACK = os.environ.get("SANDBOX_ENABLE_LOCAL_FALLBACK", 
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        # NOTE: must be the pubsub layer, NOT channels_redis.core.RedisChannelLayer.
+        # The .core layer issues BZPOPMIN, which only exists in Redis ≥ 5.0.
+        # The MicrosoftArchive Redis 3.0.504 build (the easy Windows install)
+        # does not support BZPOPMIN and would crash every WebSocket worker
+        # with: redis.exceptions.ResponseError: unknown command 'BZPOPMIN'.
+        # The pubsub layer uses PUBLISH/SUBSCRIBE only and works on any Redis.
+        "BACKEND": "channels_redis.pubsub.RedisPubSubChannelLayer",
         "CONFIG": {
             "hosts": [REDIS_URL],
         },
@@ -391,10 +397,15 @@ CELERY_BEAT_SCHEDULE = {
         # "schedule": crontab(day_of_week="sunday", hour=20, minute=0),
         "kwargs": {"participants": 16, "rounds": 5, "time_control": "3+1"},
     },
-    "daily-integrity-check": {
-        "task": "apps.users.model_lifecycle.daily_integrity_check",
-        "schedule": crontab(hour=12, minute=0),
+    # Daily integrity check REMOVED — integrity checks now run only at:
+    #   • tournament registration (integrity.py: can_join_tournament)
+    #   • before each round (engine.py: pre_round_sha_check)
+    #   • probabilistically during rounds (tasks.py: run_probabilistic_sha_audit)
+    "probabilistic-sha-audit": {
+        "task": "apps.tournaments.tasks.run_probabilistic_sha_audit",
+        "schedule": 30.0,  # every 30 seconds
     },
+
     "cleanup-orphaned-dirs": {
         "task": "apps.users.model_lifecycle.cleanup_orphaned_dirs",
         "schedule": 1800.0,

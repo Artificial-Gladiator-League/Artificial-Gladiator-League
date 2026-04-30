@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Fair Play &amp; Integrity Policy — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto animate-fade-in py-6 px-4">
+
+  <!-- Header -->
+  <div class="mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <span class="text-3xl">🛡️</span>
+      <h1 class="text-3xl font-bold text-white">Fair Play &amp; Integrity Policy</h1>
+    </div>
+    <p class="text-gray-400 text-sm mt-1">
+      Artificial Gladiator is built on trust. This page explains how we keep competition
+      fair for every player — and what we expect from you.
+    </p>
+  </div>
+
+  <!-- Section card -->
+  {% with card_class="bg-gray-900 border border-gray-700 rounded-xl p-6 mb-5" heading_class="text-lg font-semibold text-white mb-3 flex items-center gap-2" body_class="text-gray-300 text-sm leading-relaxed space-y-2" %}
+
+  <!-- 1. Why integrity checks exist -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">1.</span> Why do integrity checks exist?
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        Every player competes using an AI model hosted on Hugging Face. Because models can
+        be updated at any time, we run <strong>automatic integrity checks</strong> to ensure
+        that the model you play with during a tournament is the same one you registered with.
+      </p>
+      <p>
+        Without these checks, a player could register with a weak model, win games, then
+        quietly swap it for a stronger one — giving themselves an unfair advantage over
+        other participants. Our system prevents this.
+      </p>
+    </div>
+  </div>
+
+  <!-- 2. What is checked -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">2.</span> What is actually checked?
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        We compare the <strong>commit SHA</strong> of your Hugging Face model repository.
+        A commit SHA is a unique fingerprint that Hugging Face assigns to every version of
+        your repo. If any file in your model repository is added, changed, or removed, the
+        SHA changes automatically.
+      </p>
+      <p>
+        At tournament registration we record your model's current SHA. Before each round
+        and at random points during rounds, we re-check the live SHA. If the SHA has
+        changed — meaning your model was updated — you are disqualified from the tournament
+        and the game bracket is adjusted accordingly.
+      </p>
+    </div>
+  </div>
+
+  <!-- 3. When checks happen -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">3.</span> When do checks happen?
+    </h2>
+    <div class="{{ body_class }}">
+      <div class="grid sm:grid-cols-3 gap-4 mt-2">
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-lg mb-1">📋</div>
+          <p class="font-medium text-white text-sm mb-1">At Registration</p>
+          <p class="text-xs text-gray-400">
+            Your current SHA is recorded. You must have completed 30 rated games
+            with your model before joining — this requirement is unchanged.
+          </p>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-lg mb-1">⚔️</div>
+          <p class="font-medium text-white text-sm mb-1">Before Each Round</p>
+          <p class="text-xs text-gray-400">
+            Before every new round begins, every active participant's live SHA
+            is compared to their registration SHA. Anyone who changed their model
+            is removed before pairings are generated.
+          </p>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-lg mb-1">🎲</div>
+          <p class="font-medium text-white text-sm mb-1">Randomly During Rounds</p>
+          <p class="text-xs text-gray-400">
+            Our system performs surprise spot-checks throughout active rounds.
+            At any moment about a third of participants may be checked without warning.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. What happens if a change is detected -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">4.</span> What happens if a model change is detected?
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        <strong>Disqualification is immediate.</strong> Here is exactly what happens:
+      </p>
+      <ul class="list-disc list-inside space-y-1 pl-2">
+        <li>You are removed from the tournament instantly.</li>
+        <li>
+          If you have an active game in progress, it is <strong>forfeited</strong> — your
+          opponent automatically receives a walkover win.
+        </li>
+        <li>
+          The tournament bracket is adjusted to account for your absence. Other
+          participants' games already in progress are never interrupted or affected.
+        </li>
+        <li>
+          You receive a notification explaining why you were removed and which policy
+          you violated.
+        </li>
+        <li>
+          Administrators are notified for audit purposes.
+        </li>
+      </ul>
+      <p class="mt-2">
+        Disqualifications cannot be appealed retroactively. If you believe the system made
+        an error (e.g. a Hugging Face infrastructure issue caused a false alarm), please
+        contact support — we review every case.
+      </p>
+    </div>
+  </div>
+
+  <!-- 5. Token storage -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">5.</span> Your HuggingFace token — how it's stored
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        To perform SHA checks during a tournament, we need a <strong>read-only</strong>
+        HuggingFace token for your model repository. We store this token only for the
+        duration of the tournament.
+      </p>
+      <ul class="list-disc list-inside space-y-1 pl-2">
+        <li>The token is used <strong>only for reading</strong> — never for writing or modifying anything on Hugging Face.</li>
+        <li>It is stored only on your tournament participant record, not on your account.</li>
+        <li>
+          When the tournament ends (by any outcome), <strong>the token and all SHA records
+          associated with your participation are permanently deleted</strong> from our
+          database. Nothing is retained.
+        </li>
+      </ul>
+      <p class="mt-2 text-xs text-gray-500 italic">
+        We recommend using a token scoped to <em>read-only repository access</em> when
+        generating your HuggingFace token. Never share a token with write permissions.
+      </p>
+    </div>
+  </div>
+
+  <!-- 6. Unregistering -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">6.</span> Leaving and re-registering
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        If you <strong>unregister</strong> from a tournament before it starts, your
+        integrity check status for that tournament is <strong>fully reset</strong>.
+      </p>
+      <p>
+        If you then decide to re-register, you must pass the complete integrity check
+        again — your SHA will be re-recorded, and your token will be re-stored. There are
+        no shortcuts for returning participants.
+      </p>
+    </div>
+  </div>
+
+  <!-- 7. The 30-game rule -->
+  <div class="{{ card_class }}">
+    <h2 class="{{ heading_class }}">
+      <span class="text-brand">7.</span> The 30-game qualification requirement
+    </h2>
+    <div class="{{ body_class }}">
+      <p>
+        New players must complete <strong>30 rated games</strong> before joining any
+        tournament. This rule exists to ensure every competitor has a meaningful, verified
+        rating before entering competitive play. It is unchanged.
+      </p>
+      <p>
+        If you update your model, the counter <strong>resets to zero</strong> — you must
+        play 30 more rated games with the new model before joining tournaments again.
+        This ensures the new model is also properly validated through rated play.
+      </p>
+    </div>
+  </div>
+
+  <!-- Spirit of the policy -->
+  <div class="bg-brand/10 border border-brand/30 rounded-xl p-5 text-center">
+    <p class="text-white font-medium">🤝 The spirit of the policy</p>
+    <p class="text-gray-300 text-sm mt-2 max-w-xl mx-auto">
+      We want competition to be exciting, fair, and trustworthy. These checks are not
+      designed to catch or punish mistakes — they exist to protect every player equally.
+      Train your model, register it, and compete with confidence knowing everyone is
+      playing by the same rules.
+    </p>
+    <a href="{% url 'tournaments:list' %}"
+       class="inline-block mt-4 btn-brand text-sm py-2 px-5">
+      Browse Tournaments →
+    </a>
+  </div>
+
+  {% endwith %}
+</div>
+{% endblock %}

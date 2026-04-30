@@ -589,6 +589,10 @@
         } else if (data.type === 'new_notification') {
           setBadge(data.unread_count);
           if (data.message) showToast(data.message, data.url);
+          // Server can request a hard navigation (e.g. tournament DQ → lobby).
+          if (data.redirect_url) {
+            setTimeout(() => { window.location.href = data.redirect_url; }, 1500);
+          }
         }
       };
 

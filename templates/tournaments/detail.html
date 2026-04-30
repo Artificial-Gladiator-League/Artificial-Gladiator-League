@@ -30,10 +30,6 @@
     <div class="flex items-center gap-4 shrink-0">
       <!-- Stats pills -->
       <div class="stat-pill">
-        <span class="stat-value text-brand">${{ tournament.prize_pool }}</span>
-        <span class="stat-label">Prize</span>
-      </div>
-      <div class="stat-pill">
         <span class="stat-value text-gray-100" id="playerCount">{{ tournament.participant_count }}</span>
         <span class="stat-label">/ {{ tournament.capacity }}</span>
       </div>
@@ -56,12 +52,31 @@
           </form>
         {% else %}
           {% if can_join %}
-            <a href="{% url 'tournaments:join' tournament.pk %}" class="btn-brand text-xs py-1.5 px-4">Join — Free</a>
-          {% else %}
-            <span class="inline-flex items-center gap-1.5 text-xs py-1.5 px-4 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 cursor-not-allowed"
-                  title="{{ join_blocked_reason }}">
-              ⚠️ {{ join_blocked_reason }}
+            <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="btn-brand text-xs py-1.5 px-4">Join — Free</button>
+            </form>
+          {% elif games_remaining > 0 %}
+            {# New/cooldown users: no button at all, just the games-to-go hint #}
+            <span class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-700/50">
+              🎮 {{ games_remaining }} game{{ games_remaining|pluralize }} to go
             </span>
+          {% else %}
+            {# Other blocks (e.g. unverified ownership): show disabled button + badge #}
+            <button type="button" disabled
+                    class="inline-flex items-center gap-1.5 text-xs py-1.5 px-4 rounded bg-gray-700 text-gray-400 border border-gray-600 cursor-not-allowed opacity-40"
+                    title="{% if join_blocked_reason %}{{ join_blocked_reason }}{% else %}You are not eligible to join this tournament{% endif %}">
+              Join — Free
+            </button>
+            {% if join_blocked_reason == 'ownership_unverified' %}
+              <a href="{% url 'users:ai_models' %}" class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-red-900/40 text-red-300 border border-red-700/50 ml-1">
+                ❌ Verify ownership first
+              </a>
+            {% elif join_blocked_reason %}
+              <span class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-yellow-900/40 text-yellow-200 border border-yellow-700/50 ml-1">
+                ⚠️ Not eligible
+              </span>
+            {% endif %}
           {% endif %}
         {% endif %}
       {% endif %}
@@ -135,15 +150,52 @@
     {% if user.is_authenticated %}
       {% if not is_participant and tournament.status == 'open' %}
         {% if can_join %}
-          <a href="{% url 'tournaments:join' tournament.pk %}"
-             class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
+          <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline-block w-full sm:w-auto">
+            {% csrf_token %}
+            <button type="submit"
+                    class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
+              ♟ Register
+            </button>
+          </form>
+        {% elif games_remaining == 0 %}
+          {# Only show the disabled Register button for non-games-remaining blocks (e.g. unverified) #}
+          <button type="button" disabled
+                  class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto opacity-40 cursor-not-allowed"
+                  title="{% if join_blocked_reason %}{{ join_blocked_reason }}{% else %}Not eligible{% endif %}">
             ♟ Register
-          </a>
-        {% else %}
-          <span class="inline-flex items-center gap-1.5 text-sm py-2.5 px-8 rounded-lg bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 cursor-not-allowed"
-                title="{{ join_blocked_reason }}">
+          </button>
+        {% endif %}
+        {# Eligibility feedback card (shown whenever the button is blocked) #}
+        {% if not can_join %}
+          {% if join_blocked_reason == 'ownership_unverified' %}
+          <div class="rounded-lg border border-red-700 bg-red-900/30 p-4 text-sm text-red-200 space-y-2 mt-3">
+            <p class="font-semibold flex items-center gap-2">❌ Repo ownership not verified</p>
+            <p>You must verify you own your model repository before joining tournaments.</p>
+            <a href="{% url 'users:ai_models' %}" class="inline-block mt-1 px-4 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-semibold">
+              Go to AI Models → Verify Ownership
+            </a>
+          </div>
+          {% elif games_remaining > 0 %}
+          <div class="rounded-lg border border-yellow-700 bg-yellow-900/30 p-4 text-sm text-yellow-100 space-y-3 mt-3">
+            <p class="font-semibold">🎮 Play {{ games_remaining }} more rated game{{ games_remaining|pluralize }} to qualify</p>
+            <div>
+              {% with played=REVALIDATION_GAMES_REQUIRED|subtract:games_remaining %}
+              <div class="flex justify-between text-xs text-yellow-300 mb-1">
+                <span>{{ played }} / {{ REVALIDATION_GAMES_REQUIRED }} rated games</span>
+                <span>{{ games_remaining }} remaining</span>
+              </div>
+              <div class="w-full bg-gray-700 rounded-full h-2">
+                <div class="bg-yellow-400 h-2 rounded-full" style="width: {% widthratio played REVALIDATION_GAMES_REQUIRED 100 %}%"></div>
+              </div>
+              {% endwith %}
+            </div>
+            <p class="text-xs text-yellow-300">{{ join_blocked_reason }}</p>
+          </div>
+          {% elif join_blocked_reason %}
+          <div class="rounded-lg border border-yellow-700 bg-yellow-900/30 p-4 text-sm text-yellow-200 mt-3">
             ⚠️ {{ join_blocked_reason }}
-          </span>
+          </div>
+          {% endif %}
         {% endif %}
       {% elif is_participant and tournament.status == 'full' and not user_ready %}
         <div class="flex flex-wrap items-center gap-3">
@@ -345,23 +397,6 @@
       <p class="font-medium text-green-400">Free</p>
       <p class="text-xs text-gray-400 mt-0.5">No entry fee</p>
     </div>
-  </div>
-
-  <!-- Prize structure -->
-  <div class="card mt-4">
-    <h3 class="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">Prize Structure</h3>
-    {% if tournament.type == 'large' %}
-      <div class="flex flex-wrap gap-4 text-sm">
-        <span>🥇 1st — <strong class="text-brand">$30</strong></span>
-        <span>🥈 2nd — <strong class="text-gray-300">$20</strong></span>
-        <span>🥉 3rd — <strong class="text-amber-500">$10</strong></span>
-      </div>
-    {% else %}
-      <div class="text-sm">
-        🥇 1st — <strong class="text-brand">${{ tournament.prize_pool }}</strong>
-      </div>
-    {% endif %}
-    <p class="text-xs text-gray-500 mt-2">No entry fee. Unclaimed prizes roll over to the next tournament.</p>
   </div>
 
 </div>

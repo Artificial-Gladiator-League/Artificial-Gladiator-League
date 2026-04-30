@@ -1,0 +1,10 @@
+Found 8 test(s).
+Type 'yes' if you would like to try deleting the test database 'test_aigladiator', or 'no' to cancel: System check identified no issues (0 silenced).
+DEBUG: join_tournament check for bob, tournament=1
+HF API check for repo test1978/chess-model: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+HF API check for repo test1978/chess-model: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=None
+HF API check for repo test1978/chess-model: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=None
+HF API check for repo test1978/chess-model: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+HF API check for repo test1978/chess-model: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+HF API check for repo <none>: current_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, latest=<skipped>
+HF API check for repo test1978/chess-model: current_sha=None, latest=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb

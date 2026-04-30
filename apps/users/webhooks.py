@@ -101,21 +101,12 @@ def hf_webhook(request):
     if repo_type == "space":
         return _handle_space_update(repo_name)
 
-    # ── Handle model repo changes — mark users for re-verification ──────────
-    from apps.users.models import CustomUser
-
-    affected = CustomUser.objects.filter(
-        hf_model_repo_id=repo_name,
-        model_integrity_ok=True,
-    )
-    count = affected.update(model_integrity_ok=False)
-
-    log.info("HF webhook: marked %d user(s) for re-verification (repo=%s)",
-             count, repo_name)
+    # Integrity checks run only at tournament registration — no action on push.
+    log.info("HF webhook: repo=%s push received; no integrity action taken", repo_name)
 
     return JsonResponse({
         "status": "ok",
-        "users_flagged": count,
+        "users_flagged": 0,
     })
 
 

@@ -12,10 +12,6 @@ class UsersConfig(AppConfig):
     def ready(self):
         import apps.users.signals  # noqa: F401 — register post_save handlers
 
-        # Start the APScheduler daily integrity check
-        from apps.users.scheduler import start_scheduler
-        start_scheduler()
-
         # Startup pre-warm: ensure bot models (model_integrity_ok=True)
         # that have no `cached_path` are downloaded into the persistent
         # cache so they survive server restarts. Run in a background

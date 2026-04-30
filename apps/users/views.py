@@ -221,102 +221,6 @@ def activate(request, uidb64, token):
     return redirect("users:login")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Daily model-integrity verification
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-@login_required
-def verify_model(request):
-    """Daily HF token prompt for model-integrity check.
-
-    GET  → show the token form.
-    POST → validate the token and check SHA against the original.
-    """
-    from .integrity import (
-        validate_model_integrity, validate_all_models,
-        needs_daily_validation, check_model_card,
-    )
-
-    # Already validated today — skip straight to the lobby.
-    if not needs_daily_validation(request.user):
-        return redirect("games:lobby")
-
-    error = None
-    model_card_warning = None
-    if request.method == "POST":
-        hf_token = request.POST.get("hf_token", "").strip()
-        if not hf_token:
-            error = "Please paste your Hugging Face read token."
-        else:
-            # Ensure token is read-only (reject write/admin scopes and unsafe tokens)
-            try:
-                from .forms import ensure_read_only_hf_token
-                from django import forms as _django_forms
-
-                ensure_read_only_hf_token(hf_token)
-            except _django_forms.ValidationError as exc:
-                # Extract first validation message for display
-                if hasattr(exc, "message_dict"):
-                    first = next(iter(exc.message_dict.values()))
-                    error = first[0] if first else str(exc)
-                elif hasattr(exc, "messages") and exc.messages:
-                    error = exc.messages[0]
-                else:
-                    error = str(exc)
-            except Exception:
-                # If scope-inspection fails unexpectedly, continue and let
-                # downstream checks surface any issues.
-                log.debug("Could not inspect token scopes before verification", exc_info=True)
-                error = None
-
-            if error:
-                return render(request, "users/verify_model.html", {
-                    "error": error,
-                    "model_card_warning": model_card_warning,
-                })
-
-            ok = validate_all_models(request.user, hf_token)
-            if ok:
-                # Check model cards (soft warning — does not block)
-                from apps.users.models import UserGameModel
-                for gm in UserGameModel.objects.filter(user=request.user, hf_model_repo_id__gt=""):
-                    log.info("[verify-model] Integrity OK for user=%s, repo=%s. Running model card check...",
-                             request.user.username, gm.hf_model_repo_id)
-                    card_result = check_model_card(gm.hf_model_repo_id, hf_token)
-                    log.info("[verify-model] Model card result: has_card=%s, missing=%s, message=%.120s",
-                             card_result["has_card"], card_result["missing"], card_result["message"])
-                    if not card_result["has_card"] or card_result["missing"]:
-                        messages.warning(request, f"[{gm.game_type}] {card_result['message']}")
-                messages.success(request, "All models verified successfully. You're cleared for today.")
-                return redirect("games:lobby")
-            else:
-                # Distinguish "model changed" from "couldn't reach HF"
-                from apps.users.models import UserGameModel
-                compromised = UserGameModel.objects.filter(
-                    user=request.user,
-                    hf_model_repo_id__gt="",
-                    model_integrity_ok=False,
-                    last_model_validation_date=timezone.now().date(),
-                ).exists()
-                if compromised:
-                    messages.warning(
-                        request,
-                        "⚠️ A change was detected in your AI model repository. "
-                        "Tournament entry is blocked until you submit the new "
-                        "revision for approval. Casual and rated games are "
-                        "still available.",
-                    )
-                    return redirect("games:lobby")
-                error = (
-                    "One or more models could not be verified. "
-                    "Please check that your token is valid and has read access to all your repos."
-                )
-
-    return render(request, "users/verify_model.html", {
-        "error": error,
-        "model_card_warning": model_card_warning,
-    })
-
-
 def _check_duplicate_ip(ip: str, new_user):
     """Basic multi-account detection: warn if IP matches existing accounts.
 
@@ -345,166 +249,91 @@ GAME_TYPES = [
 def ai_models(request):
     """Manage per-game AI model configurations.
 
-    GET  → show current models with status for each game.
-    POST → connect or re-verify a model for a specific game.
+    GET            → show current models with status for each game.
+    POST (connect) → register a repo_id; generate a challenge code.
+    POST (verify)  → check AGL_VERIFY.txt in the repo and mark is_verified.
     """
     import re
-    from .forms import validate_gated_hf_repo
-    from .integrity import record_original_sha, check_model_card
+    from .ownership_verification import check_ownership, generate_verification_code
 
     if request.method == "POST":
+        action = request.POST.get("action", "connect")
         game_type = request.POST.get("game_type", "").strip()
         repo_id = request.POST.get("hf_model_repo_id", "").strip()
         data_repo_id = request.POST.get("hf_data_repo_id", "").strip()
-        hf_token = request.POST.get("hf_token", "").strip()
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
-        elif not repo_id:
+            return redirect("users:ai_models")
+
+        # ── Verify ownership (check AGL_VERIFY.txt) ──────────
+        if action == "verify":
+            submitted_repo_id = request.POST.get("hf_model_repo_id", "").strip()
+            gm = request.user.get_game_model(game_type)
+            if not gm:
+                messages.error(request, "No model registered for this game type yet.")
+            elif submitted_repo_id and submitted_repo_id != gm.hf_model_repo_id:
+                # Submitted repo_id doesn't match the one stored for this game_type.
+                # This prevents a code generated for one repo/game from verifying another.
+                messages.error(
+                    request,
+                    f"Repository mismatch: the submitted repo '{submitted_repo_id}' does not "
+                    f"match the registered {game_type} repo '{gm.hf_model_repo_id}'. "
+                    "Please reconnect the correct repo first.",
+                )
+            else:
+                ok, msg = check_ownership(gm)
+                if ok:
+                    messages.success(request, msg)
+                else:
+                    messages.error(request, msg)
+            return redirect("users:ai_models")
+
+        # ── Connect / update a repo ───────────────────────────
+        if not repo_id:
             messages.error(request, "Please enter a Hugging Face repo ID.")
         elif not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
-            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
-        elif not hf_token:
-            messages.error(request, "Please enter your Hugging Face access token.")
+            messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data').")
         else:
-            try:
-                validate_gated_hf_repo(repo_id, hf_token)
-            except Exception as exc:
-                # Extract validation error messages
-                if hasattr(exc, "message_dict"):
-                    for field_errors in exc.message_dict.values():
-                        for err in field_errors:
-                            messages.error(request, err)
-                elif hasattr(exc, "messages"):
-                    for err in exc.messages:
-                        messages.error(request, err)
-                else:
-                    messages.error(request, str(exc))
+            # Check for duplicate repo across other users
+            dup = UserGameModel.objects.filter(
+                hf_model_repo_id=repo_id,
+            ).exclude(user=request.user)
+            if dup.exists():
+                messages.error(
+                    request,
+                    "This model repository is already registered by another user.",
+                )
             else:
-                # ── Repo visibility & platform access checks ──
-                _visibility_ok = True
-                try:
-                    from huggingface_hub import HfApi
-                    from huggingface_hub.utils import GatedRepoError
+                gm, created = UserGameModel.objects.get_or_create(
+                    user=request.user,
+                    game_type=game_type,
+                    defaults={"hf_model_repo_id": repo_id, "hf_data_repo_id": data_repo_id},
+                )
+                if not created and (gm.hf_model_repo_id != repo_id or gm.hf_data_repo_id != data_repo_id):
+                    # Repo changed — reset verification
+                    gm.hf_model_repo_id = repo_id
+                    gm.hf_data_repo_id = data_repo_id
+                    gm.is_verified = False
+                    gm.verification_code = ""
+                    gm.save(update_fields=[
+                        "hf_model_repo_id", "hf_data_repo_id",
+                        "is_verified", "verification_code",
+                    ])
 
-                    user_api = HfApi(token=hf_token)
-                    info = user_api.model_info(repo_id, token=hf_token)
-
-                    if getattr(info, "private", False):
-                        messages.error(
-                            request,
-                            "Your repo must be set to Gated, not Private. "
-                            "Gated allows our platform to access it while "
-                            "keeping it protected from the public. Go to "
-                            "your repo Settings on HuggingFace → Danger Zone "
-                            "→ Control who can access this repository → "
-                            "Select Gated.",
-                        )
-                        _visibility_ok = False
-                    elif not getattr(info, "gated", False):
-                        messages.error(
-                            request,
-                            "Your repo must be set to Gated on HuggingFace, "
-                            "not fully public. Go to your repo Settings → "
-                            "Danger Zone → Control who can access this "
-                            "repository → Select Gated.",
-                        )
-                        _visibility_ok = False
-                except GatedRepoError:
-                    # User token can't even access — should not happen since
-                    # validate_gated_hf_repo already verified it.
-                    messages.error(request, "Could not verify repo visibility.")
-                    _visibility_ok = False
-                except Exception as vis_exc:
-                    log.warning("Visibility check failed for %s: %s", repo_id, vis_exc)
-                    messages.error(request, "Could not verify repo visibility.")
-                    _visibility_ok = False
-
-                # Verify the platform account can access the gated repo
-                if _visibility_ok:
-                    try:
-                        platform_api = HfApi(token=settings.HF_PLATFORM_TOKEN)
-                        platform_api.model_info(repo_id, token=settings.HF_PLATFORM_TOKEN)
-                    except (GatedRepoError, Exception) as plat_exc:
-                        if "403" in str(plat_exc) or isinstance(plat_exc, GatedRepoError):
-                            messages.error(
-                                request,
-                                f"Our platform does not have access to your "
-                                f"gated repo yet. Please go to "
-                                f"https://huggingface.co/{repo_id} and add "
-                                f"'ArtificialGladiatorLeague' to your authorized users "
-                                f"list, then try again.",
-                            )
-                            _visibility_ok = False
-                        else:
-                            log.warning("Platform access check failed for %s: %s", repo_id, plat_exc)
-                            messages.error(request, "Could not verify platform access to your repo.")
-                            _visibility_ok = False
-
-                if not _visibility_ok:
-                    return redirect("users:ai_models")
-
-                # Check for duplicate repo across other users
-                dup = UserGameModel.objects.filter(
-                    hf_model_repo_id=repo_id,
-                ).exclude(user=request.user)
-                if dup.exists():
-                    messages.error(
-                        request,
-                        "This model repository is already registered by another user.",
-                    )
-                else:
-                    gm, created = UserGameModel.objects.get_or_create(
-                        user=request.user,
-                        game_type=game_type,
-                        defaults={"hf_model_repo_id": repo_id, "hf_data_repo_id": data_repo_id},
-                    )
-                    if not created:
-                        gm.hf_model_repo_id = repo_id
-                        gm.hf_data_repo_id = data_repo_id
-                        gm.save(update_fields=["hf_model_repo_id", "hf_data_repo_id"])
-
-                    record_original_sha(gm, hf_token)
-
-                    # Run integrity verification via HF API
-                    try:
-                        from apps.games.hf_inference import verify_model as _hf_verify
-                        _hf_verify(gm, token=hf_token)
-                    except Exception:
-                        log.exception(
-                            "Verification failed for %s/%s",
-                            request.user.username, game_type,
-                        )
-                        messages.warning(
-                            request,
-                            "Model connected but sandbox verification failed. "
-                            "An admin will review it manually.",
-                        )
-
-                    # Ensure the model is cached for gameplay even if
-                    # verify_model's persist section didn't run (e.g. it
-                    # was already approved from a previous attempt).
-                    try:
-                        from apps.users.model_lifecycle import download_and_scan_for_user
-                        download_and_scan_for_user(request.user.pk)
-                    except Exception:
-                        log.debug(
-                            "Post-registration cache warm failed for %s/%s",
-                            request.user.username, game_type, exc_info=True,
-                        )
-
-                    # Soft model-card check
-                    card_result = check_model_card(repo_id, hf_token)
-                    if not card_result["has_card"] or card_result["missing"]:
-                        messages.warning(request, card_result["message"])
-
-                    label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                    messages.success(
-                        request,
-                        f"{label} model connected and verified successfully.",
-                    )
+                # Generate a fresh challenge code every time the repo is (re-)connected
+                code = generate_verification_code(gm)
+                from .ownership_verification import VERIFY_FILENAME
+                label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
+                messages.info(
+                    request,
+                    f"{label} repo saved. To prove ownership, create a file named "
+                    f"'{VERIFY_FILENAME}' at the root of your HF repo "
+                    f"({repo_id}) containing exactly this code: {code} — "
+                    "then click 'Verify Ownership' below.",
+                )
 
         return redirect("users:ai_models")
 
@@ -1054,6 +883,55 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             game_configs.append(entry)
         ctx["game_configs"] = game_configs
 
+        # ── Tournament readiness per game type ─────────────
+        from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES
+        from django.db.models import Q
+
+        tournament_readiness = []
+        for g in GAME_TYPES:
+            gtype = g["type"]
+            gm = user.get_game_model(gtype)
+
+            # Count rated (non-tournament) games for this game type
+            rated_count = (
+                Game.objects
+                .filter(game_type=gtype)
+                .filter(Q(white=user) | Q(black=user))
+                .exclude(result__in=(Game.Result.NONE, ""))
+                .exclude(is_tournament_game=True)
+                .count()
+            )
+            games_needed_overall = max(0, TOURNAMENT_MIN_RATED_GAMES - rated_count)
+
+            # Repo-change cooldown: games since last revalidation
+            games_since_change = gm.rated_games_since_revalidation if gm else 0
+            games_needed_after_change = max(0, TOURNAMENT_MIN_RATED_GAMES - games_since_change)
+
+            # User changed repo and hasn't played 30 games since change
+            repo_changed = (
+                gm is not None
+                and rated_count >= TOURNAMENT_MIN_RATED_GAMES  # past the 30-game gate
+                and games_since_change < TOURNAMENT_MIN_RATED_GAMES
+            )
+
+            tournament_readiness.append({
+                "game_type": gtype,
+                "label": g["label"],
+                "rated_count": rated_count,
+                "games_needed_overall": games_needed_overall,
+                "games_since_change": games_since_change,
+                "games_needed_after_change": games_needed_after_change,
+                "repo_changed": repo_changed,
+                "ready": (
+                    rated_count >= TOURNAMENT_MIN_RATED_GAMES
+                    and (not repo_changed)
+                    and gm is not None
+                    and gm.is_verified
+                ),
+                "TOURNAMENT_MIN_RATED_GAMES": TOURNAMENT_MIN_RATED_GAMES,
+            })
+        ctx["tournament_readiness"] = tournament_readiness
+
         return ctx
 
     def post(self, request, *args, **kwargs):
@@ -1064,181 +942,111 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
     def _handle_ai_model_post(self, request):
         import re as _re
-        from .forms import validate_gated_hf_repo
-        from .integrity import record_original_sha, check_model_card
         from apps.games.hf_inference import probe_space_url
+        from .ownership_verification import (
+            VERIFY_FILENAME,
+            check_ownership,
+            generate_verification_code,
+        )
 
+        action = request.POST.get("action", "connect")
         game_type = request.POST.get("game_type", "").strip()
         repo_id = request.POST.get("hf_model_repo_id", "").strip()
         data_repo_id = request.POST.get("hf_data_repo_id", "").strip()
-        hf_token = request.POST.get("hf_token", "").strip()
         hf_space_url = request.POST.get("hf_space_url", "").strip().rstrip("/")
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
-        elif not repo_id:
+            return redirect("users:profile")
+
+        # ── Verify ownership action ────────────────────────────
+        if action == "verify":
+            submitted_repo_id = request.POST.get("hf_model_repo_id", "").strip()
+            gm = request.user.get_game_model(game_type)
+            if not gm:
+                messages.error(request, "No model registered for this game type yet.")
+            elif submitted_repo_id and submitted_repo_id != gm.hf_model_repo_id:
+                # Cross-game protection: reject if the submitted repo_id doesn't match
+                # the one stored for this game_type. Each game has its own verification
+                # code on its own UserGameModel row (unique_together = user + game_type),
+                # so a code issued for game A cannot legitimately verify game B.
+                messages.error(
+                    request,
+                    f"Repository mismatch: the submitted repo '{submitted_repo_id}' does not "
+                    f"match the registered {game_type} repo '{gm.hf_model_repo_id}'. "
+                    "Please reconnect the correct repo first.",
+                )
+            else:
+                ok, msg = check_ownership(gm)
+                if ok:
+                    messages.success(request, msg)
+                else:
+                    messages.error(request, msg)
+            return redirect("users:profile")
+
+        # ── Connect / update a repo ────────────────────────────
+        if not repo_id:
             messages.error(request, "Please enter a Hugging Face repo ID.")
         elif not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
-        elif not hf_space_url:
-            messages.error(request, "HF Space Link is required. Enter the full URL of your Hugging Face Gradio Space (e.g. https://owner-myspace.hf.space).")
-        elif not _re.match(r'^https://[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
+        elif hf_space_url and not _re.match(r'^https://[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
             messages.error(request, "HF Space URL must be a full URL ending in .hf.space (e.g. https://owner-myspace.hf.space).")
-        elif not hf_token:
-            messages.error(request, "Please enter your Hugging Face access token.")
         else:
-            try:
-                validate_gated_hf_repo(repo_id, hf_token)
-            except Exception as exc:
-                if hasattr(exc, "message_dict"):
-                    for field_errors in exc.message_dict.values():
-                        for err in field_errors:
-                            messages.error(request, err)
-                elif hasattr(exc, "messages"):
-                    for err in exc.messages:
-                        messages.error(request, err)
-                else:
-                    messages.error(request, str(exc))
+            dup = UserGameModel.objects.filter(
+                hf_model_repo_id=repo_id,
+            ).exclude(user=request.user)
+            if dup.exists():
+                messages.error(
+                    request,
+                    "This model repository is already registered by another user.",
+                )
             else:
-                # ── Verify the Space URL belongs to this HF account ──────
-                try:
-                    from huggingface_hub import HfApi as _HfApi
-                    _api = _HfApi()
-                    _whoami = _api.whoami(token=hf_token)
-                    hf_username = (_whoami.get("name") or _whoami.get("login") or "").strip()
-                    if hf_username:
-                        # HF slugifies usernames: lowercase, underscores/dots → hyphens
-                        import re as _re2
-                        _slug = _re2.sub(r'[_.]', '-', hf_username.lower())
-                        # Extract subdomain from https://subdomain.hf.space
-                        _subdomain = hf_space_url.split("//")[-1].split(".hf.space")[0].lower()
-                        if not (_subdomain == _slug or _subdomain.startswith(_slug + "-")):
-                            messages.error(
-                                request,
-                                f"HF Space is not verified — this HF token does not belong to the owner "
-                                f"of this Space. Token belongs to @{hf_username} but the Space subdomain "
-                                f"\u201c{_subdomain}\u201d does not match. "
-                                f"Please provide a Space that you own.",
-                            )
-                            return redirect("users:profile")
-                except Exception:
-                    log.exception("Could not verify Space URL ownership for user=%s", request.user.username)
-                    # Non-fatal — proceed and warn
-                    messages.warning(
-                        request,
-                        "HF Space is not verified — could not confirm Space ownership (HF API unavailable). "
-                        "Please ensure the Space belongs to your Hugging Face account.",
+                gm, created = UserGameModel.objects.get_or_create(
+                    user=request.user,
+                    game_type=game_type,
+                    defaults={"hf_model_repo_id": repo_id, "hf_data_repo_id": data_repo_id},
+                )
+                if not created and (gm.hf_model_repo_id != repo_id or gm.hf_data_repo_id != data_repo_id):
+                    gm.hf_model_repo_id = repo_id
+                    gm.hf_data_repo_id = data_repo_id
+                    gm.is_verified = False
+                    gm.verification_code = ""
+                    gm.save(update_fields=[
+                        "hf_model_repo_id", "hf_data_repo_id",
+                        "is_verified", "verification_code",
+                    ])
+
+                # ── HF Space URL: probe and persist ───────────
+                if hf_space_url:
+                    space_ok, space_msg = probe_space_url(hf_space_url)
+                    new_status = "ready" if space_ok else "failed"
+                    UserGameModel.objects.filter(pk=gm.pk).update(
+                        hf_inference_endpoint_url=hf_space_url,
+                        hf_inference_endpoint_status=new_status,
                     )
-                # ─────────────────────────────────────────────────────────
-
-                dup = UserGameModel.objects.filter(
-                    hf_model_repo_id=repo_id,
-                ).exclude(user=request.user)
-                if dup.exists():
-                    messages.error(
-                        request,
-                        "This model repository is already registered by another user.",
-                    )
-                else:
-                    gm, created = UserGameModel.objects.get_or_create(
-                        user=request.user,
-                        game_type=game_type,
-                        defaults={"hf_model_repo_id": repo_id, "hf_data_repo_id": data_repo_id},
-                    )
-                    if not created:
-                        gm.hf_model_repo_id = repo_id
-                        gm.hf_data_repo_id = data_repo_id
-                        gm.save(update_fields=["hf_model_repo_id", "hf_data_repo_id"])
-
-                    # ── HF Space URL: validate, probe, and persist ─────────
-                    if hf_space_url:
-                        space_ok, space_msg = probe_space_url(hf_space_url)
-                        new_status = "ready" if space_ok else "failed"
-                        UserGameModel.objects.filter(pk=gm.pk).update(
-                            hf_inference_endpoint_url=hf_space_url,
-                            hf_inference_endpoint_status=new_status,
-                        )
-                        gm.hf_inference_endpoint_url = hf_space_url
-                        gm.hf_inference_endpoint_status = new_status
-                        if space_ok:
-                            messages.success(request, f"HF Space verified and saved — Space is reachable.")
-                        else:
-                            messages.error(
-                                request,
-                                f"HF Space is not verified — Space is not reachable: {space_msg}. "
-                                "Check the URL and ensure your Space is running on Hugging Face.",
-                            )
-
-                    # Use the platform read-only token when updating server-side
-                    platform_token = settings.HF_PLATFORM_TOKEN or None
-
-                    record_original_sha(gm, platform_token)
-
-                    card_result = check_model_card(repo_id, platform_token)
-                    if not card_result["has_card"] or card_result["missing"]:
-                        messages.warning(request, card_result["message"])
-
-                    label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                    # For Breakthrough/Chess: determine file-status and show success or warning.
-                    if game_type == 'breakthrough':
-                        try:
-                            file_status = _build_breakthrough_file_status(request.user, gm)
-                        except Exception:
-                            file_status = None
-
-                        ok = False
-                        if file_status:
-                            model_files = file_status.get('model_files') or []
-                            data_files = file_status.get('data_files') or []
-                            model_error = file_status.get('model_error')
-                            data_error = file_status.get('data_error')
-                            model_present = any(f.get('present') for f in model_files)
-                            data_present = any(f.get('present') for f in data_files)
-                            ok = bool(model_present and data_present and not model_error and not data_error)
-
-                        if ok:
-                            messages.success(
-                                request,
-                                "Breakthrough is operating correctly—all required files are present",
-                            )
-                        else:
-                            messages.warning(
-                                request,
-                                "Breakthrough won't function properly—one or more files are missing. Check the repository's file status for details",
-                            )
-                    elif game_type == 'chess':
-                        try:
-                            file_status = _build_breakthrough_file_status(request.user, gm)
-                        except Exception:
-                            file_status = None
-
-                        ok = False
-                        if file_status:
-                            model_files = file_status.get('model_files') or []
-                            data_files = file_status.get('data_files') or []
-                            model_error = file_status.get('model_error')
-                            data_error = file_status.get('data_error')
-                            model_present = any(f.get('present') for f in model_files)
-                            data_present = any(f.get('present') for f in data_files)
-                            ok = bool(model_present and data_present and not model_error and not data_error)
-
-                        if ok:
-                            messages.success(
-                                request,
-                                "Chess is operating correctly—all required files are present",
-                            )
-                        else:
-                            messages.warning(
-                                request,
-                                "Chess won't function properly—one or more files are missing. Check the repository's file status for details",
-                            )
+                    gm.hf_inference_endpoint_url = hf_space_url
+                    gm.hf_inference_endpoint_status = new_status
+                    if space_ok:
+                        messages.success(request, "HF Space verified and saved — Space is reachable.")
                     else:
-                        messages.success(
+                        messages.error(
                             request,
-                            f"{label} model connected and verified successfully.",
+                            f"HF Space is not reachable: {space_msg}. "
+                            "Check the URL and ensure your Space is running on Hugging Face.",
                         )
+
+                # Generate a fresh ownership challenge code
+                code = generate_verification_code(gm)
+                label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
+                messages.info(
+                    request,
+                    f"{label} repo saved. To prove ownership, create a file named "
+                    f"'{VERIFY_FILENAME}' at the root of your HF repo "
+                    f"({repo_id}) containing exactly this code: {code} — "
+                    "then click 'Verify Ownership'.",
+                )
 
         return redirect("users:profile")
 

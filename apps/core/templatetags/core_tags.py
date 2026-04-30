@@ -13,6 +13,15 @@ def dictget(d, key):
 
 
 @register.filter
+def subtract(value, arg):
+    """Subtract arg from value: {{ 30|subtract:played }}"""
+    try:
+        return int(value) - int(arg)
+    except (TypeError, ValueError):
+        return 0
+
+
+@register.filter
 def country_flag(code):
     """Return an <img> tag for the country SVG flag.
 

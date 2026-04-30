@@ -23,7 +23,11 @@
     {% if user.is_authenticated %}
     <div class="flex items-center gap-3 text-sm bg-surfaceLight dark:bg-surfaceLight border border-borderDark rounded-lg px-4 py-2">
       <span class="text-gray-400">{{ user.country_flag|safe }} {% fide_badge user %} {{ user.username }}</span>
-      <span class="font-bold text-gold">{{ user.elo }} Elo</span>
+      {% if active_game_type == "breakthrough" %}
+      <span class="font-bold text-purple-400">{{ user.elo_breakthrough }} BT Elo</span>
+      {% else %}
+      <span class="font-bold text-gold">{{ user.elo_chess }} Chess Elo</span>
+      {% endif %}
       <span class="{{ user.get_category.css }}">{{ user.get_category.icon }} {{ user.get_category.tier }}</span>
     </div>
     {% endif %}
@@ -52,6 +56,22 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
+       Game-type Toggle (Chess / Breakthrough)
+       ═══════════════════════════════════════════ -->
+  <div class="flex gap-2 mb-4" id="gameTypeTabs">
+    <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
+                   {% if active_game_type == 'chess' %}bg-gold/20 text-gold border border-gold/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
+            data-game-type="chess" id="gtChess">
+      ♟ Chess
+    </button>
+    <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
+                   {% if active_game_type == 'breakthrough' %}bg-purple/20 text-purple border border-purple/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
+            data-game-type="breakthrough" id="gtBreakthrough">
+      🔴 Breakthrough
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
        Category Tabs
        ═══════════════════════════════════════════ -->
   <div class="lb-tabs mb-0" id="lbTabs" role="tablist">
@@ -77,7 +97,10 @@
           <th class="w-14 sortable" data-col="rank">#<span class="sort-arrow">▲</span></th>
           <th class="sortable" data-col="username">Gladiator<span class="sort-arrow">▲</span></th>
           <th>AI Bot</th>
-          <th class="text-right sortable sorted" data-col="elo" data-dir="desc">Elo<span class="sort-arrow">▼</span></th>
+          <th class="text-right sortable sorted" data-col="elo" data-dir="desc">
+            {% if active_game_type == "breakthrough" %}BT Elo{% else %}Chess Elo{% endif %}
+            <span class="sort-arrow">▼</span>
+          </th>
           <th class="text-center w-24">Title</th>
           <th class="text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
           <th class="text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
@@ -102,7 +125,9 @@
             </div>
           </td>
           <td class="text-gray-400 text-xs">{{ p.ai_name|default:"—" }}</td>
-          <td class="text-right font-bold text-gold">{{ p.elo }}</td>
+          <td class="text-right font-bold {% if active_game_type == 'breakthrough' %}text-purple-400{% else %}text-gold{% endif %}">
+            {% if active_game_type == "breakthrough" %}{{ p.elo_breakthrough }}{% else %}{{ p.elo_chess }}{% endif %}
+          </td>
           <td class="text-center">
             <span class="{{ p.get_category.css }}" title="{{ p.get_category.tier }}">
               {{ p.get_category.icon }}
@@ -158,9 +183,34 @@
   const wsDot   = document.getElementById('wsDot');
   const wsLabel = document.getElementById('wsLabel');
   const searchInput = document.getElementById('lbSearch');
+  const gameTypeBtns = document.querySelectorAll('#gameTypeTabs button');
 
-  let activeTab = '{{ active_tab }}';
-  let ws        = null;
+  let activeTab      = '{{ active_tab }}';
+  let activeGameType = '{{ active_game_type }}';
+  let ws = null;
+
+  /* ── Game-type toggle ──────────────────────── */
+  gameTypeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const gt = btn.dataset.gameType;
+      if (gt === activeGameType) return;
+      activeGameType = gt;
+      const url = new URL(window.location);
+      url.searchParams.set('game_type', gt);
+      history.pushState(null, '', url);
+      gameTypeBtns.forEach(b => {
+        const isChess = b.dataset.gameType === 'chess';
+        if (b.dataset.gameType === gt) {
+          b.className = b.className.replace('text-gray-400 hover:bg-surfaceLight',
+            isChess ? 'bg-gold/20 text-gold border border-gold/30' : 'bg-purple/20 text-purple border border-purple/30');
+        } else {
+          b.className = b.className.replace(isChess ? 'bg-gold/20 text-gold border border-gold/30' : 'bg-purple/20 text-purple border border-purple/30',
+            'text-gray-400 hover:bg-surfaceLight');
+        }
+      });
+      fetchTab(activeTab);
+    });
+  });
 
   /* ── Tab switching (AJAX) ──────────────────── */
   tabs.forEach(tab => {
@@ -179,7 +229,7 @@
   });
 
   function fetchTab(tab) {
-    fetch(`/api/leaderboard/?tab=${encodeURIComponent(tab)}`, {
+    fetch(`/api/leaderboard/?tab=${encodeURIComponent(tab)}&game_type=${encodeURIComponent(activeGameType)}`, {
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
     })
       .then(r => r.json())
@@ -204,11 +254,12 @@
       else if (p.streak < 0) streakHtml = `<span class="badge-streak negative">${p.streak}</span>`;
       else streakHtml = '<span class="text-gray-500">0</span>';
 
+      const eloColor = activeGameType === 'breakthrough' ? 'text-purple-400' : 'text-gold';
       return `<tr data-username="${esc(p.username)}">
         <td class="font-semibold ${rankCls}">${rankLabel}</td>
         <td class="font-medium"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-purple/30 flex items-center justify-center text-xs font-bold text-purple">${initial}</div><span class="mr-1">${p.flag}</span><a href="#" class="hover:text-gold transition">${esc(p.username)}</a></div></td>
         <td class="text-gray-400 text-xs">${esc(p.ai_name)}</td>
-        <td class="text-right font-bold text-gold">${p.elo}</td>
+        <td class="text-right font-bold ${eloColor}">${p.elo}</td>
         <td class="text-center"><span class="${p.tier_css}" title="${esc(p.tier_label)}">${p.tier_icon} <span class="text-xs ml-0.5 hidden sm:inline">${esc(p.tier_label)}</span></span></td>
         <td class="text-right text-green-400">${p.wins}</td>
         <td class="text-right text-red-400">${p.losses}</td>
@@ -313,11 +364,13 @@
   window.addEventListener('popstate', () => {
     const url = new URL(window.location);
     const t = url.searchParams.get('tab') || 'global';
+    const gt = url.searchParams.get('game_type') || 'chess';
+    activeGameType = gt;
     if (t !== activeTab) {
       activeTab = t;
       tabs.forEach(b => { b.classList.toggle('active', b.dataset.tab === t); });
-      fetchTab(t);
     }
+    fetchTab(t);
   });
 })();
 </script>

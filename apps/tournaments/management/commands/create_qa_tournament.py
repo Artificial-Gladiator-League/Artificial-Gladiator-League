@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -29,7 +28,6 @@ class Command(BaseCommand):
             name=name,
             type=Tournament.Type.QA,
             category=Tournament.Category.BEGINNER,
-            prize_pool=Decimal("0.00"),
             start_time=now + timedelta(minutes=5),
             status=Tournament.Status.OPEN,
         )

@@ -54,6 +54,18 @@ class CustomUser(AbstractUser):
 
     # ── Rating & Stats (aggregated) ─────────────
     elo = models.IntegerField(default=1200)
+    # Per-game ELO ratings — tracked independently so Chess and Breakthrough
+    # ratings do not interfere with each other.
+    elo_chess = models.IntegerField(
+        default=1200,
+        db_default=1200,
+        help_text="ELO rating for Chess games only.",
+    )
+    elo_breakthrough = models.IntegerField(
+        default=1200,
+        db_default=1200,
+        help_text="ELO rating for Breakthrough games only.",
+    )
     wins = models.IntegerField(default=0)
     losses = models.IntegerField(default=0)
     draws = models.IntegerField(default=0)
@@ -179,6 +191,22 @@ class CustomUser(AbstractUser):
         if game_type == "chess" and self.hf_model_repo_id:
             return self.hf_model_repo_id
         return ""
+
+    def get_elo_for_game(self, game_type: str) -> int:
+        """Return the per-game ELO for the given game type."""
+        if game_type == "breakthrough":
+            return self.elo_breakthrough
+        return self.elo_chess  # chess and any unknown type
+
+    def set_elo_for_game(self, game_type: str, value: int) -> None:
+        """Set the per-game ELO field for the given game type (does NOT save)."""
+        if game_type == "breakthrough":
+            self.elo_breakthrough = value
+        else:
+            self.elo_chess = value
+        # Keep the legacy elo field as the best-of-both so category/title
+        # calculations and any code still using user.elo stay meaningful.
+        self.elo = max(self.elo_chess, self.elo_breakthrough)
 
     @property
     def country_flag(self) -> str:
@@ -436,6 +464,32 @@ class UserGameModel(models.Model):
         help_text="Exact immutable commit SHA approved at submission.",
     )
     pinned_at = models.DateTimeField(null=True, blank=True)
+
+    # ── Proof-of-Ownership verification ─────────
+    is_verified = models.BooleanField(
+        default=False,
+        help_text="True once the user has proven repo ownership via AGL_VERIFY.txt challenge.",
+    )
+    verification_code = models.CharField(
+        max_length=64,
+        blank=True,
+        help_text="Challenge code the user must place in AGL_VERIFY.txt to prove ownership.",
+    )
+    verification_code_issued_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the verification challenge code was last generated.",
+    )
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the most recent successful ownership verification.",
+    )
+    repo_last_modified_at_registration = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Latest commit timestamp of the repo at tournament registration. Used to detect post-registration changes.",
+    )
 
     class Meta:
         unique_together = ("user", "game_type")

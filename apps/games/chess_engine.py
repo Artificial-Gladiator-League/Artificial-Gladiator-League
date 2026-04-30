@@ -233,8 +233,14 @@ def compute_elo_deltas(
     white: CustomUser,
     black: CustomUser,
     result: str,
+    white_elo: int | None = None,
+    black_elo: int | None = None,
 ) -> tuple[int, int]:
     """Compute ELO deltas for both players.
+
+    *white_elo* and *black_elo* can be passed explicitly to use a
+    per-game ELO (e.g. elo_chess / elo_breakthrough) instead of the
+    combined legacy ``user.elo`` field.
 
     Returns (delta_white, delta_black).
     """
@@ -247,8 +253,11 @@ def compute_elo_deltas(
     else:
         return 0, 0
 
-    e_w = _expected_score(white.elo, black.elo)
-    e_b = _expected_score(black.elo, white.elo)
+    elo_w = white_elo if white_elo is not None else white.elo
+    elo_b = black_elo if black_elo is not None else black.elo
+
+    e_w = _expected_score(elo_w, elo_b)
+    e_b = _expected_score(elo_b, elo_w)
 
     k_w = _k_factor(white)
     k_b = _k_factor(black)

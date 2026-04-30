@@ -4,7 +4,13 @@
 {% block content %}
 <div class="animate-fade-in">
 
-  <h1 class="text-2xl sm:text-3xl font-bold mb-6">Tournaments</h1>
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold">Tournaments</h1>
+    <a href="{% url 'tournaments:how_it_works' %}"
+       class="text-xs font-semibold text-gray-400 hover:text-gold transition flex items-center gap-1">
+      ❓ How it works
+    </a>
+  </div>
 
   {% if tournaments %}
   <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -36,7 +42,6 @@
         {% endif %}
 
         <div class="flex items-center gap-4 text-sm text-gray-400">
-          <span class="text-brand font-semibold">${{ tournament.prize_pool }}</span>
           <span>{{ tournament.time_control_display }}</span>
           <span>{{ tournament.participant_count }} / {{ tournament.capacity }}</span>
           <span class="text-green-500 text-xs font-semibold">Free</span>
@@ -76,20 +81,31 @@
         {% elif tournament.status == 'open' %}
           {% if tournament.join_blocked %}
             <div class="px-5 pb-4">
-              <span class="flex items-center gap-1.5 text-xs py-1.5 w-full rounded-lg bg-yellow-900/40 text-yellow-300 border border-yellow-700/50 px-3 cursor-not-allowed"
-                    title="{{ tournament.join_blocked_reason }}">
-                ⚠️ {{ tournament.join_blocked_reason }}
-              </span>
               {% if tournament.games_remaining > 0 %}
-              <div class="text-xs text-center mt-1.5 text-yellow-400 font-semibold">
-                🎮 {{ tournament.games_remaining }} game{{ tournament.games_remaining|pluralize }} remaining to unlock tournaments
-              </div>
+                {# New/cooldown users: hide the button, show only the progress hint #}
+                <div class="text-xs text-center py-1.5 text-yellow-400 font-semibold">
+                  🎮 {{ tournament.games_remaining }} rated game{{ tournament.games_remaining|pluralize }} remaining to unlock
+                </div>
+              {% else %}
+                {# Other blocks (e.g. unverified ownership): show disabled button + reason #}
+                <button type="button" disabled
+                        class="btn-brand text-xs py-1.5 w-full text-center opacity-40 cursor-not-allowed"
+                        title="{{ tournament.join_blocked_reason }}">
+                  Join — Free
+                </button>
+                {% if tournament.join_blocked_reason %}
+                <div class="text-xs text-center mt-1.5 text-yellow-400">
+                  ⚠️ {{ tournament.join_blocked_reason }}
+                </div>
+                {% endif %}
               {% endif %}
             </div>
           {% else %}
             <div class="px-5 pb-4">
-              <a href="{% url 'tournaments:join' tournament.pk %}"
-                 class="btn-brand text-xs py-1.5 w-full text-center block">Join — Free</a>
+              <form method="post" action="{% url 'tournaments:join' tournament.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="btn-brand text-xs py-1.5 w-full text-center block">Join — Free</button>
+              </form>
             </div>
           {% endif %}
         {% endif %}

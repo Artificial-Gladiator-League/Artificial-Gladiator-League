@@ -61,6 +61,7 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             "actor": event.get("actor"),
             "message": event.get("message"),
             "url": event.get("url"),
+            "redirect_url": event.get("redirect_url"),
             "unread_count": event.get("unread_count", 0),
         }
         await self.send(text_data=json.dumps(payload))

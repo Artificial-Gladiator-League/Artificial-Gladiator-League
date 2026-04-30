@@ -61,6 +61,12 @@ class TournamentConsumer(AsyncWebsocketConsumer):
     async def round_started(self, event):
         await self.send(text_data=json.dumps(event["data"]))
 
+    async def sha_check_alert(self, event):
+        # Strip the channels routing key before forwarding to the client.
+        payload = {k: v for k, v in event.items() if k != "type"}
+        payload["type"] = "sha_check_alert"
+        await self.send(text_data=json.dumps(payload))
+
     # ── DB helpers ─────────────────────────────
     @database_sync_to_async
     def _get_info(self):

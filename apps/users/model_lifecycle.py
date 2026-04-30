@@ -106,8 +106,7 @@ def verify_local_model_files(game_model) -> tuple[bool, str]:
         ok, msg = verify_local_files(game_model)
         if ok:
             gt_dir = _game_type_dir(game_model.user_id, game_model.game_type)
-            update_fields: list[str] = ["model_integrity_ok"]
-            game_model.model_integrity_ok = True
+            update_fields: list[str] = []
 
             if hasattr(game_model, "local_path") and game_model.local_path != str(gt_dir):
                 game_model.local_path = str(gt_dir)
@@ -117,19 +116,14 @@ def verify_local_model_files(game_model) -> tuple[bool, str]:
                 game_model.cached_path = str(gt_dir)
                 update_fields.append("cached_path")
 
-            try:
-                game_model.save(update_fields=update_fields)
-            except Exception:
-                log.exception(
-                    "verify_local_model_files: could not save game_model for user=%s game=%s",
-                    game_model.user_id, game_model.game_type,
-                )
-        else:
-            try:
-                game_model.model_integrity_ok = False
-                game_model.save(update_fields=["model_integrity_ok"])
-            except Exception:
-                pass
+            if update_fields:
+                try:
+                    game_model.save(update_fields=update_fields)
+                except Exception:
+                    log.exception(
+                        "verify_local_model_files: could not save game_model for user=%s game=%s",
+                        game_model.user_id, game_model.game_type,
+                    )
 
         return ok, msg
     except Exception as exc:
@@ -354,8 +348,7 @@ def download_and_scan_for_user(user_id: int) -> None:
             if snap and (any(snap.rglob("*.safetensors")) or any(snap.rglob("*.py"))):
                 if gm.cached_path != str(snap):
                     gm.cached_path = str(snap)
-                    gm.model_integrity_ok = True
-                    gm.save(update_fields=["cached_path", "model_integrity_ok"])
+                    gm.save(update_fields=["cached_path"])
                     log.info(
                         "Pointed cached_path at HF cache for user=%s game=%s: %s",
                         user_id, gm.game_type, snap,
@@ -405,51 +398,7 @@ def cleanup_on_logout(self, user_id: int):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Task 3 — Daily integrity check (all models)
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-@shared_task(bind=True, max_retries=0)
-def daily_integrity_check(self):
-    """Check every UserGameModel for commit SHA changes."""
-    from apps.users.models import UserGameModel
-    from apps.games.local_sandbox_inference import _get_current_commit_sha
-
-    all_models = UserGameModel.objects.select_related("user").all()
-    checked = 0
-    flagged = 0
-
-    for gm in all_models:
-        repo_id = gm.hf_model_repo_id
-        if not repo_id:
-            continue
-
-        token = _resolve_token(gm.user)
-        current_sha = _get_current_commit_sha(repo_id, token)
-        if not current_sha:
-            log.warning("Could not fetch SHA for repo=%s (user=%s)", repo_id, gm.user_id)
-            continue
-
-        if current_sha == gm.last_verified_commit:
-            log.info("No changes for user=%s game=%s repo=%s", gm.user_id, gm.game_type, repo_id)
-            checked += 1
-            continue
-
-        # Commit changed — flag for re-verification
-        log.warning(
-            "Daily check: SHA changed for user=%s game=%s (old=%s new=%s)",
-            gm.user_id, gm.game_type,
-            (gm.last_verified_commit or "none")[:8], current_sha[:8],
-        )
-        gm.verification_status = "suspicious"
-        gm.model_integrity_ok = False
-        gm.save(update_fields=["verification_status", "model_integrity_ok"])
-        flagged += 1
-        checked += 1
-
-    log.info("Daily integrity check complete: %d checked, %d flagged.", checked, flagged)
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Task 4 — Periodic cleanup of orphaned dirs
+#  Task 3 — Periodic cleanup of orphaned dirs
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @shared_task(bind=True, max_retries=0)
 def cleanup_orphaned_dirs(self):

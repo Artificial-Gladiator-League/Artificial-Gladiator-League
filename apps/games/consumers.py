@@ -238,6 +238,7 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             black_time=float(base_sec),
             increment=inc,
             status=Game.Status.WAITING,
+            ai_thinking_seconds=1.0,
         )
         return {
             "id": game.pk,
@@ -588,6 +589,36 @@ class GameConsumer(AsyncWebsocketConsumer):
             opp_time = game.white_time
             forfeit_color = "black"
 
+        # ── Mid-game HF SHA check (deterministic, once per player per game) ──
+        # For tournament games we run exactly ONE anti-cheat SHA check per
+        # participant per game, before that participant's first move. The
+        # check is delegated to the unified pipeline
+        # (apps.tournaments.sha_audit.perform_sha_check) which compares
+        # against the immutable round-pinned baseline, prints the loud
+        # terminal banner, flips disqualified_for_sha_mismatch, calls the
+        # disqualification service (admin email + WS broadcast +
+        # disqualified.html redirect), and returns FAIL on a mismatch.
+        moving_user = game.white if moving_color == chess.WHITE else game.black
+        if moving_user is not None and game.is_tournament_game:
+            sha_failed = self._tournament_sha_check_for_move(
+                user=moving_user, game=game,
+            )
+            if sha_failed:
+                log.warning(
+                    "Mid-game repo change detected for user %s (username=%s) "
+                    "in tournament game %s — forfeiting %s",
+                    moving_user.pk, moving_user.username,
+                    self.game_id, forfeit_color,
+                )
+                return {
+                    "error": (
+                        f"Bot ({forfeit_color}) repo changed mid-game — "
+                        "forfeiting per Fair Play Policy."
+                    ),
+                    "forfeit_color": forfeit_color,
+                    "reason": "mid_game_repo_change",
+                }
+
         # Apply elapsed time since last move
         now = timezone.now()
         if game.last_move_at:
@@ -670,6 +701,83 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         return {"game_over": self._build_game_over(game)}
 
+    # ── Mid-game SHA verification helpers ──────
+    def _tournament_sha_check_for_move(self, *, user, game) -> bool:
+        """Run an anti-cheat SHA check for *user* before they move.
+
+        Runs exactly ONCE per (game, user) per consumer lifetime — the
+        result is cached on ``self._sha_checked_user_ids`` so we do not
+        hit the HF API on every move. Delegates to the unified
+        ``perform_sha_check`` pipeline, which:
+
+            * compares against ``participant.round_pinned_sha`` (the
+              immutable round baseline — NOT the mutable
+              ``last_known_commit_id`` that ``live_sha_check`` keeps
+              re-syncing);
+            * on FAIL: prints the "🚨 TERMINAL: REPO CHANGED" banner,
+              calls ``disqualify_for_repo_change`` (which sets
+              ``disqualified_for_sha_mismatch=True`` so the
+              ``DisqualificationInterceptMiddleware`` redirects the
+              cheater to ``/tournaments/disqualified/``), emails admins,
+              and broadcasts a WebSocket alert.
+
+        Returns True iff the participant was disqualified by this
+        check (i.e. the caller should forfeit the current move).
+        Network errors / missing baseline / no participant → False
+        (fail-open: do not penalise honest users for a glitch).
+        """
+        # Per-consumer dedupe — first move triggers the check, the rest
+        # of the game just trusts the verdict.
+        cached = getattr(self, "_sha_checked_user_ids", None)
+        if cached is None:
+            cached = set()
+            self._sha_checked_user_ids = cached
+        if user.pk in cached:
+            return False
+        cached.add(user.pk)
+
+        try:
+            from apps.tournaments.models import (
+                Tournament, TournamentParticipant, TournamentShaCheck,
+            )
+            from apps.tournaments.sha_audit import perform_sha_check
+        except Exception:
+            log.exception("mid-game sha check: import failed")
+            return False
+
+        try:
+            tm = game.tournament_match
+            if not tm or not tm.tournament_id:
+                return False
+            try:
+                participant = TournamentParticipant.objects.select_related(
+                    "tournament", "user",
+                ).get(
+                    tournament_id=tm.tournament_id, user=user,
+                )
+            except TournamentParticipant.DoesNotExist:
+                return False
+            if participant.disqualified_for_sha_mismatch or participant.eliminated:
+                # Already disqualified — forfeit the move.
+                return True
+            if participant.tournament.status != Tournament.Status.ONGOING:
+                return False
+
+            row = perform_sha_check(
+                participant,
+                context="mid-game",
+                round_num=getattr(participant.tournament, "current_round", None),
+            )
+            if row is None:
+                return False
+            return row.result == TournamentShaCheck.Result.FAIL
+        except Exception:
+            log.exception(
+                "mid-game sha check failed for user=%s game=%s",
+                getattr(user, "username", "?"), self.game_id,
+            )
+            return False
+
     # ── Breakthrough helpers ───────────────────
 
     @database_sync_to_async
@@ -741,6 +849,34 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Get the bot's move via Docker sandbox
         current_user = game.white if turn == bt.WHITE else game.black
+
+        # ── Mid-game HF SHA check (deterministic, once per player per game) ──
+        # Same anti-cheat path as the chess loop in `_bot_make_move`. For
+        # tournament Breakthrough games we run exactly ONE SHA check per
+        # participant per game, before that participant's first move,
+        # delegating to ``apps.tournaments.sha_audit.perform_sha_check``
+        # so the loud terminal banner + ``disqualified.html`` redirect
+        # fire the same way they do for chess.
+        if current_user is not None and game.is_tournament_game:
+            sha_failed = self._tournament_sha_check_for_move(
+                user=current_user, game=game,
+            )
+            if sha_failed:
+                log.warning(
+                    "Mid-game repo change detected for user %s (username=%s) "
+                    "in tournament Breakthrough game %s — forfeiting %s",
+                    current_user.pk, current_user.username,
+                    self.game_id, forfeit_color,
+                )
+                return {
+                    "error": (
+                        f"Bot ({forfeit_color}) repo changed mid-game — "
+                        "forfeiting per Fair Play Policy."
+                    ),
+                    "forfeit_color": forfeit_color,
+                    "reason": "mid_game_repo_change",
+                }
+
         repo = _get_repo_for_user(current_user, "breakthrough") or ""
         uci = _get_bot_move("breakthrough", game.current_fen, turn, repo)
 

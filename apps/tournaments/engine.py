@@ -10,11 +10,10 @@ from __future__ import annotations
 import logging
 import random
 import threading
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import chess
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.games.breakthrough_engine import STARTING_FEN as BT_STARTING_FEN
@@ -26,14 +25,6 @@ from apps.games.models import Game
 from .models import Match, Tournament, TournamentParticipant
 
 log = logging.getLogger(__name__)
-
-# ── Prize structure ──────────────────────────
-SMALL_PRIZE_1ST = Decimal("15.00")
-LARGE_PRIZES = {
-    1: Decimal("30.00"),
-    2: Decimal("20.00"),
-    3: Decimal("10.00"),
-}
 
 
 def _start_bot_game_thread(game_id: int) -> None:
@@ -59,6 +50,9 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
 
     For round 1, seeds are taken from TournamentParticipant.
     For later rounds, winners of the previous round are paired.
+    Players who were disqualified between rounds (eliminated=True) are
+    excluded from subsequent pairings; a bye is awarded to their would-be
+    opponent if needed.
     Colours are assigned randomly for each match.
 
     Returns the list of newly created Match instances.
@@ -72,7 +66,13 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
         )
         players = [p.user for p in participants]
     else:
-        # Get winners from the previous round
+        # Collect eliminated user ids so disqualified players are skipped.
+        eliminated_ids = set(
+            tournament.participants
+            .filter(eliminated=True)
+            .values_list("user_id", flat=True)
+        )
+        # Get winners from the previous round (skip disqualified ones)
         prev_matches = (
             tournament.matches
             .filter(round_num=round_num - 1, is_armageddon=False)
@@ -80,7 +80,11 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
             .order_by("bracket_position")
             .select_related("winner")
         )
-        players = [m.winner for m in prev_matches]
+        players = [
+            m.winner
+            for m in prev_matches
+            if m.winner and m.winner_id not in eliminated_ids
+        ]
 
     # Pad to even count with byes (should not happen with power-of-2 brackets)
     if len(players) % 2 != 0:
@@ -145,6 +149,7 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
             tournament_match=match,
             game_type=gt,
             current_fen=starting_fen,
+            ai_thinking_seconds=1.0,
         )
 
         # Launch the AI bot game in a background thread
@@ -154,6 +159,33 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
 
     tournament.current_round = round_num
     tournament.save(update_fields=["current_round"])
+
+    # ── Anti-cheat: pin baseline SHA for every active participant.
+    # Done after current_round is persisted so the audit log records
+    # the correct round_num. Failures here must never abort the round.
+    try:
+        from apps.tournaments.sha_audit import (
+            capture_round_baseline, schedule_round_integrity_check,
+        )
+        capture_round_baseline(tournament, round_num)
+    except Exception:
+        log.exception(
+            "capture_round_baseline failed for tournament=%s round=%d",
+            tournament.pk, round_num,
+        )
+    else:
+        # Guarantee at least one randomised integrity check per round,
+        # fired at a random offset inside the round window. Skipped for
+        # QA tournaments (which have no anti-cheat gate).
+        if tournament.type != Tournament.Type.QA:
+            try:
+                schedule_round_integrity_check(tournament, round_num)
+            except Exception:
+                log.exception(
+                    "schedule_round_integrity_check failed for "
+                    "tournament=%s round=%d",
+                    tournament.pk, round_num,
+                )
 
     return matches
 
@@ -220,7 +252,6 @@ def _disqualify_ineligible_participants(tournament: Tournament) -> list:
     if tournament.type == Tournament.Type.QA:
         return []
 
-    from apps.users.integrity import _get_stored_token, validate_model_integrity
     from apps.users.models import UserGameModel
     from django.core.mail import mail_admins
 
@@ -238,13 +269,7 @@ def _disqualify_ineligible_participants(tournament: Tournament) -> list:
         except UserGameModel.DoesNotExist:
             reason = "No model submitted for this game type."
         else:
-            # Live HF integrity check if we have a token
-            token = _get_stored_token(user)
-            if token:
-                ok, msg = validate_model_integrity(game_model, token)
-                if not ok:
-                    reason = msg
-            # Static checks (even if no token or live check passed)
+            # Static checks
             if reason is None and not game_model.model_integrity_ok:
                 reason = "Model integrity flag is False."
             if reason is None and game_model.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED:
@@ -302,6 +327,9 @@ def start_tournament(tournament: Tournament) -> list[Match]:
             tournament.name, len(disqualified),
             ", ".join(f"{u} ({r})" for u, r in disqualified),
         )
+
+    # ── Pre-round-1 SHA check (registered SHA vs current live SHA) ──
+    pre_round_sha_check(tournament)
 
     # Abort if fewer than 2 eligible players remain
     if tournament.participant_count < 2:
@@ -402,13 +430,25 @@ def handle_game_result(game: Game) -> None:
         if active_players <= 1:
             _complete_tournament(tournament)
         else:
-            # Generate next round
-            generate_pairings(tournament, round_num + 1)
+            # ── Pre-round SHA check before generating next round ──
+            pre_round_sha_check(tournament)
+            # Re-count after potential SHA disqualifications
+            active_players = tournament.participants.filter(eliminated=False).count()
+            if active_players <= 1:
+                _complete_tournament(tournament)
+            else:
+                # Generate next round
+                generate_pairings(tournament, round_num + 1)
 
 
 @transaction.atomic
 def _complete_tournament(tournament: Tournament) -> None:
-    """Mark the tournament as completed, set the champion, and distribute prizes."""
+    """Mark the tournament as completed, set the champion, and distribute prizes.
+
+    Also cleans up all integrity-related fields (tournament_hf_token and
+    registered_sha) on every TournamentParticipant so that sensitive data
+    is not retained after the tournament ends.
+    """
     champion_entry = (
         tournament.participants
         .filter(eliminated=False)
@@ -421,8 +461,21 @@ def _complete_tournament(tournament: Tournament) -> None:
     tournament.status = Tournament.Status.COMPLETED
     tournament.save(update_fields=["champion", "status"])
 
-    # Prize distribution
-    _distribute_prizes(tournament)
+    # ── Integrity field cleanup (tokens + SHA records deleted at end) ──
+    try:
+        tournament.participants.update(
+            tournament_hf_token="",
+            registered_sha="",
+        )
+        log.info(
+            "Cleared tournament_hf_token + registered_sha for all participants "
+            "of tournament %s (pk=%s)",
+            tournament.name, tournament.pk,
+        )
+    except Exception:
+        log.exception(
+            "Failed to clear integrity fields for tournament %s", tournament.pk
+        )
 
     log.info(
         "Tournament %s completed — Champion: %s",
@@ -431,66 +484,222 @@ def _complete_tournament(tournament: Tournament) -> None:
     )
 
 
-def _distribute_prizes(tournament: Tournament) -> None:
-    """Log prize awards. Small: $15 to 1st. Large: $30/$20/$10 to 1st/2nd/3rd.
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Pre-round and mid-round SHA integrity checks
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    In production this would trigger a payout via payment provider.
+def _notify_disqualification(user, reason: str) -> None:
+    """Push a WebSocket notification to *user* explaining the disqualification.
+
+    Best-effort — failures are logged but never raised.
     """
-    if tournament.type == Tournament.Type.SMALL:
-        if tournament.champion:
-            log.info(
-                "Prize: %s awarded $%s (1st) in %s",
-                tournament.champion.username,
-                SMALL_PRIZE_1ST,
-                tournament.name,
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        from apps.chat.consumers import notif_group_name
+
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        async_to_sync(channel_layer.group_send)(
+            notif_group_name(user.pk),
+            {
+                "type": "send_notification",
+                "verb": "tournament_disqualification",
+                "actor": "",
+                "message": (
+                    "⚠️ You have been disqualified from a tournament. "
+                    f"Reason: {reason} "
+                    "Your model repository must remain unchanged throughout the tournament. "
+                    "See the Fair Play Policy for details."
+                ),
+                "url": "",
+                # Force the user's browser back to the lobby on the next
+                # notification frame — see base.html new_notification handler.
+                "redirect_url": "/games/lobby/",
+                "unread_count": 0,
+            },
+        )
+    except Exception:
+        log.debug("Could not send disqualification notification to user %s", user.pk, exc_info=True)
+
+
+@transaction.atomic
+def pre_round_sha_check(tournament: Tournament) -> list[tuple]:
+    """Fire-and-forget SHA integrity check for every active participant.
+
+    Called from ``start_tournament`` (before round 1) and from
+    ``handle_game_result`` (between rounds). The check itself runs in
+    Celery workers via ``run_sha_check_for_participant.delay`` so this
+    function never blocks game generation.
+
+    Each worker calls ``apps.tournaments.sha_audit.perform_sha_check``
+    which:
+      * compares the participant's pinned baseline (or
+        ``gm.approved_full_sha``) against the live HF commit,
+      * writes a ``TournamentShaCheck`` audit row,
+      * on mismatch invokes ``_handle_mid_round_disqualification`` to
+        eliminate the participant + forfeit any live match, and resets
+        ``rated_games_since_revalidation = 0`` so the user must replay
+        ``REVALIDATION_GAMES_REQUIRED`` (30) rated games before they
+        can rejoin any tournament (enforced by
+        ``apps.users.integrity.can_join_tournament``).
+
+    Returns the list of ``(username, dispatch_outcome)`` tuples for
+    structured logging — the actual PASS/FAIL outcome lives in the
+    audit table once the worker completes.
+    """
+    if tournament.type == Tournament.Type.QA:
+        return []
+
+    dispatched: list[tuple] = []
+
+    candidates = list(
+        tournament.participants
+        .filter(eliminated=False, disqualified_for_sha_mismatch=False)
+        .select_related("user")
+    )
+    if not candidates:
+        return dispatched
+
+    # Resolve the Celery task lazily so the function still works in
+    # environments where Celery is not configured (it falls back to
+    # an inline call so SHA enforcement is never silently skipped).
+    delay_fn = None
+    try:
+        from apps.tournaments.tasks import run_sha_check_for_participant
+        delay_fn = getattr(run_sha_check_for_participant, "delay", None)
+    except Exception:
+        delay_fn = None
+
+    for p in candidates:
+        if delay_fn is not None:
+            try:
+                delay_fn(p.pk)
+                dispatched.append((p.user.username, "dispatched"))
+                continue
+            except Exception:
+                log.exception(
+                    "pre_round_sha_check: failed to enqueue async check "
+                    "for participant=%s — running inline",
+                    p.pk,
+                )
+        # Inline fallback: runs in-process. Synchronous, but only when
+        # Celery is unavailable. Eliminations still happen.
+        try:
+            from apps.tournaments.sha_audit import perform_sha_check
+            row = perform_sha_check(p, context="random_audit")
+            dispatched.append(
+                (p.user.username, row.result if row else "skipped"),
             )
-    elif tournament.type == Tournament.Type.LARGE:
-        # 1st = champion, 2nd = finalist, 3rd = both semi-final losers
-        final_round = tournament.rounds_total
-        final_match = (
-            tournament.matches
-            .filter(round_num=final_round, is_armageddon=False)
-            .select_related("player1", "player2", "winner")
+        except Exception:
+            log.exception(
+                "pre_round_sha_check: inline check failed for participant=%s",
+                p.pk,
+            )
+            dispatched.append((p.user.username, "error"))
+
+    log.info(
+        "pre_round_sha_check: tournament=%s round=%d dispatched=%d",
+        tournament.pk, tournament.current_round, len(dispatched),
+    )
+    return dispatched
+
+
+@transaction.atomic
+def _handle_mid_round_disqualification(
+    tournament: Tournament,
+    participant,
+    reason: str,
+) -> None:
+    """Disqualify a participant during an active round.
+
+    Steps (all in one transaction):
+      1. Find their current active game (if any) and forfeit it — opponent
+         receives a walkover.  The post-save signal handles ELO updates and
+         bracket advancement.
+      2. Mark the participant eliminated.
+      3. Notify the disqualified user via WebSocket.
+      4. Other active games and participants are completely unaffected.
+    """
+    user = participant.user
+    log.warning(
+        "Mid-round disqualification: user=%s tournament=%s reason=%s",
+        user.username, tournament.pk, reason,
+    )
+
+    # ── Step 1: forfeit their active game ─────────────────────
+    # Find the live Match for this player in the current round
+    current_round = tournament.current_round
+    live_match = (
+        tournament.matches
+        .filter(
+            round_num=current_round,
+            match_status=Match.MatchStatus.LIVE,
+            is_armageddon=False,
+        )
+        .filter(
+            models.Q(player1=user) | models.Q(player2=user),
+        )
+        .select_related("player1", "player2")
+        .first()
+    )
+
+    if live_match:
+        # Determine the opponent
+        opponent = live_match.player2 if live_match.player1 == user else live_match.player1
+
+        # Find the active Game linked to this match
+        from apps.games.models import Game
+
+        active_game = (
+            live_match.games
+            .exclude(status__in=Game.TERMINAL_STATUSES)
+            .select_related("white", "black")
             .first()
         )
-        if final_match and final_match.winner:
-            runner_up = (
-                final_match.player2
-                if final_match.winner == final_match.player1
-                else final_match.player1
-            )
-            log.info(
-                "Prize: %s awarded $%s (1st) in %s",
-                final_match.winner.username,
-                LARGE_PRIZES[1],
-                tournament.name,
-            )
-            log.info(
-                "Prize: %s awarded $%s (2nd) in %s",
-                runner_up.username,
-                LARGE_PRIZES[2],
-                tournament.name,
-            )
 
-        # Semi-final losers (3rd place)
-        semi_round = final_round - 1
-        semi_matches = (
-            tournament.matches
-            .filter(round_num=semi_round, is_armageddon=False)
-            .select_related("player1", "player2", "winner")
-        )
-        for sm in semi_matches:
-            if sm.winner:
-                loser = (
-                    sm.player2 if sm.winner == sm.player1 else sm.player1
-                )
-                if loser != sm.winner:
-                    log.info(
-                        "Prize: %s awarded $%s (3rd) in %s",
-                        loser.username,
-                        LARGE_PRIZES[3],
-                        tournament.name,
-                    )
+        if active_game:
+            # Award the game to the opponent
+            if active_game.white == user:
+                active_game.status = Game.Status.BLACK_WINS
+                active_game.result = Game.Result.BLACK_WIN
+                active_game.winner = active_game.black
+            else:
+                active_game.status = Game.Status.WHITE_WINS
+                active_game.result = Game.Result.WHITE_WIN
+                active_game.winner = active_game.white
+
+            active_game.result_reason = "disqualification"
+            # Save triggers post_save → update_stats_after_game → handle_game_result
+            active_game.save()
+
+            log.info(
+                "Forfeited game %s — walkover awarded to %s (disqualification of %s)",
+                active_game.pk, opponent.username, user.username,
+            )
+        else:
+            # No live game — close the match directly with the opponent as winner
+            live_match.winner = opponent
+            live_match.result = "walkover"
+            live_match.match_status = Match.MatchStatus.COMPLETED
+            live_match.save(update_fields=["winner", "result", "match_status"])
+    else:
+        # No live match — simply mark eliminated (between rounds or already done)
+        pass
+
+    # ── Step 2: mark participant eliminated ───────────────────
+    participant.eliminated = True
+    participant.eliminated_in_round = current_round
+    participant.save(update_fields=["eliminated", "eliminated_in_round"])
+
+    # ── Step 3: notify the user ───────────────────────────────
+    _notify_disqualification(user, reason)
+
+    log.info(
+        "Mid-round disqualification complete for user=%s tournament=%s",
+        user.username, tournament.pk,
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

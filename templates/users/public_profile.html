@@ -48,8 +48,12 @@
       </div>
       <div class="flex items-center gap-3">
         <div class="stat-pill">
-          <span class="stat-value text-brand">{{ profile_user.elo }}</span>
-          <span class="stat-label">ELO</span>
+          <span class="stat-value text-brand">{{ profile_user.elo_chess }}</span>
+          <span class="stat-label">Chess ELO</span>
+        </div>
+        <div class="stat-pill">
+          <span class="stat-value text-purple-400">{{ profile_user.elo_breakthrough }}</span>
+          <span class="stat-label">BT ELO</span>
         </div>
       </div>
     </div>

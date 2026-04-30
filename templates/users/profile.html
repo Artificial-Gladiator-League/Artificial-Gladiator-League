@@ -131,8 +131,12 @@
     </div>
     <div class="flex items-center gap-3">
       <div class="stat-pill">
-        <span class="stat-value text-brand">{{ user_profile.elo }}</span>
-        <span class="stat-label">ELO</span>
+        <span class="stat-value text-brand">{{ user_profile.elo_chess }}</span>
+        <span class="stat-label">Chess ELO</span>
+      </div>
+      <div class="stat-pill">
+        <span class="stat-value text-purple-400">{{ user_profile.elo_breakthrough }}</span>
+        <span class="stat-label">BT ELO</span>
       </div>
 
       <!-- Social buttons removed -->
@@ -201,6 +205,14 @@
               <td class="text-right font-medium">{{ user_profile.total_games }}</td>
             </tr>
             <tr>
+              <td class="text-gray-400">Chess ELO</td>
+              <td class="text-right font-medium text-brand">{{ user_profile.elo_chess }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-400">Breakthrough ELO</td>
+              <td class="text-right font-medium text-purple-400">{{ user_profile.elo_breakthrough }}</td>
+            </tr>
+            <tr>
               <td class="text-gray-400">Win Rate</td>
               <td class="text-right font-medium">
                 {% widthratio user_profile.win_rate 1 100 %}%
@@ -223,6 +235,54 @@
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Tournament Readiness card -->
+      <div class="card">
+        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Tournament Readiness</h2>
+        {% for tr in tournament_readiness %}
+        <div class="mb-4 last:mb-0">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-gray-300">{{ tr.label }}</span>
+            {% if tr.ready %}
+              <span class="text-xs font-bold text-green-400">✔ Eligible</span>
+            {% elif tr.repo_changed %}
+              <span class="text-xs font-bold text-yellow-400">⚠ Cooldown</span>
+            {% else %}
+              <span class="text-xs font-bold text-red-400">✖ Not ready</span>
+            {% endif %}
+          </div>
+
+          {% if tr.ready %}
+            {# Nothing extra needed — all good #}
+
+          {% elif tr.games_needed_overall > 0 %}
+            {# New user — hasn't reached 30 rated games yet #}
+            <div class="text-xs text-gray-400 mb-1">
+              Play <span class="font-semibold text-brand">{{ tr.games_needed_overall }}</span>
+              more rated game{{ tr.games_needed_overall|pluralize }} to unlock tournaments
+              <span class="text-gray-500">({{ tr.rated_count }} / {{ tr.TOURNAMENT_MIN_RATED_GAMES }})</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+              <div class="h-1.5 rounded-full bg-brand transition-all"
+                   style="width: {% widthratio tr.rated_count tr.TOURNAMENT_MIN_RATED_GAMES 100 %}%"></div>
+            </div>
+
+          {% elif tr.repo_changed %}
+            {# Experienced user who changed their repo — needs 30 post-change games #}
+            <div class="text-xs text-yellow-300 mb-1">
+              Repo changed — play <span class="font-semibold">{{ tr.games_needed_after_change }}</span>
+              more rated game{{ tr.games_needed_after_change|pluralize }} since the update to re-qualify
+              <span class="text-yellow-500">({{ tr.games_since_change }} / {{ tr.TOURNAMENT_MIN_RATED_GAMES }} since change)</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+              <div class="h-1.5 rounded-full bg-yellow-400 transition-all"
+                   style="width: {% widthratio tr.games_since_change tr.TOURNAMENT_MIN_RATED_GAMES 100 %}%"></div>
+            </div>
+
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
 
       <!-- Chessground board (also used for replay) -->
@@ -389,11 +449,54 @@
             {% if game.model.approved_full_sha %}
             <p><span class="text-gray-500">Pinned SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
             {% endif %}
-            <p><span class="text-gray-500">Rated games:</span> {{ game.model.rated_games_played }}</p>
             {% if game.model.last_model_validation_date %}
             <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
             {% endif %}
           </div>
+
+          <!-- Ownership verification status -->
+          {% if game.model.is_verified %}
+          <div class="rounded-lg border border-green-700 bg-green-900/20 px-4 py-2.5 mb-3 flex items-center gap-2 text-sm text-green-300">
+            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+            <span><strong>Repo ownership verified</strong>{% if game.model.verified_at %} &mdash; {{ game.model.verified_at }}{% endif %}</span>
+          </div>
+          {% else %}
+          <div class="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 mb-3 flex items-start gap-2 text-sm text-red-300">
+            <svg class="w-4 h-4 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-2a1 1 0 11-2 0v2zm1-8a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd"/></svg>
+            <span>
+              <strong>Repo ownership not verified.</strong>
+              {% if game.model.verification_code %}
+                Add <code class="text-red-200">AGL_VERIFY.txt</code> to your repo with the code below, then click Verify Ownership.
+              {% else %}
+                Connect your repo first to receive a verification code.
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
+
+          <!-- Rated games / tournament qualification progress -->
+          {% with played=game.model.rated_games_since_revalidation %}
+          {% if played < 30 %}
+          <div class="rounded-lg border border-yellow-700 bg-yellow-900/20 px-4 py-3 mb-3 text-sm text-yellow-200 space-y-2">
+            <p class="font-semibold">🎮 Tournament qualification progress</p>
+            <div>
+              <div class="flex justify-between text-xs text-yellow-300 mb-1">
+                <span>{{ played }} / 30 rated games played</span>
+                <span>{{ 30|subtract:played }} to go</span>
+              </div>
+              <div class="w-full bg-gray-700 rounded-full h-2">
+                <div class="bg-yellow-400 h-2 rounded-full" style="width: {% widthratio played 30 100 %}%"></div>
+              </div>
+            </div>
+            <p class="text-xs text-yellow-300">You need 30 rated games before you can register for tournaments.</p>
+          </div>
+          {% else %}
+          <div class="rounded-lg border border-green-700 bg-green-900/20 px-4 py-2.5 mb-3 flex items-center gap-2 text-sm text-green-300">
+            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+            <span><strong>Tournament eligible</strong> &mdash; {{ played }} rated games played</span>
+          </div>
+          {% endif %}
+          {% endwith %}
           {% endif %}
 
           <form method="post" class="space-y-4">
@@ -506,24 +609,46 @@
             </div>
             <!-- ─────────────────────────────────────────────────────────── -->
 
-            <div class="form-group">
-              <label for="id_token_{{ game.type }}">Hugging Face Read-Only Token (read permission only)</label>
-              <input type="password"
-                     id="id_token_{{ game.type }}"
-                     name="hf_token"
-                     placeholder="hf_abc123… (read-only)"
-                     class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
-              <span class="text-xs text-gray-500 mt-1 block">
-                Used once to verify &mdash; <strong>never stored</strong>. Please provide a token with <strong>READ</strong> permissions only (do not use tokens with write/admin scopes). Create one at
-                <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener"
-                   class="text-brand hover:underline">huggingface.co/settings/tokens</a> and select only the <em>read</em> scope.
-              </span>
+            {% if game.model and game.model.verification_code %}
+            <div class="rounded-lg border border-blue-700 bg-blue-900/30 p-4 text-sm text-blue-100 space-y-2">
+              <p class="font-semibold text-blue-200 flex items-center gap-2">
+                🔑 Proof of Ownership
+                {% if game.model.is_verified %}
+                  <span class="text-xs text-green-400">✅ Verified{% if game.model.verified_at %} — {{ game.model.verified_at }}{% endif %}</span>
+                {% else %}
+                  <span class="text-xs text-yellow-400">⚠️ Not verified</span>
+                {% endif %}
+              </p>
+              <p>
+                Add a file named <code class="text-blue-200">AGL_VERIFY.txt</code> to the
+                <strong>root</strong> of <code class="text-blue-200">{{ game.model.hf_model_repo_id }}</code>
+                containing exactly:
+              </p>
+              <pre class="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-green-300 overflow-x-auto select-all">{{ game.model.verification_code }}</pre>
+              <p class="text-xs text-blue-300">
+                File must be publicly readable. We download it anonymously — no HF token required.
+              </p>
             </div>
+            {% endif %}
 
+            <input type="hidden" name="action" value="connect">
             <button type="submit" class="btn-brand w-full py-2.5">
-              {% if game.model %}Re-verify &amp; Update{% else %}Connect Model{% endif %}
+              {% if game.model %}Update Repo &amp; Re-issue Code{% else %}Connect Repo{% endif %}
             </button>
           </form>
+
+          {% if game.model %}
+          <form method="post" class="mt-3">
+            {% csrf_token %}
+            <input type="hidden" name="ai_model_form" value="1">
+            <input type="hidden" name="action" value="verify">
+            <input type="hidden" name="game_type" value="{{ game.type }}">
+            <input type="hidden" name="hf_model_repo_id" value="{{ game.model.hf_model_repo_id }}">
+            <button type="submit" class="w-full py-2 px-4 text-sm rounded-lg border border-blue-600 text-blue-200 hover:bg-blue-900/40 transition">
+              {% if game.model.is_verified %}Re-check Ownership{% else %}Verify Ownership{% endif %}
+            </button>
+          </form>
+          {% endif %}
 
           {% if game.type == 'breakthrough' or game.type == 'chess' %}
           <div id="repo-file-status-{{ game.type }}" class="mt-4 rounded-lg border border-gray-700 bg-gray-800/50 p-4 space-y-4">

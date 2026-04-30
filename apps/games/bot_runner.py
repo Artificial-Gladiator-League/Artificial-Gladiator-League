@@ -246,10 +246,37 @@ def _run_chess_game(game) -> None:
             repo, bot_time, opp_time = white_repo, game.white_time, game.black_time
             forfeit_color = "white"
             player = "w"
+            current_user = game.white
         else:
             repo, bot_time, opp_time = black_repo, game.black_time, game.white_time
             forfeit_color = "black"
             player = "b"
+            current_user = game.black
+
+        # ── Anti-cheat SHA check (once per player per game) ──
+        # Verify the moving player's HF model SHA still matches the
+        # round-pinned baseline. On mismatch the helper prints the
+        # 🚨 TERMINAL banner, flips disqualified_for_sha_mismatch
+        # (so DisqualificationInterceptMiddleware traps the cheater
+        # on /tournaments/disqualified/), emails admins, and broadcasts
+        # the WS alert that redirects the cheater's browser. Returns
+        # True on FAIL (or already-DQ'd) — forfeit the current move.
+        if game.is_tournament_game and current_user is not None:
+            try:
+                from apps.tournaments.sha_audit import check_player_for_tournament_game
+                if check_player_for_tournament_game(game=game, user=current_user):
+                    log.warning(
+                        "❌ [game %s] Anti-cheat: %s (%s) repo changed mid-game — forfeiting.",
+                        game.pk, current_user.username, forfeit_color,
+                    )
+                    _forfeit_game(game, forfeit_color)
+                    _broadcast_game_over(group_name, game)
+                    break
+            except Exception:
+                log.exception(
+                    "[game %s] anti-cheat SHA check raised — continuing fail-open",
+                    game.pk,
+                )
 
         # Apply elapsed time
         now = timezone.now()
@@ -355,6 +382,27 @@ def _run_breakthrough_game(game) -> None:
         turn = parts[1] if len(parts) >= 2 else bt.WHITE
         forfeit_color = "white" if turn == bt.WHITE else "black"
         repo = white_repo if turn == bt.WHITE else black_repo
+        current_user = game.white if turn == bt.WHITE else game.black
+
+        # ── Anti-cheat SHA check (once per player per Breakthrough game) ──
+        # Identical pipeline to the chess loop above — see
+        # ``check_player_for_tournament_game`` for the full DQ flow.
+        if game.is_tournament_game and current_user is not None:
+            try:
+                from apps.tournaments.sha_audit import check_player_for_tournament_game
+                if check_player_for_tournament_game(game=game, user=current_user):
+                    log.warning(
+                        "❌ [game %s] Anti-cheat: %s (%s) repo changed mid-game — forfeiting Breakthrough.",
+                        game.pk, current_user.username, forfeit_color,
+                    )
+                    _forfeit_game(game, forfeit_color)
+                    _broadcast_game_over(group_name, game)
+                    break
+            except Exception:
+                log.exception(
+                    "[game %s] anti-cheat SHA check raised in Breakthrough — continuing fail-open",
+                    game.pk,
+                )
 
         # Apply elapsed time
         now = timezone.now()
@@ -471,16 +519,25 @@ def _broadcast_state(group_name: str, game) -> None:
         # watching via LiveMatchConsumer receive live updates.
         if game.is_tournament_game and game.tournament_match_id:
             match_group = f"match_{game.tournament_match_id}"
+            is_chess = game.game_type == "chess"
             if last_move and len(last_move) >= 4:
-                # Compute SAN and move metadata for the tournament view
-                board = chess.Board()
-                for uci in game.move_list[:-1]:
-                    board.push_uci(uci)
-                move_obj = chess.Move.from_uci(last_move)
-                san = board.san(move_obj)
-                color = "white" if board.turn == chess.WHITE else "black"
-                board.push(move_obj)
-                is_check = board.is_check()
+                if is_chess:
+                    # Compute SAN and move metadata for the tournament view (chess only)
+                    board = chess.Board()
+                    for uci in game.move_list[:-1]:
+                        board.push_uci(uci)
+                    move_obj = chess.Move.from_uci(last_move)
+                    san = board.san(move_obj)
+                    color = "white" if board.turn == chess.WHITE else "black"
+                    board.push(move_obj)
+                    is_check = board.is_check()
+                else:
+                    # Breakthrough: no SAN notation, derive color from FEN turn field
+                    parts = game.current_fen.strip().split()
+                    # turn field reflects the side that just moved (before the move was applied)
+                    color = "white" if (len(parts) < 2 or parts[1] == "b") else "black"
+                    san = last_move
+                    is_check = False
 
                 async_to_sync(channel_layer.group_send)(match_group, {
                     "type": "match_move",
@@ -503,7 +560,7 @@ def _broadcast_state(group_name: str, game) -> None:
                 },
             })
     except Exception:
-        log.debug("Could not broadcast state for game %s", game.pk)
+        log.debug("Could not broadcast state for game %s", game.pk, exc_info=True)
 
 
 def _broadcast_game_over(group_name: str, game) -> None:

@@ -340,13 +340,6 @@ def hf_oauth_complete(request):
                 game_type="chess",
                 defaults={"hf_model_repo_id": repo_id},
             )
-            try:
-                raw_token = decrypt_token(encrypted_token)
-                from .integrity import record_original_sha
-                record_original_sha(gm, raw_token)
-            except Exception:
-                log.exception("Could not pin model for OAuth user %s", username)
-
             # Verify committed/cached files exist — no download triggered
             try:
                 from apps.games.local_inference import verify_local_files
