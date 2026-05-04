@@ -24,37 +24,11 @@
 
       <hr>
 
-      <p class="mb-2">
-        You will be redirected to the lobby in
-        <span id="dq-countdown" class="fw-bold text-danger">10</span>
-        seconds.
-      </p>
-
-      <a href="{{ redirect_url }}"
-         class="btn btn-outline-secondary btn-sm mt-2">
-        Go to lobby now
+      <a href="/games/lobby/"
+         class="btn btn-danger btn-lg mt-2">
+        Return to Lobby
       </a>
     </div>
   </div>
 </div>
-
-<script>
-(function () {
-  // 10-second countdown then hard-redirect to the lobby.
-  // window.location.replace() is used instead of .href so the
-  // disqualified page is not pushed onto the browser back-stack.
-  var seconds = 10;
-  var el = document.getElementById("dq-countdown");
-  var target = "{{ redirect_url|escapejs }}";
-
-  var timer = setInterval(function () {
-    seconds -= 1;
-    if (el) { el.textContent = seconds; }
-    if (seconds <= 0) {
-      clearInterval(timer);
-      window.location.replace(target);
-    }
-  }, 1000);
-})();
-</script>
 {% endblock %}

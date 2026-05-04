@@ -25,4 +25,5 @@ urlpatterns = [
     path("gauntlet/", views.gauntlet_detail, name="gauntlet"),
     path("gauntlet/<int:pk>/", views.gauntlet_detail, name="gauntlet_by_pk"),
     path("gauntlet/<int:pk>/standings/", views.gauntlet_standings_partial, name="gauntlet_standings_partial"),
+    path("preview-disqualified/", views.preview_disqualified, name="preview_disqualified"),
 ]

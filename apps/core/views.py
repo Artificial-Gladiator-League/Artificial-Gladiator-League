@@ -180,6 +180,14 @@ def terms(request):
     return render(request, "core/terms.html")
 
 
+def accessibility(request):
+    return render(request, "core/accessibility.html")
+
+
+def cookies(request):
+    return render(request, "core/cookies.html")
+
+
 def leaderboard(request):
     tab = request.GET.get("tab", "global")
     if tab not in CATEGORY_FILTERS:

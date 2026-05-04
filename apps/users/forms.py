@@ -254,6 +254,11 @@ class RegistrationForm(UserCreationForm):
         widget=forms.TextInput(attrs=_dark_attrs(placeholder="e.g. DeepPawn‑v3")),
         help_text="Display name for your AI bot.",
     )
+    consent = forms.BooleanField(
+        required=True,
+        widget=forms.CheckboxInput(attrs={"class": "w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand focus:ring-brand focus:ring-2 shrink-0 mt-0.5"}),
+        error_messages={"required": "You must accept the Terms of Service and Privacy Policy to register."},
+    )
 
     class Meta:
         model = CustomUser

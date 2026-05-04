@@ -80,6 +80,24 @@
 
       <hr class="divider">
 
+      <!-- ── Legal consent ────────────────────── -->
+      <div class="form-group">
+        <label class="flex items-start gap-3 cursor-pointer select-none">
+          {{ form.consent }}
+          <span class="text-sm text-gray-300 leading-snug">
+            I have read and agree to the
+            <a href="{% url 'core:terms' %}" class="text-brand hover:underline" target="_blank" rel="noopener">Terms of Service</a>
+            and
+            <a href="{% url 'core:privacy' %}" class="text-brand hover:underline" target="_blank" rel="noopener">Privacy Policy</a>
+          </span>
+        </label>
+        {% if form.consent.errors %}
+          <ul class="errorlist mt-1">
+            {% for e in form.consent.errors %}<li>{{ e }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+
       <button type="submit" id="submitBtn" class="btn-brand w-full text-base py-3">
         Create Account
       </button>

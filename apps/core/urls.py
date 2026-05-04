@@ -8,6 +8,8 @@ urlpatterns = [
     path("privacy/", views.privacy, name="privacy"),
     path("about/", views.about, name="about"),
     path("terms/", views.terms, name="terms"),
+    path("accessibility/", views.accessibility, name="accessibility"),
+    path("cookies/", views.cookies, name="cookies"),
     path("leaderboard/", views.leaderboard, name="leaderboard"),
     path("api/leaderboard/", views.leaderboard_json, name="leaderboard_json"),
 ]

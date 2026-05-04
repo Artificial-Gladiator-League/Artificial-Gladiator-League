@@ -86,20 +86,23 @@
   {% block extra_head %}{% endblock %}
 </head>
 
-<body class="bg-gray-50 dark:bg-navy text-gray-900 dark:text-gray-100 font-sans min-h-screen flex flex-col transition-colors duration-200">
-
+<body class="bg-black text-gray-200 font-sans antialiased min-h-screen flex flex-col">
   <!-- ─── Sticky Top Navbar ────────────────────── -->
   <nav class="bg-white/95 dark:bg-navy/95 backdrop-blur-md border-b border-gray-200 dark:border-borderDark sticky top-0 z-50 transition-colors" role="navigation" aria-label="Main navigation">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
 
-        <!-- Logo: agladiator + gladiator helmet -->
-        <a href="{% url 'core:home' %}" class="flex items-center gap-2.5 group" aria-label="agladiator home">
-          <!-- Favicon -->
+        <!-- Logo -->
+        <a href="{% url 'core:home' %}" class="flex items-center gap-3 group" aria-label="Artificial Gladiator League home">
           <img src="{% static 'favicon.svg' %}" alt="agladiator" class="h-8 w-8 group-hover:scale-110 transition-transform rounded">
-          <span class="text-xl font-extrabold tracking-tight">
-            <span class="text-white">Artificial </span><span class="text-gray-800 dark:text-white">Gladiator <sup class="tm"></sup></span><span class="text-gray-800 dark:text-white">League <sup class="tm"></sup></span>
-          </span>
+
+          <div class="leading-tight flex items-center">
+            <div class="text-center">
+              <span class="text-brand glow-brand font-black">Artificial</span><br />
+              <span class="text-gold glow-gold font-black">Gladiator</span>
+              <span class="text-white font-black"> League</span>
+            </div>
+          </div>
         </a>
 
         <!-- Center Nav Links -->
@@ -269,6 +272,8 @@
         <div class="flex gap-4 text-xs">
           <a href="{% url 'core:privacy' %}" class="text-gray-500 hover:text-gold transition">Privacy</a>
           <a href="{% url 'core:terms' %}" class="text-gray-500 hover:text-gold transition">Terms</a>
+          <a href="{% url 'core:cookies' %}" class="text-gray-500 hover:text-gold transition">Cookies</a>
+          <a href="{% url 'core:accessibility' %}" class="text-gray-500 hover:text-gold transition">Accessibility</a>
         </div>
       </div>
     </div>

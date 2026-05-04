@@ -1,9 +1,10 @@
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -1081,6 +1082,17 @@ def disqualified(request):
         "tournament_name": tournament_name,
         "reason": reason,
         "redirect_url": "/games/lobby/",
+    })
+
+
+def preview_disqualified(request):
+    """DEV ONLY — preview disqualified.html with fake context. Returns 404 in production."""
+    if not settings.DEBUG:
+        raise Http404
+    return render(request, "tournaments/disqualified.html", {
+        "tournament_name": "Test Tournament",
+        "reason": "Your repository SHA changed during the tournament.",
+        "redirect_url": "/tournaments/",
     })
 
 
