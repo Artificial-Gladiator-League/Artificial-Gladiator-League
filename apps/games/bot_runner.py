@@ -586,6 +586,15 @@ def _broadcast_game_over(group_name: str, game) -> None:
         }
         async_to_sync(channel_layer.group_send)(group_name, payload)
 
+        # Notify the lobby that this live game is now finished.
+        async_to_sync(channel_layer.group_send)("lobby", {
+            "type": "lobby_update",
+            "data": {
+                "type": "ongoing_game_removed",
+                "game_pk": game.pk,
+            },
+        })
+
         # Also broadcast to the tournament match group
         if game.is_tournament_game and game.tournament_match_id:
             match_group = f"match_{game.tournament_match_id}"

@@ -238,69 +238,68 @@ class CustomUser(AbstractUser):
         return round(self.wins / self.total_games, 4)
 
     def get_category(self) -> dict:
-        """Return a dict with category label, tier name, and icon class.
+        """Return a dict with category label, tier name, icon and CSS class.
 
-        Ranges:
-            ≤ 1200  → Beginner  / Novice   / 🥉 Bronze
-            1201‑1600 → Intermediate / Club Player / 🥈 Silver
-            1601‑2000 → Advanced / Expert  / 🥇 Gold
-            2001+   → Expert  / Master  / 🏆 Platinum
+        Ranges (FIDE-aligned):
+            2700+      → Super Grandmaster (elite)
+            2500–2699  → Grandmaster (GM)
+            2400–2499  → International Master (IM)
+            2300–2399  → FIDE Master (FM)
+            2200–2299  → Candidate Master (CM)
+            2000–2199  → Expert
+            1800–1999  → Class A
+            1600–1799  → Class B
+            1400–1599  → Class C
+            1200–1399  → Class D
+            < 1200     → Beginner
         """
-        if self.elo <= 1200:
-            return {
-                "category": "Beginner",
-                "tier": "Novice",
-                "icon": "🥉",
-                "css": "text-amber-600",
-            }
-        elif self.elo <= 1600:
-            return {
-                "category": "Intermediate",
-                "tier": "Club Player",
-                "icon": "🥈",
-                "css": "text-gray-300",
-            }
-        elif self.elo <= 2000:
-            return {
-                "category": "Advanced",
-                "tier": "Expert",
-                "icon": "🥇",
-                "css": "text-yellow-400",
-            }
+        elo = self.elo
+        if elo >= 2700:
+            return {"category": "super_gm",    "tier": "Super Grandmaster", "icon": "👑", "css": "text-yellow-300"}
+        elif elo >= 2500:
+            return {"category": "gm",          "tier": "Grandmaster",       "icon": "🏆", "css": "text-purple-400"}
+        elif elo >= 2400:
+            return {"category": "im",          "tier": "International Master", "icon": "🥇", "css": "text-yellow-400"}
+        elif elo >= 2300:
+            return {"category": "fm",          "tier": "FIDE Master",       "icon": "🥈", "css": "text-blue-300"}
+        elif elo >= 2200:
+            return {"category": "cm",          "tier": "Candidate Master",  "icon": "🥈", "css": "text-gray-300"}
+        elif elo >= 2000:
+            return {"category": "expert",      "tier": "Expert",            "icon": "🥇", "css": "text-orange-400"}
+        elif elo >= 1800:
+            return {"category": "class_a",     "tier": "Class A",           "icon": "🔴", "css": "text-red-400"}
+        elif elo >= 1600:
+            return {"category": "class_b",     "tier": "Class B",           "icon": "🟠", "css": "text-orange-300"}
+        elif elo >= 1400:
+            return {"category": "class_c",     "tier": "Class C",           "icon": "🟡", "css": "text-yellow-500"}
+        elif elo >= 1200:
+            return {"category": "class_d",     "tier": "Class D",           "icon": "🟢", "css": "text-green-400"}
         else:
-            return {
-                "category": "Expert",
-                "tier": "Master",
-                "icon": "🏆",
-                "css": "text-purple-400",
-            }
+            return {"category": "beginner",    "tier": "Beginner",          "icon": "🥉", "css": "text-amber-600"}
 
     def get_fide_title(self) -> dict:
-        """Return FIDE-style title based on ELO rating.
+        """Return FIDE-style title abbreviation based on ELO rating.
 
-        Ranges mirror standard FIDE title thresholds (adapted):
-            < 1200  → (none)
-            1200–1399 → CM  (Candidate Master)
-            1400–1599 → FM  (FIDE Master)
-            1600–1799 → IM  (International Master)
-            1800–1999 → GM  (Grandmaster)
-            2000–2199 → SGM (Super Grandmaster)
-            ≥ 2200   → WC  (World Champion)
+        Ranges (standard FIDE thresholds):
+            2700+      → SGM (Super Grandmaster)
+            2500–2699  → GM  (Grandmaster)
+            2400–2499  → IM  (International Master)
+            2300–2399  → FM  (FIDE Master)
+            2200–2299  → CM  (Candidate Master)
+            < 2200     → (none)
         """
-        if self.elo < 1200:
-            return {"abbr": "", "title": "", "css": ""}
-        elif self.elo < 1400:
-            return {"abbr": "CM", "title": "Candidate Master", "css": "text-gray-400"}
-        elif self.elo < 1600:
-            return {"abbr": "FM", "title": "FIDE Master", "css": "text-blue-400"}
-        elif self.elo < 1800:
-            return {"abbr": "IM", "title": "International Master", "css": "text-yellow-400"}
-        elif self.elo < 2000:
-            return {"abbr": "GM", "title": "Grandmaster", "css": "text-orange-400"}
-        elif self.elo < 2200:
-            return {"abbr": "SGM", "title": "Super Grandmaster", "css": "text-red-400"}
+        if self.elo >= 2700:
+            return {"abbr": "SGM", "title": "Super Grandmaster", "css": "text-yellow-300"}
+        elif self.elo >= 2500:
+            return {"abbr": "GM",  "title": "Grandmaster",       "css": "text-purple-400"}
+        elif self.elo >= 2400:
+            return {"abbr": "IM",  "title": "International Master", "css": "text-yellow-400"}
+        elif self.elo >= 2300:
+            return {"abbr": "FM",  "title": "FIDE Master",       "css": "text-blue-300"}
+        elif self.elo >= 2200:
+            return {"abbr": "CM",  "title": "Candidate Master",  "css": "text-gray-300"}
         else:
-            return {"abbr": "WC", "title": "World Champion", "css": "text-purple-400"}
+            return {"abbr": "", "title": "", "css": ""}
 
 
 class UserGameModel(models.Model):
@@ -469,6 +468,19 @@ class UserGameModel(models.Model):
     is_verified = models.BooleanField(
         default=False,
         help_text="True once the user has proven repo ownership via AGL_VERIFY.txt challenge.",
+    )
+    # Per-step ownership verification flags (set individually by check_full_ownership)
+    model_repo_ownership_verified = models.BooleanField(
+        default=False,
+        help_text="True when AGL_VERIFY.txt in the model repo matches the verification code.",
+    )
+    space_ownership_verified = models.BooleanField(
+        default=False,
+        help_text="True when AGL_VERIFY.txt in the HF Space repo matches the verification code.",
+    )
+    data_repo_ownership_verified = models.BooleanField(
+        default=False,
+        help_text="True when AGL_VERIFY.txt in the data repo matches the verification code.",
     )
     verification_code = models.CharField(
         max_length=64,

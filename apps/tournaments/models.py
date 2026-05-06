@@ -6,8 +6,6 @@ class Tournament(models.Model):
     """A scheduled AI chess tournament with bracket and prize pool."""
 
     class Type(models.TextChoices):
-        SMALL = "small", "Small (128 players)"
-        LARGE = "large", "Large (1024 players)"
         QA = "qa", "QA (2 players)"
         GAUNTLET = "gauntlet", "Gladiator Gauntlet (Swiss)"
 
@@ -58,7 +56,7 @@ class Tournament(models.Model):
 
     description = models.TextField(blank=True)
     type = models.CharField(
-        max_length=10, choices=Type.choices, default=Type.SMALL
+        max_length=10, choices=Type.choices, default=Type.GAUNTLET
     )
     game_type = models.CharField(
         max_length=20,
@@ -77,15 +75,15 @@ class Tournament(models.Model):
         choices=Category.choices,
         null=True,
         blank=True,
-        help_text="Fixed for small tournaments; large tournaments rotate categories each round.",
+        help_text="Category for this tournament (mainly relevant for Gauntlet).",
     )
     capacity = models.PositiveIntegerField(
-        default=128,
-        help_text="128 for small, 1024 for large.",
+        default=16,
+        help_text="16 for Gladiator Gauntlet, 2 for QA.",
     )
     rounds_total = models.PositiveIntegerField(
-        default=7,
-        help_text="7 for small, 10 for large.",
+        default=5,
+        help_text="5 for Gladiator Gauntlet, 1 for QA.",
     )
     current_round = models.PositiveIntegerField(
         default=0,
@@ -137,10 +135,8 @@ class Tournament(models.Model):
         return self.name
 
     TYPE_DEFAULTS = {
-        Type.SMALL:    {"capacity": 128,  "rounds_total": 7},
-        Type.LARGE:    {"capacity": 1024, "rounds_total": 10},
-        Type.QA:       {"capacity": 2,    "rounds_total": 1},
-        Type.GAUNTLET: {"capacity": 16,   "rounds_total": 5},
+        Type.QA:       {"capacity": 2,  "rounds_total": 1},
+        Type.GAUNTLET: {"capacity": 16, "rounds_total": 5},
     }
 
     def save(self, *args, **kwargs):
@@ -155,13 +151,6 @@ class Tournament(models.Model):
                 defaults = self.TYPE_DEFAULTS[self.Type.GAUNTLET]
                 self.capacity = self.capacity or defaults["capacity"]
                 self.rounds_total = self.rounds_total or defaults["rounds_total"]
-        elif not self.pk:
-            # Apply sensible defaults on first save; admin can override afterward.
-            defaults = self.TYPE_DEFAULTS.get(self.type, {})
-            if self.capacity == 128 or self.capacity is None:
-                self.capacity = defaults.get("capacity", self.capacity)
-            if self.rounds_total == 7 or self.rounds_total is None:
-                self.rounds_total = defaults.get("rounds_total", self.rounds_total)
         super().save(*args, **kwargs)
 
     @property

@@ -15,14 +15,9 @@
       <p class="text-xs text-gray-500">{{ game.time_control }} · Casual rated game</p>
     </div>
     <div class="flex items-center gap-2">
-      {% if game.result == '*' %}
-        <span class="status-live">Live</span>
-      {% else %}
-        <span class="status-completed">{{ game.result }}</span>
-      {% endif %}
-      <span class="flex items-center gap-1 text-xs text-gray-500">
+      <span class="flex items-center gap-1.5 text-xs">
         <span id="wsDot" class="ws-dot connecting"></span>
-        <span id="wsLabel">Connecting…</span>
+        <span id="wsLabel" class="text-gray-400">Connecting…</span>
       </span>
     </div>
   </div>
@@ -35,6 +30,7 @@
       <!-- Top player (opponent's side) -->
       <div class="w-full max-w-[560px] flex items-center justify-between">
         <div class="flex items-center gap-2 text-sm">
+          <span id="topColorChip"></span>
           <span id="topFlag"></span>
           <span id="topFide"></span>
           <span class="font-semibold" id="topName">???</span>
@@ -47,7 +43,7 @@
 
       <!-- Board -->
       <div class="game-board-wrap relative" id="boardContainer">
-        <div id="board" style="width:100%;height:100%;"></div>
+        <div id="gameBoard" class="cg-wrap w-full h-full chessground-container"></div>
         <div id="gameOverOverlay" class="game-over-overlay hidden">
           <div class="text-center">
             <p class="result-text" id="resultText"></p>
@@ -59,6 +55,7 @@
       <!-- Bottom player (viewer's side) -->
       <div class="w-full max-w-[560px] flex items-center justify-between">
         <div class="flex items-center gap-2 text-sm">
+          <span id="bottomColorChip"></span>
           <span id="bottomFlag"></span>
           <span id="bottomFide"></span>
           <span class="font-semibold" id="bottomName">???</span>
@@ -167,11 +164,53 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<style>
+
+html, body, .animate-fade-in {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+.card, .chess-clock { background-color: #f9f9f9 !important; border-color: #e5e5e5 !important; }
+.text-gray-500 { color: #6b7280 !important; } /* Adjust grays for light */
+.bg-gray-800 { background-color: #f3f4f6 !important; }
+
+.live-dot,
+.finished-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px;
+  animation: pulse 1.5s infinite;
+}
+
+.live-dot {
+  background: #10b981;  /* Green */
+  box-shadow: 0 0 8px #10b98188;
+}
+
+.finished-dot {
+  background: #ef4444;  /* Red */
+  box-shadow: 0 0 12px #ef444488;  /* Stronger glow */
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.1); }
+}
+
+.ws-dot {  /* Fallback for other states */
+  width: 8px; height: 8px; border-radius: 50%; background: #6b7280;
+}
+
+.ws-dot.connecting { background: #3b82f6; }
+.ws-dot.disconnected { background: #eab308; }
+</style>
+{% endblock %}
+
 {% block extra_js %}
 <script>
 (function () {
   // ── DOM elements ───────────────────────────
-  var boardEl     = document.getElementById('board');
+  var boardEl     = document.getElementById('gameBoard');
   var topClockEl  = document.getElementById('topClockTime');
   var bottomClockEl = document.getElementById('bottomClockTime');
   var topClock    = document.getElementById('topClock');
@@ -184,6 +223,30 @@
   var resultDetail = document.getElementById('resultDetail');
   var wsDot       = document.getElementById('wsDot');
   var wsLabel     = document.getElementById('wsLabel');
+
+  function setWsStatus(state) {
+    if (state === 'live') {
+      wsDot.className = 'live-dot';
+      wsLabel.textContent = 'Live';
+      wsLabel.className = 'text-green-400 font-semibold text-xs';
+    } else if (state === 'finished') {
+      wsDot.className = 'finished-dot';
+      wsLabel.textContent = 'Completed';
+      wsLabel.className = 'text-red-400 font-semibold text-xs';
+    } else if (state === 'reconnecting') {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Reconnecting\u2026';
+      wsLabel.className = 'text-gray-400 text-xs';
+    } else if (state === 'error') {
+      wsDot.className = 'ws-dot disconnected';
+      wsLabel.textContent = 'Error';
+      wsLabel.className = 'text-gray-400 text-xs';
+    } else {
+      wsDot.className = 'ws-dot connecting';
+      wsLabel.textContent = 'Connecting\u2026';
+      wsLabel.className = 'text-gray-400 text-xs';
+    }
+  }
   var resignBtn   = document.getElementById('resignBtn');
   var resignWrap  = document.getElementById('resignWrap');
   var startBtn    = document.getElementById('startBtn');
@@ -224,23 +287,30 @@
   // Top = the side whose pieces are at the top; Bottom = the side at the bottom
   // orientation 'white' → white at bottom, black at top
   // orientation 'black' → black at bottom, white at top
+  var BLACK_CHIP = '<span style="display:inline-flex;align-items:center;justify-content:center;width:1.25rem;height:1.25rem;border-radius:0.25rem;background:#1a1a1a;border:1px solid #555;font-size:0.65rem;font-weight:700;color:#fff;">B</span>';
+  var WHITE_CHIP = '<span style="display:inline-flex;align-items:center;justify-content:center;width:1.25rem;height:1.25rem;border-radius:0.25rem;background:#fff;border:1px solid #ccc;font-size:0.65rem;font-weight:700;color:#111;">W</span>';
+
   if (orientation === 'black') {
+    document.getElementById('topColorChip').innerHTML = WHITE_CHIP;
     document.getElementById('topFlag').innerHTML = whiteFlag;
     document.getElementById('topFide').innerHTML = whiteFideBadge;
     document.getElementById('topName').textContent = whiteUser || '???';
     document.getElementById('topElo').textContent = '(' + whiteElo + ')';
     topClock.className = 'chess-clock white-clock';
+    document.getElementById('bottomColorChip').innerHTML = BLACK_CHIP;
     document.getElementById('bottomFlag').innerHTML = blackFlag;
     document.getElementById('bottomFide').innerHTML = blackFideBadge;
     document.getElementById('bottomName').textContent = blackUser || '???';
     document.getElementById('bottomElo').textContent = '(' + blackElo + ')';
     bottomClock.className = 'chess-clock black-clock';
   } else {
+    document.getElementById('topColorChip').innerHTML = BLACK_CHIP;
     document.getElementById('topFlag').innerHTML = blackFlag;
     document.getElementById('topFide').innerHTML = blackFideBadge;
     document.getElementById('topName').textContent = blackUser || '???';
     document.getElementById('topElo').textContent = '(' + blackElo + ')';
     topClock.className = 'chess-clock black-clock';
+    document.getElementById('bottomColorChip').innerHTML = WHITE_CHIP;
     document.getElementById('bottomFlag').innerHTML = whiteFlag;
     document.getElementById('bottomFide').innerHTML = whiteFideBadge;
     document.getElementById('bottomName').textContent = whiteUser || '???';
@@ -498,6 +568,7 @@
   function showGameOver(result, winner, reason) {
     isFinished = true;
     stopClock();
+    setWsStatus('finished');
     if (resignWrap) resignWrap.classList.add('hidden');
     if (startWrap) startWrap.classList.add('hidden');
     if (waitStartWrap) waitStartWrap.classList.add('hidden');
@@ -541,21 +612,14 @@
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host + '/ws/games/' + gameId + '/');
 
-    ws.onopen = function () {
-      wsDot.className = 'ws-dot connected';
-      wsLabel.textContent = 'Live';
-    };
+    ws.onopen = function () { setWsStatus('live'); };
 
     ws.onclose = function () {
-      wsDot.className = 'ws-dot disconnected';
-      wsLabel.textContent = 'Reconnecting…';
+      setWsStatus('reconnecting');
       if (!isFinished) setTimeout(connectWS, 3000);
     };
 
-    ws.onerror = function () {
-      wsDot.className = 'ws-dot disconnected';
-      wsLabel.textContent = 'Error';
-    };
+    ws.onerror = function () { setWsStatus('error'); };
 
     ws.onmessage = function (e) {
       var data = JSON.parse(e.data);
@@ -712,8 +776,7 @@
   if (!isFinished) {
     connectWS();
   } else {
-    wsDot.className = 'ws-dot disconnected';
-    wsLabel.textContent = 'Completed';
+    setWsStatus('finished');
   }
 
 })();

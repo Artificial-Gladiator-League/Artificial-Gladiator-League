@@ -454,6 +454,21 @@ class GameConsumer(AsyncWebsocketConsumer):
             "type": "broadcast_state",
             "data": result["state"],
         })
+        # Notify the lobby that a new live game has started.
+        try:
+            game_data = await self._get_lobby_game_data()
+            if game_data:
+                await self.channel_layer.group_send("lobby", {
+                    "type": "lobby_update",
+                    "data": {
+                        "type": "ongoing_game_added",
+                        "game": game_data,
+                    },
+                })
+            else:
+                log.warning("⚠️  [game %s] _get_lobby_game_data returned None — skipping lobby broadcast", self.game_id)
+        except Exception as exc:
+            log.exception("❌ [game %s] Failed to broadcast ongoing_game_added: %s", self.game_id, exc)
         # Start the AI bot game loop
         asyncio.ensure_future(self._run_bot_game_loop())
 
@@ -462,7 +477,30 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps(event["data"]))
 
     async def broadcast_game_over(self, event):
-        await self.send(text_data=json.dumps(event["data"]))
+        data = event["data"]
+        result  = data.get("result", "*")
+        winner  = data.get("winner") or "—"
+        reason  = data.get("reason") or "unknown"
+        print(
+            f"\n{'='*50}\n"
+            f"  GAME OVER  game_id={self.game_id}\n"
+            f"  Result : {result}\n"
+            f"  Winner : {winner}\n"
+            f"  Reason : {reason}\n"
+            f"{'='*50}\n"
+        )
+        await self.send(text_data=json.dumps(data))
+        # Notify the lobby that this live game is now finished.
+        try:
+            await self.channel_layer.group_send("lobby", {
+                "type": "lobby_update",
+                "data": {
+                    "type": "ongoing_game_removed",
+                    "game_pk": self.game_id,
+                },
+            })
+        except Exception:
+            pass
 
     async def broadcast_armageddon(self, event):
         await self.send(text_data=json.dumps(event["data"]))
@@ -787,6 +825,38 @@ class GameConsumer(AsyncWebsocketConsumer):
             return Game.objects.values_list('game_type', flat=True).get(pk=self.game_id)
         except Game.DoesNotExist:
             return 'chess'
+
+    @database_sync_to_async
+    def _get_lobby_game_data(self):
+        """Return a JSON-serialisable dict for the lobby ongoing_game_added event."""
+        import json
+        from django.urls import reverse
+        from .models import Game
+        from .views import _serialize_display_game
+
+        try:
+            game = Game.objects.select_related("white", "black").get(pk=self.game_id)
+        except Game.DoesNotExist:
+            log.warning("⚠️  [game %s] _get_lobby_game_data: game not found", self.game_id)
+            return None
+
+        try:
+            d = _serialize_display_game(game, is_live=True)
+        except Exception:
+            log.exception("❌ [game %s] _serialize_display_game failed", self.game_id)
+            return None
+
+        # Convert preview_moves_json string → Python list so it serialises cleanly
+        try:
+            d["preview_moves"] = json.loads(d.pop("preview_moves_json", "[]"))
+        except Exception:
+            d["preview_moves"] = []
+        # date_played is a datetime — convert to ISO string
+        if d.get("date_played"):
+            d["date_played"] = d["date_played"].strftime("%Y-%m-%d %H:%M:%S")
+        # move_count and variant are now included by _serialize_display_game
+        log.info("✅ [game %s] _get_lobby_game_data success: white=%s black=%s", self.game_id, d.get("white_name"), d.get("black_name"))
+        return d
 
     async def _run_bt_bot_loop(self):
         """Run the AI-vs-AI loop for Breakthrough using random legal moves."""

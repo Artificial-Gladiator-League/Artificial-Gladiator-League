@@ -204,6 +204,10 @@ def _serialize_display_game(game, *, is_live, slot=0):
         "spectate_url": reverse("games:spectate", args=[game.pk]),
         "preview_moves_json": json.dumps(preview_moves),
         "game_type": game.game_type,
+        "time_control": game.time_control,
+        "variant": _classify_time_control(game.time_control).capitalize(),
+        "move_count": len(game.move_list) if game.move_list else 0,
+        "date_played": game.timestamp,
     }
 
 
@@ -232,6 +236,8 @@ def _placeholder_display_game(idx=0):
         "spectate_url": None,
         "preview_moves_json": json.dumps(moves),
         "game_type": "chess",
+        "time_control": "",
+        "date_played": None,
     }
 
 
@@ -267,17 +273,13 @@ def _build_display_games():
         sample_size = min(remaining_slots, len(finished_candidates))
         selected_finished = random.sample(finished_candidates, sample_size)
 
-    # Build display list, passing slot index so each board gets a different
-    # demo opening when the game itself has fewer than 2 recorded moves.
+    # Build display list — only real games, no placeholders.
     display_games = []
     for slot, game in enumerate(selected_live):
         display_games.append(_serialize_display_game(game, is_live=True, slot=slot))
     for game in selected_finished:
         slot = len(display_games)
         display_games.append(_serialize_display_game(game, is_live=False, slot=slot))
-
-    while len(display_games) < 3:
-        display_games.append(_placeholder_display_game(len(display_games)))
 
     return display_games[:3]
 
@@ -369,6 +371,7 @@ def lobby(request):
         "waiting_games": waiting_games,
         "ongoing_games": ongoing_games_list,
         "display_games": display_games,
+        "has_live_display_games": any(g["is_live"] for g in display_games),
         "live_gladiators_count": live_gladiators_count,
         "active_tournaments_count": active_tournaments_count,
     })
@@ -610,10 +613,20 @@ def spectate_game(request, game_id):
     base_sec = int(parts[0]) * 60 if parts else 180
     increment = int(parts[1]) if len(parts) > 1 else 0
 
+    from apps.users.models import CustomUser
+    white_rank = CustomUser.objects.filter(
+        elo__gt=game.white.elo, is_active=True
+    ).count() + 1 if game.white else None
+    black_rank = CustomUser.objects.filter(
+        elo__gt=game.black.elo, is_active=True
+    ).count() + 1 if game.black else None
+
     return render(request, "games/spectate.html", {
         "game": game,
         "base_seconds": base_sec,
         "increment": increment,
+        "white_rank": white_rank,
+        "black_rank": black_rank,
     })
 
 

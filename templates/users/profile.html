@@ -126,18 +126,9 @@
       </h1>
       <p class="text-sm text-gray-400 mt-1">
         <span class="{{ category.css }} font-semibold">{{ category.icon }} {{ category.tier }}</span>
-        &nbsp;·&nbsp; {{ category.category }}
       </p>
     </div>
     <div class="flex items-center gap-3">
-      <div class="stat-pill">
-        <span class="stat-value text-brand">{{ user_profile.elo_chess }}</span>
-        <span class="stat-label">Chess ELO</span>
-      </div>
-      <div class="stat-pill">
-        <span class="stat-value text-purple-400">{{ user_profile.elo_breakthrough }}</span>
-        <span class="stat-label">BT ELO</span>
-      </div>
 
       <!-- Social buttons removed -->
     </div>
@@ -256,6 +247,17 @@
           {% if tr.ready %}
             {# Nothing extra needed — all good #}
 
+          {% elif tr.repo_changed %}
+            <div class="text-xs text-yellow-300 mb-1">
+              Repo changed — play <span class="font-semibold">{{ tr.games_needed_after_change }}</span>
+              more rated game{{ tr.games_needed_after_change|pluralize }} since the update to re-qualify
+              <span class="text-yellow-500">({{ tr.games_since_change }} / {{ tr.TOURNAMENT_MIN_RATED_GAMES }} since change)</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
+              <div class="h-1.5 rounded-full bg-yellow-400 transition-all"
+                   style="width: {% widthratio tr.games_since_change tr.TOURNAMENT_MIN_RATED_GAMES 100 %}%"></div>
+            </div>
+
           {% elif tr.games_needed_overall > 0 %}
             {# New user — hasn't reached 30 rated games yet #}
             <div class="text-xs text-gray-400 mb-1">
@@ -266,18 +268,6 @@
             <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
               <div class="h-1.5 rounded-full bg-brand transition-all"
                    style="width: {% widthratio tr.rated_count tr.TOURNAMENT_MIN_RATED_GAMES 100 %}%"></div>
-            </div>
-
-          {% elif tr.repo_changed %}
-            {# Experienced user who changed their repo — needs 30 post-change games #}
-            <div class="text-xs text-yellow-300 mb-1">
-              Repo changed — play <span class="font-semibold">{{ tr.games_needed_after_change }}</span>
-              more rated game{{ tr.games_needed_after_change|pluralize }} since the update to re-qualify
-              <span class="text-yellow-500">({{ tr.games_since_change }} / {{ tr.TOURNAMENT_MIN_RATED_GAMES }} since change)</span>
-            </div>
-            <div class="w-full bg-gray-700 rounded-full h-1.5 overflow-hidden">
-              <div class="h-1.5 rounded-full bg-yellow-400 transition-all"
-                   style="width: {% widthratio tr.games_since_change tr.TOURNAMENT_MIN_RATED_GAMES 100 %}%"></div>
             </div>
 
           {% endif %}
@@ -314,10 +304,10 @@
       <div class="flex border-b border-gray-700 mb-6">
         {% if is_own_profile %}
         <button class="profile-tab active" data-tab="edit">Profile</button>
-        <button class="profile-tab" data-tab="ai-models">🤖 AI Models</button>
-        <button class="profile-tab" data-tab="stats">📊 Stats &amp; History</button>
+        <button class="profile-tab" data-tab="ai-models">AI Models</button>
+        <button class="profile-tab" data-tab="stats">Stats &amp; History</button>
         {% else %}
-        <button class="profile-tab active" data-tab="stats">📊 Stats &amp; History</button>
+        <button class="profile-tab active" data-tab="stats">Stats &amp; History</button>
         {% endif %}
       </div>
 
@@ -407,11 +397,6 @@
            ═══════════════════════════════════════ -->
       <div id="tab-ai-models" class="tab-panel hidden space-y-6">
 
-        <div class="rounded-lg bg-green-900/30 border border-green-700 px-4 py-2 mb-2 text-sm text-green-300">
-          <strong>&#x1f512; Privacy:</strong> Your Hugging Face token is used only for
-          verification and is <strong>never stored</strong> on our servers.
-        </div>
-
         <!-- Subtabs: one per game -->
         <div class="mb-4">
           <div class="flex items-center gap-2 overflow-x-auto pb-2">
@@ -427,7 +412,7 @@
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-semibold">{{ game.label }}</h2>
             {% if game.model %}
-              {% if game.model.model_integrity_ok %}
+              {% if game.model.model_repo_ownership_verified and game.model.space_ownership_verified and game.model.data_repo_ownership_verified %}
                 <span class="inline-flex items-center gap-1 text-sm text-green-400">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
                   Verified
@@ -435,7 +420,7 @@
               {% else %}
                 <span class="inline-flex items-center gap-1 text-sm text-yellow-400">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
-                  Needs re-verification
+                  Not Verified
                 </span>
               {% endif %}
             {% else %}
@@ -474,29 +459,6 @@
           </div>
           {% endif %}
 
-          <!-- Rated games / tournament qualification progress -->
-          {% with played=game.model.rated_games_since_revalidation %}
-          {% if played < 30 %}
-          <div class="rounded-lg border border-yellow-700 bg-yellow-900/20 px-4 py-3 mb-3 text-sm text-yellow-200 space-y-2">
-            <p class="font-semibold">🎮 Tournament qualification progress</p>
-            <div>
-              <div class="flex justify-between text-xs text-yellow-300 mb-1">
-                <span>{{ played }} / 30 rated games played</span>
-                <span>{{ 30|subtract:played }} to go</span>
-              </div>
-              <div class="w-full bg-gray-700 rounded-full h-2">
-                <div class="bg-yellow-400 h-2 rounded-full" style="width: {% widthratio played 30 100 %}%"></div>
-              </div>
-            </div>
-            <p class="text-xs text-yellow-300">You need 30 rated games before you can register for tournaments.</p>
-          </div>
-          {% else %}
-          <div class="rounded-lg border border-green-700 bg-green-900/20 px-4 py-2.5 mb-3 flex items-center gap-2 text-sm text-green-300">
-            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-            <span><strong>Tournament eligible</strong> &mdash; {{ played }} rated games played</span>
-          </div>
-          {% endif %}
-          {% endwith %}
           {% endif %}
 
           <form method="post" class="space-y-4">
@@ -505,7 +467,22 @@
             <input type="hidden" name="game_type" value="{{ game.type }}">
 
             <div class="form-group">
-              <label for="id_repo_{{ game.type }}">Hugging Face Model Repo</label>
+              <label for="id_repo_{{ game.type }}" class="flex items-center gap-2">
+                Hugging Face Model Repo
+                {% if game.model %}
+                  {% if game.model.model_repo_ownership_verified %}
+                    <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Verified
+                    </span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 text-xs text-yellow-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                      Not Verified
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </label>
               <input type="text"
                 id="id_repo_{{ game.type }}"
                 name="hf_model_repo_id"
@@ -531,7 +508,22 @@
 
             {% if game.type == 'breakthrough' %}
             <div class="form-group">
-              <label for="id_data_repo_breakthrough">Hugging Face Data Repo</label>
+              <label for="id_data_repo_breakthrough" class="flex items-center gap-2">
+                Hugging Face Data Repo
+                {% if game.model %}
+                  {% if game.model.data_repo_ownership_verified %}
+                    <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Verified
+                    </span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 text-xs text-yellow-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                      Not Verified
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </label>
               <input type="text"
                      id="id_data_repo_breakthrough"
                      name="hf_data_repo_id"
@@ -540,12 +532,27 @@
                      class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
               <span class="text-xs text-gray-500 mt-1 block">
                 Your data repo must be named <strong>YourUsername/breakthrough-data</strong> and set to <strong>public</strong> on Hugging Face.
-                It must contain the file <code>breakthrough_zone_db.npz</code>.
+                It should contain a <code>config_data.json</code> that lists the required chess data files.
               </span>
             </div>
             {% elif game.type == 'chess' %}
             <div class="form-group">
-              <label for="id_data_repo_chess">Hugging Face Data Repo</label>
+              <label for="id_data_repo_chess" class="flex items-center gap-2">
+                Hugging Face Data Repo
+                {% if game.model %}
+                  {% if game.model.data_repo_ownership_verified %}
+                    <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Verified
+                    </span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1 text-xs text-yellow-400 font-semibold">
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                      Not Verified
+                    </span>
+                  {% endif %}
+                {% endif %}
+              </label>
               <input type="text"
                      id="id_data_repo_chess"
                      name="hf_data_repo_id"
@@ -563,40 +570,34 @@
             <div class="form-group">
               <label for="id_space_url_{{ game.type }}" class="flex items-center gap-2">
                 HF Space Link
-                <span class="text-xs font-normal text-red-400">*required</span>
                 {% if game.model %}
-                  {% if game.model.hf_inference_endpoint_status == 'ready' %}
+                  {% if game.model.space_ownership_verified %}
                     <span class="inline-flex items-center gap-1 text-xs text-green-400 font-semibold">
                       <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                      Live
+                      Verified
                     </span>
-                  {% elif game.model.hf_inference_endpoint_status == 'failed' %}
-                    <span class="inline-flex items-center gap-1 text-xs text-red-400 font-semibold">
-                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm-1-5a1 1 0 112 0v-4a1 1 0 11-2 0v4zm1-8a1.5 1.5 0 100 3 1.5 1.5 0 000-3z" clip-rule="evenodd"/></svg>
-                      Unreachable
-                    </span>
-                  {% elif game.model.hf_inference_endpoint_status == 'pending' %}
+                  {% elif game.model.hf_inference_endpoint_url %}
                     <span class="inline-flex items-center gap-1 text-xs text-yellow-400 font-semibold">
-                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg>
-                      Pending
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                      Not Verified
                     </span>
                   {% endif %}
                 {% endif %}
               </label>
               <div class="relative">
-                <input type="url"
+                <input type="text"
                        id="id_space_url_{{ game.type }}"
                        name="hf_space_url"
                        value="{{ game.model.hf_inference_endpoint_url|default:'' }}"
-                       placeholder="https://owner-myspace.hf.space"
+                       placeholder="owner-myspace.hf.space"
                        autocomplete="off"
                        required
                        class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition pr-10">
                 <span id="id_space_preview_{{ game.type }}" class="absolute right-3 top-1/2 -translate-y-1/2 text-sm hidden"></span>
               </div>
               <span class="text-xs text-gray-500 mt-1 block">
-                Required. The public URL of your Hugging Face Gradio Space (e.g.
-                <code>https://john-chess-space.hf.space</code>).
+                The subdomain of your Hugging Face Gradio Space (e.g.
+                <code>john-breakthrough-space.hf.space</code>).
                 Must belong to your HF account — verified against your token on save.
                 On save, we'll probe the Space and mark it Live or Unreachable.
               </span>
@@ -610,25 +611,39 @@
             <!-- ─────────────────────────────────────────────────────────── -->
 
             {% if game.model and game.model.verification_code %}
+            {# Only show box if at least one repo still needs the file #}
+            {% if not game.model.model_repo_ownership_verified or game.model.hf_inference_endpoint_url and not game.model.space_ownership_verified or game.model.hf_data_repo_id and not game.model.data_repo_ownership_verified %}
             <div class="rounded-lg border border-blue-700 bg-blue-900/30 p-4 text-sm text-blue-100 space-y-2">
               <p class="font-semibold text-blue-200 flex items-center gap-2">
                 🔑 Proof of Ownership
-                {% if game.model.is_verified %}
-                  <span class="text-xs text-green-400">✅ Verified{% if game.model.verified_at %} — {{ game.model.verified_at }}{% endif %}</span>
+                {% if game.model.model_repo_ownership_verified %}
+                  <span class="text-xs text-green-400">✅ Model repo verified — add file to remaining repos below</span>
                 {% else %}
-                  <span class="text-xs text-yellow-400">⚠️ Not verified</span>
+                  <span class="text-xs text-yellow-400">⚠️ Not yet verified</span>
                 {% endif %}
               </p>
               <p>
                 Add a file named <code class="text-blue-200">AGL_VERIFY.txt</code> to the
-                <strong>root</strong> of <code class="text-blue-200">{{ game.model.hf_model_repo_id }}</code>
-                containing exactly:
+                <strong>root</strong> of each repo listed below:
               </p>
+              <ul class="list-disc list-inside text-xs text-blue-200 space-y-1 ml-2">
+                {% if not game.model.model_repo_ownership_verified %}
+                <li>Your model repo: <code>{{ game.model.hf_model_repo_id }}</code></li>
+                {% endif %}
+                {% if game.model.hf_inference_endpoint_url and not game.model.space_ownership_verified %}
+                <li>Your HF Space repo (root of the Space files)</li>
+                {% endif %}
+                {% if game.model.hf_data_repo_id and not game.model.data_repo_ownership_verified %}
+                <li>Your data repo: <code>{{ game.model.hf_data_repo_id }}</code></li>
+                {% endif %}
+              </ul>
+              <p>Each file must contain exactly:</p>
               <pre class="bg-gray-900 border border-gray-700 rounded px-3 py-2 text-xs text-green-300 overflow-x-auto select-all">{{ game.model.verification_code }}</pre>
               <p class="text-xs text-blue-300">
-                File must be publicly readable. We download it anonymously — no HF token required.
+                Files must be publicly readable. We download them anonymously — no HF token required.
               </p>
             </div>
+            {% endif %}
             {% endif %}
 
             <input type="hidden" name="action" value="connect">
@@ -658,7 +673,7 @@
                 {% if game.model.hf_inference_endpoint_status == 'ready' %}
                   <span class="inline-flex items-center gap-1.5 text-green-400">
                     <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                    HF Space verified —
+                    Model + Data + Space Verified —
                     <a href="{{ game.model.hf_inference_endpoint_url }}" target="_blank" rel="noopener"
                        class="underline hover:text-green-300 truncate max-w-xs">{{ game.model.hf_inference_endpoint_url }}</a>
                   </span>

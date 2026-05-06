@@ -208,6 +208,313 @@ def has_repo_changed_since_registration(game_model: "UserGameModel") -> bool:
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Space ownership check
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _parse_space_url_subdomain(space_url: str) -> "tuple[str | None, str | None]":
+    """Extract the raw subdomain from an hf.space URL.
+
+    Returns ``(subdomain, None)`` on success or ``(None, error_message)`` on failure.
+    """
+    import re
+    m = re.match(r'^https://([a-zA-Z0-9][a-zA-Z0-9._-]*)\.hf\.space/?$', space_url.strip())
+    if not m:
+        return None, (
+            f"Cannot parse Space URL '{space_url}'. "
+            "Expected format: https://owner-spacename.hf.space"
+        )
+    subdomain = m.group(1)
+    if '-' not in subdomain:
+        return None, (
+            f"Cannot determine Space owner from subdomain '{subdomain}'. "
+            "URL must be in the form https://owner-spacename.hf.space"
+        )
+    return subdomain, None
+
+
+def _fetch_verify_file_from_space(subdomain: str) -> "tuple[str | None, str | None, str | None]":
+    """Download AGL_VERIFY.txt from an HF Space, trying every possible owner/space split.
+
+    HF Space subdomains are ``{owner}-{space-name}`` where the ``/`` separator is
+    replaced by ``-``.  Because both the owner name and the space name may themselves
+    contain hyphens the split position is ambiguous.  This function probes each
+    candidate split (left-to-right) and returns the first successful result.
+
+    Returns ``(repo_id, content, None)`` on success or ``(None, None, error_message)``
+    when no split produces a readable file.
+    """
+    import requests
+
+    token = _platform_token()
+    headers: dict[str, str] = {"Cache-Control": "no-cache"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    parts = subdomain.split('-')
+    last_error: str = f"{VERIFY_FILENAME} was not found in the Space at '{subdomain}.hf.space'."
+
+    for i in range(1, len(parts)):
+        owner = '-'.join(parts[:i])
+        space_name = '-'.join(parts[i:])
+        repo_id = f"{owner}/{space_name}"
+        url = f"https://huggingface.co/spaces/{repo_id}/resolve/main/{VERIFY_FILENAME}"
+        try:
+            resp = requests.get(url, timeout=15, allow_redirects=True, headers=headers)
+        except requests.RequestException as exc:
+            log.warning(
+                "_fetch_verify_file_from_space: network error trying %s: %s",
+                repo_id, exc,
+            )
+            last_error = f"Could not reach Hugging Face to fetch {VERIFY_FILENAME}: {exc}"
+            continue
+
+        if resp.status_code == 200:
+            log.info("_fetch_verify_file_from_space: found file at Space repo %s", repo_id)
+            return repo_id, resp.text.strip(), None
+        if resp.status_code in (401, 403):
+            last_error = (
+                f"Space '{repo_id}' rejected our access request "
+                f"(HTTP {resp.status_code}). Make sure the Space is public."
+            )
+            # A permission error means we found the right repo but can't read it — stop.
+            break
+        # 404 or other error: try next split
+        log.debug(
+            "_fetch_verify_file_from_space: HTTP %s for %s, trying next split",
+            resp.status_code, repo_id,
+        )
+
+    return None, None, last_error
+
+
+def check_space_ownership(game_model: "UserGameModel") -> "tuple[bool, str]":
+    """Verify ownership of the linked HF Space by checking AGL_VERIFY.txt.
+
+    Kept as a standalone helper.  Prefer ``check_full_ownership`` for the
+    full three-way check (model repo + Space + data repo).
+    """
+    space_url = game_model.hf_inference_endpoint_url
+    expected_code = game_model.verification_code
+
+    if not space_url:
+        return False, (
+            "No HF Space URL linked to this model. "
+            "Add the Space URL and save (Connect Repo) first."
+        )
+    if not expected_code:
+        return False, (
+            "No verification code has been issued yet. "
+            "Please save the repo first to generate a code."
+        )
+
+    subdomain, parse_error = _parse_space_url_subdomain(space_url)
+    if parse_error:
+        return False, parse_error
+
+    space_repo_id, content, error = _fetch_verify_file_from_space(subdomain)
+    if error:
+        return False, error
+
+    if content != expected_code:
+        return False, (
+            f"{VERIFY_FILENAME} in Space '{space_repo_id}' does not match "
+            "the expected code. Ensure the file contains exactly the verification "
+            "code with no extra whitespace or newlines."
+        )
+
+    log.info(
+        "Space ownership verified for user=%s game=%s space=%s",
+        game_model.user_id, game_model.game_type, space_repo_id,
+    )
+    return True, f"Space '{space_repo_id}' ownership verified."
+
+
+def check_data_repo_ownership(game_model: "UserGameModel") -> "tuple[bool, str]":
+    """Verify ownership of the linked HF data repo by checking AGL_VERIFY.txt.
+
+    The data repo must contain AGL_VERIFY.txt at its root with content
+    identical to game_model.verification_code (the same single code used
+    for all three ownership checks).
+
+    Returns ``(success, message)``.  Does NOT update hf_inference_endpoint_status
+    directly — that is the responsibility of the caller (``check_full_ownership``).
+    """
+    data_repo_id = game_model.hf_data_repo_id
+    expected_code = game_model.verification_code
+
+    if not data_repo_id:
+        # No data repo linked — skip silently (not required for all game types).
+        return True, "No data repo linked — skipping data repo check."
+    if not expected_code:
+        return False, (
+            "No verification code has been issued yet. "
+            "Please save the repo first to generate a code."
+        )
+
+    content, error = _fetch_verify_file(data_repo_id, repo_type="dataset")
+    if error:
+        return False, f"Data repo check failed: {error}"
+
+    if content != expected_code:
+        return False, (
+            f"{VERIFY_FILENAME} in data repo '{data_repo_id}' does not match "
+            "the expected code. Ensure the file contains exactly the verification "
+            "code with no extra whitespace or newlines."
+        )
+
+    log.info(
+        "Data repo ownership verified for user=%s game=%s data_repo=%s",
+        game_model.user_id, game_model.game_type, data_repo_id,
+    )
+    return True, f"Data repo '{data_repo_id}' ownership verified."
+
+
+def check_full_ownership(game_model: "UserGameModel") -> "tuple[bool, str]":
+    """Full three-way ownership check: model repo + HF Space + data repo.
+
+    Checks are run in sequence:
+      1. Model repo     — AGL_VERIFY.txt == verification_code  (always required)
+      2. HF Space repo  — AGL_VERIFY.txt == verification_code  (if Space URL set)
+      3. Data repo      — AGL_VERIFY.txt == verification_code  (if data repo set)
+
+    Per-field booleans (model_repo_ownership_verified, space_ownership_verified,
+    data_repo_ownership_verified) are reset at the start and then set to True as
+    each step passes, so the template can show exactly which repos are verified.
+
+    Any failure immediately sets ``hf_inference_endpoint_status='failed'`` and
+    returns ``(False, human-readable error message)``.
+
+    On full success sets ``hf_inference_endpoint_status='ready'`` and returns
+    ``(True, summary message)``.
+    """
+    from apps.users.models import UserGameModel as _UGM
+
+    expected_code = game_model.verification_code
+    if not expected_code:
+        return False, (
+            "No verification code has been issued yet. "
+            "Please save the repo (Connect Repo) first to generate a code."
+        )
+
+    # Reset all per-field flags at the start of each verification run.
+    _UGM.objects.filter(pk=game_model.pk).update(
+        model_repo_ownership_verified=False,
+        space_ownership_verified=False,
+        data_repo_ownership_verified=False,
+    )
+    game_model.model_repo_ownership_verified = False
+    game_model.space_ownership_verified = False
+    game_model.data_repo_ownership_verified = False
+
+    # ── 1. Model repo ──────────────────────────────────────────────────
+    repo_ok, repo_msg = check_ownership(game_model)
+    if not repo_ok:
+        _update_space_status(game_model, "failed")
+        log.warning(
+            "check_full_ownership: model repo FAILED for user=%s game=%s repo=%s",
+            game_model.user_id, game_model.game_type, game_model.hf_model_repo_id,
+        )
+        return False, f"Model repo check failed: {repo_msg}"
+
+    _UGM.objects.filter(pk=game_model.pk).update(model_repo_ownership_verified=True)
+    game_model.model_repo_ownership_verified = True
+
+    # ── 2. HF Space (independent — does NOT block model-repo verification) ─
+    pending_failures: list[str] = []
+    space_url = game_model.hf_inference_endpoint_url
+    if space_url:
+        space_ok, space_msg = check_space_ownership(game_model)
+        if space_ok:
+            _UGM.objects.filter(pk=game_model.pk).update(space_ownership_verified=True)
+            game_model.space_ownership_verified = True
+        else:
+            log.warning(
+                "check_full_ownership: Space not yet verified for user=%s game=%s space=%s: %s",
+                game_model.user_id, game_model.game_type, space_url, space_msg,
+            )
+            pending_failures.append(f"HF Space: {space_msg}")
+
+    # ── 3. Data repo (independent — does NOT block model-repo verification) ─
+    data_repo_id = game_model.hf_data_repo_id
+    if data_repo_id:
+        data_ok, data_msg = check_data_repo_ownership(game_model)
+        if data_ok:
+            _UGM.objects.filter(pk=game_model.pk).update(data_repo_ownership_verified=True)
+            game_model.data_repo_ownership_verified = True
+        else:
+            log.warning(
+                "check_full_ownership: data repo not yet verified for user=%s game=%s data_repo=%s: %s",
+                game_model.user_id, game_model.game_type, data_repo_id, data_msg,
+            )
+            pending_failures.append(f"Data repo: {data_msg}")
+
+    # ── Final status ────────────────────────────────────────────────────
+    import html as _html
+
+    def _row(n: int, ok: bool, label: str, detail: str, extra: str = "") -> str:
+        icon = "✅" if ok else "❌"
+        status = "verified" if ok else detail
+        suffix = f" — {_html.escape(extra)}" if extra else ""
+        return f"{n}. {icon} <strong>{_html.escape(label)}</strong>{suffix} — {status}"
+
+    # Build a full numbered list in fixed order: model → data repo → space.
+    items: list[str] = []
+    n = 1
+    items.append(_row(n, True, "Model repo",
+                       "verified", game_model.hf_model_repo_id))
+    n += 1
+    if data_repo_id:
+        data_verified = game_model.data_repo_ownership_verified
+        data_fail_msg = next(
+            (f.replace("Data repo: ", "", 1) for f in pending_failures if f.startswith("Data repo:")),
+            "not yet verified — add AGL_VERIFY.txt to the data repo",
+        )
+        items.append(_row(n, data_verified, "Data repo",
+                           data_fail_msg, data_repo_id))
+        n += 1
+    if space_url:
+        space_verified = game_model.space_ownership_verified
+        space_fail_msg = next(
+            (f.replace("HF Space: ", "", 1) for f in pending_failures if f.startswith("HF Space:")),
+            "not yet verified — add AGL_VERIFY.txt to the Space repo",
+        )
+        items.append(_row(n, space_verified, "HF Space",
+                           space_fail_msg, space_url))
+
+    body = "<br>".join(items)
+
+    if pending_failures:
+        # Model repo is verified; space/data still need AGL_VERIFY.txt.
+        # Do NOT mark status as "failed" — model ownership is confirmed.
+        log.info(
+            "check_full_ownership: model repo PASSED but pending items for user=%s game=%s: %s",
+            game_model.user_id, game_model.game_type, " | ".join(pending_failures),
+        )
+        return False, "<strong>Ownership check results:</strong><br>" + body
+
+    # ── All passed ─────────────────────────────────────────────────────
+    _update_space_status(game_model, "ready")
+    log.info(
+        "check_full_ownership: all checks PASSED for user=%s game=%s",
+        game_model.user_id, game_model.game_type,
+    )
+    return True, "<strong>Ownership check results:</strong><br>" + body
+
+
+def _rollback_verified(game_model: "UserGameModel") -> None:
+    """Revert is_verified=False after a partial ownership failure."""
+    game_model.is_verified = False
+    game_model.save(update_fields=["is_verified"])
+
+
+def _update_space_status(game_model: "UserGameModel", status: str) -> None:
+    """Persist hf_inference_endpoint_status without touching other fields."""
+    from apps.users.models import UserGameModel as _UGM
+    _UGM.objects.filter(pk=game_model.pk).update(hf_inference_endpoint_status=status)
+    game_model.hf_inference_endpoint_status = status
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Internal helpers
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -217,7 +524,7 @@ def _platform_token() -> str:
     return getattr(settings, "HF_PLATFORM_TOKEN", "") or ""
 
 
-def _fetch_verify_file(repo_id: str) -> tuple[str | None, str | None]:
+def _fetch_verify_file(repo_id: str, repo_type: str = "model") -> tuple[str | None, str | None]:
     """Download AGL_VERIFY.txt from *repo_id* using the platform token.
 
     Uses a direct HTTP GET against the HF resolve endpoint so we never hit
@@ -228,6 +535,10 @@ def _fetch_verify_file(repo_id: str) -> tuple[str | None, str | None]:
     ArtificialGladiatorLeague authenticates with HF_PLATFORM_TOKEN.
     Users must still grant access to ArtificialGladiatorLeague on their repo.
 
+    *repo_type* must be ``"model"`` (default) or ``"dataset"``.  Dataset repos
+    live under ``huggingface.co/datasets/`` on the HF CDN; model repos live
+    directly under ``huggingface.co/``.
+
     Returns ``(content, None)`` on success or ``(None, error_message)`` on failure.
     """
     import requests
@@ -237,7 +548,10 @@ def _fetch_verify_file(repo_id: str) -> tuple[str | None, str | None]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    url = f"https://huggingface.co/{repo_id}/resolve/main/{VERIFY_FILENAME}"
+    if repo_type == "dataset":
+        url = f"https://huggingface.co/datasets/{repo_id}/resolve/main/{VERIFY_FILENAME}"
+    else:
+        url = f"https://huggingface.co/{repo_id}/resolve/main/{VERIFY_FILENAME}"
     try:
         resp = requests.get(url, timeout=15, allow_redirects=True, headers=headers)
     except requests.RequestException as exc:

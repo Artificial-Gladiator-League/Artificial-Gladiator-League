@@ -126,7 +126,7 @@
                class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
         <span class="text-xs text-gray-500 mt-1 block">
           Your data repo must be set to <strong>public</strong> on Hugging Face.
-          It must contain the file <code>breakthrough_zone_db.npz</code>.
+          It should contain a <code>config_data.json</code> that lists the required chess data files.
         </span>
       </div>
       {% elif game.type == 'chess' %}

@@ -10,11 +10,18 @@ from apps.users.models import CustomUser
 
 # ── Category ELO boundaries (match CustomUser.get_category) ──
 CATEGORY_FILTERS = {
-    "global":       {},
-    "beginner":     {"elo__lte": 1200},
-    "intermediate": {"elo__gt": 1200, "elo__lte": 1600},
-    "advanced":     {"elo__gt": 1600, "elo__lte": 2000},
-    "expert":       {"elo__gt": 2000},
+    "global":    {},
+    "super_gm":  {"elo__gte": 2700},
+    "gm":        {"elo__gte": 2500, "elo__lt": 2700},
+    "im":        {"elo__gte": 2400, "elo__lt": 2500},
+    "fm":        {"elo__gte": 2300, "elo__lt": 2400},
+    "cm":        {"elo__gte": 2200, "elo__lt": 2300},
+    "expert":    {"elo__gte": 2000, "elo__lt": 2200},
+    "class_a":   {"elo__gte": 1800, "elo__lt": 2000},
+    "class_b":   {"elo__gte": 1600, "elo__lt": 1800},
+    "class_c":   {"elo__gte": 1400, "elo__lt": 1600},
+    "class_d":   {"elo__gte": 1200, "elo__lt": 1400},
+    "beginner":  {"elo__lt": 1200},
 }
 
 # Per-game ELO filters — used when a game_type is selected on the leaderboard.
@@ -24,11 +31,18 @@ GAME_ELO_FIELD = {
 }
 
 CATEGORY_META = {
-    "global":       {"label": "Global",       "icon": "🌍", "css": "text-brand"},
-    "beginner":     {"label": "Beginner",     "icon": "🥉", "css": "text-amber-600",  "tier": "Novice",      "elo": "≤ 1200"},
-    "intermediate": {"label": "Intermediate", "icon": "🥈", "css": "text-gray-300",   "tier": "Club Player", "elo": "1201–1600"},
-    "advanced":     {"label": "Advanced",     "icon": "🥇", "css": "text-yellow-400", "tier": "Expert",      "elo": "1601–2000"},
-    "expert":       {"label": "Expert",       "icon": "🏆", "css": "text-purple-400", "tier": "Master",      "elo": "2001+"},
+    "global":   {"label": "Global",              "icon": "🌍", "css": "text-brand",       "tier": "",                     "elo": "All"},
+    "super_gm": {"label": "Super Grandmaster",  "icon": "👑", "css": "text-yellow-300",  "tier": "Super Grandmaster",   "elo": "2700+"},
+    "gm":       {"label": "Grandmaster",        "icon": "🏆", "css": "text-purple-400",  "tier": "Grandmaster",         "elo": "2500–2699"},
+    "im":       {"label": "International Master","icon": "🥇", "css": "text-yellow-400", "tier": "International Master", "elo": "2400–2499"},
+    "fm":       {"label": "FIDE Master",        "icon": "🥈", "css": "text-blue-300",    "tier": "FIDE Master",         "elo": "2300–2399"},
+    "cm":       {"label": "Candidate Master",   "icon": "🥈", "css": "text-gray-300",    "tier": "Candidate Master",    "elo": "2200–2299"},
+    "expert":   {"label": "Expert",             "icon": "🥇", "css": "text-orange-400",  "tier": "Expert",              "elo": "2000–2199"},
+    "class_a":  {"label": "Class A",            "icon": "🔴", "css": "text-red-400",     "tier": "Class A",             "elo": "1800–1999"},
+    "class_b":  {"label": "Class B",            "icon": "🟠", "css": "text-orange-300",  "tier": "Class B",             "elo": "1600–1799"},
+    "class_c":  {"label": "Class C",            "icon": "🟡", "css": "text-yellow-500",  "tier": "Class C",             "elo": "1400–1599"},
+    "class_d":  {"label": "Class D",            "icon": "🟢", "css": "text-green-400",   "tier": "Class D",             "elo": "1200–1399"},
+    "beginner": {"label": "Beginner",           "icon": "🥉", "css": "text-amber-600",   "tier": "Beginner",            "elo": "< 1200"},
 }
 
 LEADERBOARD_LIMIT = 100
@@ -186,6 +200,10 @@ def accessibility(request):
 
 def cookies(request):
     return render(request, "core/cookies.html")
+
+
+def how_to_upload(request):
+    return render(request, "core/how_to_upload.html")
 
 
 def leaderboard(request):

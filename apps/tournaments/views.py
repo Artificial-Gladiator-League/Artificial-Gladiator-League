@@ -62,6 +62,17 @@ def tournament_list(request):
     from apps.users.integrity import REVALIDATION_GAMES_REQUIRED
     from apps.users.models import UserGameModel
 
+    # Pre-fetch game types where the current user has been DQ'd for repo
+    # change. One query for all game types; used per-tournament below.
+    dq_game_types: set = set()
+    if request.user.is_authenticated:
+        dq_game_types = set(
+            TournamentParticipant.objects
+            .filter(user=request.user, disqualified_for_sha_mismatch=True)
+            .values_list("tournament__game_type", flat=True)
+            .distinct()
+        )
+
     for t in tournament_list_items:
         t.active_game = active_game_map.get(t.pk)
         t.join_blocked = False
@@ -87,22 +98,42 @@ def tournament_list(request):
             elif not gm.is_verified:
                 t.join_blocked = True
                 t.join_blocked_reason = "ownership_unverified"
+            elif not gm.model_integrity_ok:
+                # Integrity flag flipped by DQ or SHA change detection.
+                t.join_blocked = True
+                t.games_remaining = REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation
+                t.join_blocked_reason = (
+                    f"Repo changed during a tournament: play "
+                    f"{t.games_remaining} more rated "
+                    f"{t.game_type} game{'s' if t.games_remaining != 1 else ''} "
+                    f"to qualify again "
+                    f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update)."
+                )
+            elif (
+                t.game_type in dq_game_types
+                and gm.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED
+            ):
+                # DQ history exists and cooldown not yet served.
+                # Covers users whose model_integrity_ok was re-validated
+                # to True but who still owe 30 post-change games.
+                t.join_blocked = True
+                remaining = REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation
+                t.games_remaining = remaining
+                t.join_blocked_reason = (
+                    f"Repo changed during a tournament: play {remaining} more rated "
+                    f"{t.game_type} game{'s' if remaining != 1 else ''} "
+                    f"to qualify again "
+                    f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update)."
+                )
             elif gm.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED:
                 t.join_blocked = True
                 remaining = REVALIDATION_GAMES_REQUIRED - gm.rated_games_since_revalidation
                 t.games_remaining = remaining
-                if not gm.locked_commit_id:
-                    t.join_blocked_reason = (
-                        f"New player: play {remaining} more rated "
-                        f"{t.game_type} game{'s' if remaining != 1 else ''} to qualify "
-                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} played)."
-                    )
-                else:
-                    t.join_blocked_reason = (
-                        f"Repo changed: play {remaining} more rated "
-                        f"{t.game_type} game{'s' if remaining != 1 else ''} to qualify "
-                        f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update)."
-                    )
+                t.join_blocked_reason = (
+                    f"New player: play {remaining} more rated "
+                    f"{t.game_type} game{'s' if remaining != 1 else ''} to qualify "
+                    f"({gm.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} played)."
+                )
 
     return render(
         request, "tournaments/list.html", {

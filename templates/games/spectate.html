@@ -44,6 +44,7 @@
             {% fide_badge game.black %}
             <span class="font-semibold text-sm">{{ game.black.username|default:"???" }}</span>
             <span class="text-xs text-gray-500">({{ game.black.elo|default:"1200" }})</span>
+            {% if black_rank %}<span class="text-xs font-bold text-brand">#{{ black_rank }}</span>{% endif %}
           </div>
           <div id="clockBlack" class="font-mono text-lg px-3 py-1 rounded bg-gray-900 border border-gray-700">
             --:--
@@ -69,6 +70,7 @@
             {% fide_badge game.white %}
             <span class="font-semibold text-sm">{{ game.white.username|default:"???" }}</span>
             <span class="text-xs text-gray-500">({{ game.white.elo|default:"1200" }})</span>
+            {% if white_rank %}<span class="text-xs font-bold text-brand">#{{ white_rank }}</span>{% endif %}
           </div>
           <div id="clockWhite" class="font-mono text-lg px-3 py-1 rounded bg-gray-900 border border-gray-700">
             --:--

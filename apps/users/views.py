@@ -254,7 +254,7 @@ def ai_models(request):
     POST (verify)  → check AGL_VERIFY.txt in the repo and mark is_verified.
     """
     import re
-    from .ownership_verification import check_ownership, generate_verification_code
+    from .ownership_verification import check_full_ownership, generate_verification_code
 
     if request.method == "POST":
         action = request.POST.get("action", "connect")
@@ -282,7 +282,7 @@ def ai_models(request):
                     "Please reconnect the correct repo first.",
                 )
             else:
-                ok, msg = check_ownership(gm)
+                ok, msg = check_full_ownership(gm)
                 if ok:
                     messages.success(request, msg)
                 else:
@@ -329,10 +329,10 @@ def ai_models(request):
                 label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
                 messages.info(
                     request,
-                    f"{label} repo saved. To prove ownership, create a file named "
-                    f"'{VERIFY_FILENAME}' at the root of your HF repo "
-                    f"({repo_id}) containing exactly this code: {code} — "
-                    "then click 'Verify Ownership' below.",
+                    f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
+                    f"at the root of {repo_id} containing exactly: {code} — "
+                    "then click 'Verify Ownership' below. "
+                    "If you have an HF Space or data repo, add the same file to those roots too.",
                 )
 
         return redirect("users:ai_models")
@@ -885,7 +885,18 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
         # ── Tournament readiness per game type ─────────────
         from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES
+        from apps.tournaments.models import TournamentParticipant
         from django.db.models import Q
+
+        # Pre-fetch game types where this user has been DQ'd for repo
+        # change in any tournament. Stored as a set of game_type strings
+        # so the per-game-type loop below only does one query total.
+        dq_game_types = set(
+            TournamentParticipant.objects
+            .filter(user=user, disqualified_for_sha_mismatch=True)
+            .values_list("tournament__game_type", flat=True)
+            .distinct()
+        )
 
         tournament_readiness = []
         for g in GAME_TYPES:
@@ -907,11 +918,22 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             games_since_change = gm.rated_games_since_revalidation if gm else 0
             games_needed_after_change = max(0, TOURNAMENT_MIN_RATED_GAMES - games_since_change)
 
-            # User changed repo and hasn't played 30 games since change
+            # User changed repo (or was DQ'd from a tournament) and
+            # hasn't played 30 games since. Three signals for this:
+            # 1. Normal repo-change path: had 30+ total games, counter reset.
+            # 2. Integrity flag flipped to False by DQ / SHA change detection.
+            # 3. DQ history exists for this game type AND counter < 30
+            #    (covers the case where re-validation already cleared the
+            #    integrity flag back to True but cooldown hasn't been served).
             repo_changed = (
                 gm is not None
-                and rated_count >= TOURNAMENT_MIN_RATED_GAMES  # past the 30-game gate
-                and games_since_change < TOURNAMENT_MIN_RATED_GAMES
+                and (
+                    (rated_count >= TOURNAMENT_MIN_RATED_GAMES
+                     and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
+                    or not gm.model_integrity_ok
+                    or (gtype in dq_game_types
+                        and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
+                )
             )
 
             tournament_readiness.append({
@@ -927,6 +949,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                     and (not repo_changed)
                     and gm is not None
                     and gm.is_verified
+                    and gm.model_integrity_ok
                 ),
                 "TOURNAMENT_MIN_RATED_GAMES": TOURNAMENT_MIN_RATED_GAMES,
             })
@@ -942,10 +965,9 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
     def _handle_ai_model_post(self, request):
         import re as _re
-        from apps.games.hf_inference import probe_space_url
         from .ownership_verification import (
             VERIFY_FILENAME,
-            check_ownership,
+            check_full_ownership,
             generate_verification_code,
         )
 
@@ -977,7 +999,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                     "Please reconnect the correct repo first.",
                 )
             else:
-                ok, msg = check_ownership(gm)
+                ok, msg = check_full_ownership(gm)
                 if ok:
                     messages.success(request, msg)
                 else:
@@ -991,8 +1013,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
-        elif hf_space_url and not _re.match(r'^https://[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
-            messages.error(request, "HF Space URL must be a full URL ending in .hf.space (e.g. https://owner-myspace.hf.space).")
+        elif hf_space_url and not _re.match(r'^(?:https?://)?[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
+            messages.error(request, "HF Space URL must end in .hf.space (e.g. owner-myspace.hf.space).")
         else:
             dup = UserGameModel.objects.filter(
                 hf_model_repo_id=repo_id,
@@ -1018,34 +1040,34 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         "is_verified", "verification_code",
                     ])
 
-                # ── HF Space URL: probe and persist ───────────
+                # ── HF Space URL: save with pending status ─────────────
                 if hf_space_url:
-                    space_ok, space_msg = probe_space_url(hf_space_url)
-                    new_status = "ready" if space_ok else "failed"
+                    # Normalise: ensure the stored value always has https://
+                    if not hf_space_url.startswith(('http://', 'https://')):
+                        hf_space_url = 'https://' + hf_space_url
                     UserGameModel.objects.filter(pk=gm.pk).update(
                         hf_inference_endpoint_url=hf_space_url,
-                        hf_inference_endpoint_status=new_status,
+                        hf_inference_endpoint_status="pending",
                     )
                     gm.hf_inference_endpoint_url = hf_space_url
-                    gm.hf_inference_endpoint_status = new_status
-                    if space_ok:
-                        messages.success(request, "HF Space verified and saved — Space is reachable.")
-                    else:
-                        messages.error(
-                            request,
-                            f"HF Space is not reachable: {space_msg}. "
-                            "Check the URL and ensure your Space is running on Hugging Face.",
-                        )
+                    gm.hf_inference_endpoint_status = "pending"
 
                 # Generate a fresh ownership challenge code
                 code = generate_verification_code(gm)
                 label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
+                space_note = (
+                    f" Also add '{VERIFY_FILENAME}' to the root of your HF Space repo with the same code."
+                    if hf_space_url else ""
+                )
+                data_note = (
+                    f" And add '{VERIFY_FILENAME}' to the root of your data repo ({data_repo_id}) with the same code."
+                    if data_repo_id else ""
+                )
                 messages.info(
                     request,
-                    f"{label} repo saved. To prove ownership, create a file named "
-                    f"'{VERIFY_FILENAME}' at the root of your HF repo "
-                    f"({repo_id}) containing exactly this code: {code} — "
-                    "then click 'Verify Ownership'.",
+                    f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
+                    f"at the root of {repo_id} containing exactly: {code}.{space_note}{data_note} "
+                    "Then click 'Verify Ownership'.",
                 )
 
         return redirect("users:profile")
@@ -1120,14 +1142,14 @@ def gdpr_export(request):
                 "elo_change_p2", "timestamp",
             )
         ),
-        "casual_games_as_p1": list(
-            user.casual_games_as_p1.values(
-                "result", "elo_change_p1", "time_control", "timestamp",
+        "casual_games_as_white": list(
+            user.games_as_white.values(
+                "result", "elo_change_white", "time_control", "timestamp",
             )
         ),
-        "casual_games_as_p2": list(
-            user.casual_games_as_p2.values(
-                "result", "elo_change_p2", "time_control", "timestamp",
+        "casual_games_as_black": list(
+            user.games_as_black.values(
+                "result", "elo_change_black", "time_control", "timestamp",
             )
         ),
     }
@@ -1144,6 +1166,16 @@ def gdpr_delete(request):
 
     user = request.user
     username = user.username
+    user_id = user.pk
+
+    # Remove the user's model folder (user_{id}) before deleting the DB record.
+    user_folder = Path(settings.USER_MODELS_BASE_DIR) / f"user_{user_id}"
+    if user_folder.exists():
+        try:
+            shutil.rmtree(user_folder)
+            log.info("GDPR deletion: removed model folder %s", user_folder)
+        except Exception:
+            log.exception("GDPR deletion: failed to remove model folder %s", user_folder)
 
     # Permanently delete user — cascades to games, matches, etc.
     user.delete()

@@ -10,6 +10,7 @@ urlpatterns = [
     path("terms/", views.terms, name="terms"),
     path("accessibility/", views.accessibility, name="accessibility"),
     path("cookies/", views.cookies, name="cookies"),
+    path("how-to-upload/", views.how_to_upload, name="how_to_upload"),
     path("leaderboard/", views.leaderboard, name="leaderboard"),
     path("api/leaderboard/", views.leaderboard_json, name="leaderboard_json"),
 ]

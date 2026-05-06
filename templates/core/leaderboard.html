@@ -34,64 +34,59 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
-       Filter bar: search + time-range tabs
+       Two-column layout: table left, FIDE ref right
        ═══════════════════════════════════════════ -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-    <!-- Search input -->
-    <div class="relative w-full sm:w-64">
-      <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-      </svg>
-      <input type="text" id="lbSearch" placeholder="Search gladiator…"
-             class="w-full pl-10 pr-4 py-2 rounded-lg border border-borderDark bg-surface text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple focus:border-purple transition"
-             aria-label="Search leaderboard">
-    </div>
+  <div class="flex gap-6 items-start">
 
-    <!-- Time range (visual only for now) -->
-    <div class="flex gap-1 text-xs">
-      <button class="px-3 py-1.5 rounded-lg font-medium bg-purple/20 text-purple">All Time</button>
-      <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Week</button>
-      <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Month</button>
-    </div>
-  </div>
+    <!-- ── Left: leaderboard ────────────────── -->
+    <div class="flex-1 min-w-0">
 
-  <!-- ═══════════════════════════════════════════
-       Game-type Toggle (Chess / Breakthrough)
-       ═══════════════════════════════════════════ -->
-  <div class="flex gap-2 mb-4" id="gameTypeTabs">
-    <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
-                   {% if active_game_type == 'chess' %}bg-gold/20 text-gold border border-gold/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
-            data-game-type="chess" id="gtChess">
-      ♟ Chess
-    </button>
-    <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
-                   {% if active_game_type == 'breakthrough' %}bg-purple/20 text-purple border border-purple/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
-            data-game-type="breakthrough" id="gtBreakthrough">
-      🔴 Breakthrough
-    </button>
-  </div>
+      <!-- Filter bar -->
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
+        <div class="relative w-full sm:w-64">
+          <svg class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input type="text" id="lbSearch" placeholder="Search gladiator…"
+                 class="w-full pl-10 pr-4 py-2 rounded-lg border border-borderDark bg-surface text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple focus:border-purple transition"
+                 aria-label="Search leaderboard">
+        </div>
+        <div class="flex gap-1 text-xs">
+          <button class="px-3 py-1.5 rounded-lg font-medium bg-purple/20 text-purple">All Time</button>
+          <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Week</button>
+          <button class="px-3 py-1.5 rounded-lg font-medium text-gray-500 hover:bg-surfaceLight transition">This Month</button>
+        </div>
+      </div>
 
-  <!-- ═══════════════════════════════════════════
-       Category Tabs
-       ═══════════════════════════════════════════ -->
-  <div class="lb-tabs mb-0" id="lbTabs" role="tablist">
-    {% for key, meta in tabs.items %}
-      <button class="lb-tab{% if key == active_tab %} active{% endif %}"
-              role="tab"
-              aria-selected="{% if key == active_tab %}true{% else %}false{% endif %}"
-              data-tab="{{ key }}">
-        <span>{{ meta.icon }}</span>
-        <span>{{ meta.label }}</span>
-        <span class="badge" id="cnt-{{ key }}">{{ counts|dictget:key }}</span>
-      </button>
-    {% endfor %}
-  </div>
+      <!-- Game-type Toggle -->
+      <div class="flex gap-2 mb-4" id="gameTypeTabs">
+        <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
+                       {% if active_game_type == 'chess' %}bg-gold/20 text-gold border border-gold/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
+                data-game-type="chess" id="gtChess">
+          ♟ Chess
+        </button>
+        <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
+                       {% if active_game_type == 'breakthrough' %}bg-purple/20 text-purple border border-purple/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
+                data-game-type="breakthrough" id="gtBreakthrough">
+          🔴 Breakthrough
+        </button>
+      </div>
 
-  <!-- ═══════════════════════════════════════════
-       Leaderboard Table — Dense Codeforces-style
-       ═══════════════════════════════════════════ -->
-  <div class="card rounded-t-none border-t-0 overflow-x-auto">
-    <table class="stats-table lb-table text-sm w-full" id="lbTable">
+      <!-- Hidden tab list (keeps JS working, no visual) -->
+      <div class="hidden" id="lbTabs" role="tablist">
+        {% for key, meta in tabs.items %}
+          <button class="lb-tab{% if key == active_tab %} active{% endif %}"
+                  role="tab"
+                  aria-selected="{% if key == active_tab %}true{% else %}false{% endif %}"
+                  data-tab="{{ key }}">
+            <span class="badge" id="cnt-{{ key }}">{{ counts|dictget:key }}</span>
+          </button>
+        {% endfor %}
+      </div>
+
+      <!-- Leaderboard Table -->
+      <div class="card overflow-x-auto">
+        <table class="stats-table lb-table text-sm w-full" id="lbTable">
       <thead>
         <tr>
           <th class="w-14 sortable" data-col="rank">#<span class="sort-arrow">▲</span></th>
@@ -131,7 +126,7 @@
           <td class="text-center">
             <span class="{{ p.get_category.css }}" title="{{ p.get_category.tier }}">
               {{ p.get_category.icon }}
-              <span class="text-xs ml-0.5 hidden sm:inline">{{ p.get_category.tier }}</span>
+              <span class="text-xs ml-0.5">{{ p.get_category.tier }}</span>
             </span>
           </td>
           <td class="text-right text-green-400">{{ p.wins }}</td>
@@ -160,17 +155,76 @@
         </tr>
         {% endfor %}
       </tbody>
-    </table>
-  </div>
+      </table>
+      </div><!-- /card -->
 
-  <!-- Legend -->
-  <div class="flex flex-wrap items-center gap-4 mt-4 text-xs text-gray-500">
-    <span class="flex items-center gap-1"><span class="rank-1">🥇</span> = Rank 1 (Gold)</span>
-    <span class="flex items-center gap-1"><span class="rank-2">🥈</span> = Rank 2 (Silver)</span>
-    <span class="flex items-center gap-1"><span class="rank-3">🥉</span> = Rank 3 (Bronze)</span>
-    <span class="flex items-center gap-1"><span class="badge-streak positive text-xs">🔥</span> = Win streak</span>
-    <span>Click any column header to sort</span>
-  </div>
+    </div><!-- /left column -->
+
+    <!-- ── Right: FIDE Tier Reference ───────── -->
+    <div class="w-56 shrink-0">
+      <div class="card p-0 sticky top-24">
+        <div class="px-4 py-3 border-b border-borderDark">
+          <h3 class="text-sm font-bold text-gray-200">FIDE Tier Rankings</h3>
+        </div>
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b border-borderDark">
+              <th class="px-3 py-2 text-left text-gray-400 font-medium">Title</th>
+              <th class="px-3 py-2 text-right text-gray-400 font-medium">Elo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-yellow-300 font-semibold">👑 Super GM</td>
+              <td class="px-3 py-2 text-right text-gray-400">2700+</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-purple-400 font-semibold">🏆 Grandmaster</td>
+              <td class="px-3 py-2 text-right text-gray-400">2500–2699</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-yellow-400 font-semibold">🥇 Intl. Master</td>
+              <td class="px-3 py-2 text-right text-gray-400">2400–2499</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-blue-300 font-semibold">🥈 FIDE Master</td>
+              <td class="px-3 py-2 text-right text-gray-400">2300–2399</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-gray-300 font-semibold">🥈 Cand. Master</td>
+              <td class="px-3 py-2 text-right text-gray-400">2200–2299</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-orange-400 font-semibold">🥇 Expert</td>
+              <td class="px-3 py-2 text-right text-gray-400">2000–2199</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-red-400 font-semibold">🔴 Class A</td>
+              <td class="px-3 py-2 text-right text-gray-400">1800–1999</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-orange-300 font-semibold">🟠 Class B</td>
+              <td class="px-3 py-2 text-right text-gray-400">1600–1799</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-yellow-500 font-semibold">🟡 Class C</td>
+              <td class="px-3 py-2 text-right text-gray-400">1400–1599</td>
+            </tr>
+            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-green-400 font-semibold">🟢 Class D</td>
+              <td class="px-3 py-2 text-right text-gray-400">1200–1399</td>
+            </tr>
+            <tr class="hover:bg-surfaceLight transition">
+              <td class="px-3 py-2 text-amber-600 font-semibold">🥉 Beginner</td>
+              <td class="px-3 py-2 text-right text-gray-400">&lt; 1200</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div><!-- /right column -->
+
+  </div><!-- /two-column layout -->
+
 </div>
 {% endblock %}
 

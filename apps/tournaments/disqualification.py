@@ -139,6 +139,29 @@ def disqualify_for_repo_change(
         if is_qa:
             participant.ready = False
 
+    # ── Reset model integrity counters (non-QA only) ────────────────
+    # Ensures rated_games_since_revalidation resets to 0 regardless of
+    # which code path triggered this DQ (SHA audit, admin action, etc.).
+    # The SHA audit path also does this in _react_to_mismatch, but
+    # centralising it here guarantees consistency for all DQ triggers.
+    if not is_qa:
+        try:
+            from apps.users.models import UserGameModel
+            UserGameModel.objects.filter(
+                user=participant.user,
+                game_type=tournament.game_type,
+            ).update(
+                model_integrity_ok=False,
+                rated_games_since_revalidation=0,
+            )
+        except Exception:
+            log.debug(
+                "disqualify_for_repo_change: could not reset UserGameModel "
+                "integrity flags for user=%s game_type=%s",
+                participant.user.username, tournament.game_type,
+                exc_info=True,
+            )
+
     # ── Loud terminal log ───────────────────────────────────────
     banner = (
         "\n"
