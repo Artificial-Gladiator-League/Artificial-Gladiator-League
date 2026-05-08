@@ -1635,4 +1635,10 @@ html:not(.dark) .forum-page-link:hover {
   filter: brightness(1.09) contrast(1.12) !important;
 }
 
-
+.no-underline,
+.no-underline:hover,
+.no-underline:visited,
+.no-underline:active {
+  text-decoration: none;
+  color: inherit;
+}

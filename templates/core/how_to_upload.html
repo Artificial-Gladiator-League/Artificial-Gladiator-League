@@ -7,16 +7,16 @@
   <!-- Hero -->
   <div class="text-center mb-12">
     <h1 class="text-4xl md:text-5xl font-extrabold text-brand leading-tight">
-      🤖 How to Upload Your AI
+      How to Upload Your Artificial Gladiator
     </h1>
     <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-      A step-by-step guide to getting your AI model into the arena — from writing your bot to competing in tournaments.
+      A step-by-step guide to connecting your Artificial Gladiator (AG) to the Artificial Gladiator League — from writing your Artificial Gladiator to gladiating in games and tournaments. Any algorithm, any framework.
     </p>
   </div>
 
   <!-- Step bar -->
   <div class="flex flex-wrap justify-center gap-4 mb-12 text-xs text-center">
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Write Bot</span></div>
+    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Create Your AG</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
     <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-purple flex items-center justify-center font-bold text-white">2</div><span class="text-gray-400">Create Repos</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
@@ -32,41 +32,64 @@
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Write Your AI Bot</h2>
-        <p class="text-gray-400 text-sm mb-4">
-          Your bot is a Python file. The platform calls your code once per move, passing the current board position and expecting a legal move back.
-          Implement an <code class="bg-surface px-1 rounded text-brand">EndpointHandler</code> class with a <code class="bg-surface px-1 rounded text-brand">__call__(self, data)</code> method.
+        <h2 class="text-xl font-bold mb-1">Create Your Artificial Gladiator</h2>
+        <p class="text-gray-400 text-sm mb-5">
+          Your Artificial Gladiator is a Python function that receives a board position and returns a legal move string.
+          The logic inside is entirely up to you — random play, minimax, MCTS, a neural network, or anything else.
+          The recommended integration is a <strong class="text-white">Gradio Space</strong> hosted on Hugging Face:
+          easy to deploy, easy to debug, and no server to manage on your end.
         </p>
 
-        <h3 class="text-sm font-semibold text-gold mb-2">♟ Chess Bot</h3>
-        <p class="text-xs text-gray-400 mb-2">Return a move in <strong>UCI notation</strong> (e.g. <code class="bg-surface px-1 rounded">e2e4</code>).</p>
-        <div class="rounded-lg bg-surface border border-borderDark p-4 text-sm font-mono mb-5 overflow-x-auto">
-          <div class="text-gray-500 mb-1"># handler.py</div>
-          <div><span class="text-purple-400">import</span> chess, random</div>
-          <div class="mt-2"><span class="text-blue-300">class</span> <span class="text-gold">EndpointHandler</span>:</div>
-          <div class="pl-4"><span class="text-blue-300">def</span> <span class="text-brand">__init__</span>(self, path=<span class="text-green-400">&quot;&quot;</span>): <span class="text-purple-400">pass</span></div>
-          <div class="pl-4 mt-1"><span class="text-blue-300">def</span> <span class="text-brand">__call__</span>(self, data: dict) -&gt; dict:</div>
-          <div class="pl-8 text-gray-400">&quot;&quot;&quot;data = {&quot;inputs&quot;: {&quot;fen&quot;: &quot;...&quot;, &quot;player&quot;: &quot;w&quot;, &quot;game_type&quot;: &quot;chess&quot;}}&quot;&quot;&quot;</div>
-          <div class="pl-8">fen = data[<span class="text-green-400">&quot;inputs&quot;</span>][<span class="text-green-400">&quot;fen&quot;</span>]</div>
-          <div class="pl-8">board = chess.Board(fen)</div>
-          <div class="pl-8">move = random.choice(list(board.legal_moves))</div>
-          <div class="pl-8"><span class="text-purple-400">return</span> {<span class="text-green-400">&quot;move&quot;</span>: move.uci()}</div>
+        <!-- Interface 1: Gradio Space -->
+        <div class="rounded-lg border border-brand/30 bg-surface p-5 mb-5">
+          <h3 class="text-sm font-semibold text-brand mb-1">Interface 1 — Gradio Space <span class="ml-2 text-xs font-normal text-gray-500">(Recommended)</span></h3>
+          <p class="text-xs text-gray-400 mb-3">
+            Deploy a Gradio app on Hugging Face Spaces. The platform calls your Space's
+            <code class="bg-black/30 px-1 rounded">get_move</code> function over HTTP on every move — no server to manage on your end.
+            Your function receives the board position and the active player, and returns a move string.
+          </p>
+          <div class="rounded-lg bg-black/30 p-4 text-sm font-mono mb-3 overflow-x-auto">
+            <div class="text-gray-500 mb-1"># app.py — in your Gradio Space repo</div>
+            <div><span class="text-purple-400">import</span> gradio <span class="text-purple-400">as</span> gr</div>
+            <div class="mt-3 text-gray-400 text-xs"># The platform sends the board position (and optionally the active player).</div>
+            <div class="text-gray-400 text-xs"># Return your chosen move as a string in the format the game expects.</div>
+            <div class="mt-1"><span class="text-blue-300">def</span> <span class="text-brand">get_move</span>(position: str, player: str) -&gt; str:</div>
+            <div class="pl-4 text-gray-500 text-xs"># ---- your AI logic here ----</div>
+            <div class="pl-4 text-gray-500 text-xs"># minimax, MCTS, neural net, opening table — whatever you like</div>
+            <div class="pl-4"><span class="text-purple-400">return</span> <span class="text-green-400">"e2e4"</span>  <span class="text-gray-500"># return a valid move string</span></div>
+            <div class="mt-3">gr.Interface(</div>
+            <div class="pl-4">fn=get_move,</div>
+            <div class="pl-4">inputs=[<span class="text-green-400">"text"</span>, <span class="text-green-400">"text"</span>],</div>
+            <div class="pl-4">outputs=<span class="text-green-400">"text"</span>,</div>
+            <div class="pl-4">api_name=<span class="text-green-400">"get_move"</span>,  <span class="text-gray-500"># ← required</span></div>
+            <div>).launch()</div>
+          </div>
+          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
+            <div class="text-gray-500 mb-1"># requirements.txt — Space root</div>
+            <div class="text-green-400">gradio</div>
+            <div class="text-gray-400">torch         # add any framework you need</div>
+            <div class="text-gray-400">numpy</div>
+          </div>
+          <ul class="text-xs text-gray-400 space-y-1.5">
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span><code class="bg-black/30 px-1 rounded">api_name="get_move"</code> is required — the platform posts to <code class="bg-black/30 px-1 rounded">/gradio_api/call/get_move</code></span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>The Space must remain <strong class="text-gray-200">Public</strong> and running while your matches are scheduled</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>You choose the hardware tier — upgrade for heavier models (GPU Spaces supported)</span></li>
+          </ul>
         </div>
 
-        <h3 class="text-sm font-semibold text-purple-400 mb-2">🔴 Breakthrough Bot</h3>
-        <p class="text-xs text-gray-400 mb-2">Return a move as a coordinate string (e.g. <code class="bg-surface px-1 rounded">e2e3</code>). Same payload structure.</p>
-        <div class="rounded-lg bg-surface border border-borderDark p-4 text-sm font-mono mb-5 overflow-x-auto">
-          <div class="text-gray-500 mb-1"># handler.py</div>
-          <div><span class="text-blue-300">class</span> <span class="text-gold">EndpointHandler</span>:</div>
-          <div class="pl-4"><span class="text-blue-300">def</span> <span class="text-brand">__init__</span>(self, path=<span class="text-green-400">&quot;&quot;</span>): <span class="text-purple-400">pass</span></div>
-          <div class="pl-4 mt-1"><span class="text-blue-300">def</span> <span class="text-brand">__call__</span>(self, data: dict) -&gt; dict:</div>
-          <div class="pl-8">fen = data[<span class="text-green-400">&quot;inputs&quot;</span>][<span class="text-green-400">&quot;fen&quot;</span>]</div>
-          <div class="pl-8 text-gray-400"># Parse the board, generate your move</div>
-          <div class="pl-8"><span class="text-purple-400">return</span> {<span class="text-green-400">&quot;move&quot;</span>: <span class="text-green-400">&quot;e2e3&quot;</span>}  <span class="text-gray-500"># replace with real logic</span></div>
+        <!-- Advanced: EndpointHandler mention -->
+        <div class="mt-1 rounded-lg border border-borderDark bg-surface px-4 py-3 text-xs text-gray-400">
+          <span class="font-semibold text-gray-300">Advanced option — Direct Python Handler:</span>
+          For lower-latency scenarios or when you need tight control over the local runtime,
+          the platform also supports a class-based <strong class="text-gray-200">EndpointHandler</strong> interface
+          executed directly in a sandboxed environment without a Gradio Space.
+          Full documentation for this interface will be published separately.
         </div>
 
-        <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-3 text-sm text-amber-300">
-          <strong>Requirements:</strong> List all pip packages in <code class="bg-black/30 px-1 rounded">requirements.txt</code> at the root of your model repo.
+        <!-- Flexibility callout -->
+        <div class="rounded-lg bg-brand/10 border border-brand/30 px-4 py-3 text-sm">
+          <strong class="text-brand">Any algorithm is welcome.</strong>
+          <span class="text-gray-300"> Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches — if it returns a valid move string within the time limit, it qualifies.</span>
         </div>
       </div>
     </div>
@@ -79,56 +102,115 @@
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Create Your Hugging Face Repositories</h2>
         <p class="text-gray-400 text-sm mb-5">
-          You need <strong>two public repositories</strong> on Hugging Face — one for your model code, one for your data. Both must be <strong>public</strong>.
+          You need up to <strong>three resources</strong> on Hugging Face — a model code repo, a data repo, and (for the Gradio interface) a Space.
+          Each has a different visibility requirement explained below.
         </p>
 
-        <!-- Repo 1 -->
+        <!-- Repo 1 - Model -->
         <div class="rounded-lg border border-borderDark bg-surface p-5 mb-4">
-          <h3 class="font-semibold text-brand mb-2">📦 Repo 1 — Model Repository <span class="text-xs font-normal text-gray-500">(HF Model repo)</span></h3>
-          <p class="text-xs text-gray-400 mb-3">Must include a <code class="bg-black/30 px-1 rounded">config_model.json</code> at the root listing all your Python files and the entry-point module.</p>
+          <h3 class="font-semibold text-brand mb-2">Repo 1 — Model Repository <span class="text-xs font-normal text-gray-500">(HF Model repo)</span></h3>
+          <p class="text-xs text-gray-400 mb-3">
+            Contains your Artificial Gladiator code files and a <code class="bg-black/30 px-1 rounded">config_model.json</code> that lists all Python files and the entry-point module.
+          </p>
+
+          <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-start gap-2">
+            <span class="shrink-0">🔒</span>
+            <span>
+              <strong>Strongly recommended: Gated (Access Requests).</strong>
+              A Gated repo requires visitors to request access before downloading any files — protecting your Artificial Gladiator code from being copied.
+              The platform only checks the public <em>file listing</em> during ownership verification; it never downloads your source for Gradio-interface bots.
+              Go to your repo's <em>Settings → Access Control → Gated</em> to enable it.
+              <br><br>
+              <strong>Important:</strong> once Gated, you must grant access to the platform's Hugging Face account
+              <strong class="text-amber-200">ArtificialGladiatorLeague</strong> so it can read your file listing during verification.
+              Without this grant, ownership checks will fail even if the verification code is correct.
+            </span>
+          </div>
+
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1">Required layout:</div>
-            <div>your-username/my-chess-bot/</div>
-            <div class="pl-4 text-gold">├── config_model.json    &lt;-- required</div>
-            <div class="pl-4 text-gray-300">├── handler.py           &lt;-- contains EndpointHandler</div>
-            <div class="pl-4 text-gray-300">├── my_model.py          &lt;-- any helper modules</div>
-            <div class="pl-4 text-gray-400">├── AGL_VERIFY.txt       &lt;-- added in step 3</div>
-            <div class="pl-4 text-gray-400">└── requirements.txt</div>
+            <div class="text-gray-500 mb-1">Suggested layout:</div>
+            <div>your-username/my-bot/</div>
+            <div class="pl-4 text-gold">├── config_model.json    ← required</div>
+            <div class="pl-4 text-gray-300">├── my_model.py          ← your AI code (EndpointHandler class goes here)</div>
+            <div class="pl-4 text-gray-300">├── utils.py             ← optional helper modules</div>
+            <div class="pl-4 text-gray-400">├── requirements.txt     ← pip dependencies (EndpointHandler only)</div>
+            <div class="pl-4 text-gray-400">└── AGL_VERIFY.txt       ← added in Step 3</div>
           </div>
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto">
             <div class="text-gray-500 mb-1">config_model.json</div>
             <div>{</div>
-            <div class="pl-4">&quot;files&quot;: [&quot;handler.py&quot;, &quot;my_model.py&quot;],</div>
-            <div class="pl-4">&quot;main&quot;: &quot;handler&quot;</div>
+            <div class="pl-4">&quot;files&quot;: [&quot;my_model.py&quot;, &quot;utils.py&quot;],</div>
+            <div class="pl-4">&quot;main&quot;: &quot;my_model&quot;</div>
             <div>}</div>
           </div>
-          <p class="text-xs text-gray-500 mt-2">The <code class="bg-black/30 px-1 rounded">main</code> key is the module name (no <code>.py</code>) that contains your <code>EndpointHandler</code> class.</p>
+          <p class="text-xs text-gray-500 mt-2">
+            <code class="bg-black/30 px-1 rounded">main</code> is the module filename without <code>.py</code> — this is the module that contains your <code>EndpointHandler</code> class.
+            If using the Gradio interface, only the file listing is read during ownership verification; your code is never downloaded.
+          </p>
         </div>
 
-        <!-- Repo 2 -->
-        <div class="rounded-lg border border-borderDark bg-surface p-5">
-          <h3 class="font-semibold text-purple-400 mb-2">🗂️ Repo 2 — Data Repository <span class="text-xs font-normal text-gray-500">(HF Dataset repo)</span></h3>
+        <!-- Repo 2 - Data -->
+        <div class="rounded-lg border border-borderDark bg-surface p-5 mb-4">
+          <h3 class="font-semibold text-purple-400 mb-2">Repo 2 — Data Repository <span class="text-xs font-normal text-gray-500">(HF Dataset repo)</span></h3>
           <p class="text-xs text-gray-400 mb-3">
-            A Hugging Face <em>dataset</em> repo containing runtime data files (zone DBs, opening books, weights). Must include <code class="bg-black/30 px-1 rounded">config_data.json</code>.
-            For Chess with no extra data, use a minimal config.
+            Optional, but required if your Artificial Gladiator uses runtime data files — opening books, precomputed tables, trained weights, zone databases, etc.
           </p>
-          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1">Required layout:</div>
-            <div>your-username/my-breakthrough-data/</div>
-            <div class="pl-4 text-purple-400">├── config_data.json         &lt;-- required</div>
-            <div class="pl-4 text-gray-300">└── breakthrough_zone_db.npz &lt;-- your data file(s)</div>
+
+          <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-2.5 text-xs text-red-300 mb-3 flex items-start gap-2">
+            <span class="shrink-0">⚠️</span>
+            <span>
+              <strong>Must be fully Public — no exceptions.</strong>
+              The platform's servers pull your data files using anonymous HTTP requests with no user token.
+              A private, gated, or restricted repo will return a 401/403 error and your Artificial Gladiator will be unable to gladiate any matches.
+            </span>
           </div>
+
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1">config_data.json (Breakthrough)</div>
-            <div>{</div>
-            <div class="pl-4">&quot;files&quot;: [&quot;breakthrough_zone_db.npz&quot;],</div>
-            <div class="pl-4">&quot;zone_db&quot;: &quot;breakthrough_zone_db.npz&quot;</div>
-            <div>}</div>
+            <div class="text-gray-500 mb-1">Example layout:</div>
+            <div>your-username/my-bot-data/</div>
+            <div class="pl-4 text-purple-400">├── config_data.json     ← required</div>
+            <div class="pl-4 text-gray-300">├── weights.pt           ← trained model weights</div>
+            <div class="pl-4 text-gray-300">└── openings.npz         ← precomputed lookup table</div>
           </div>
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto">
-            <div class="text-gray-500 mb-1">config_data.json (Chess / no data files)</div>
-            <div>{&quot;files&quot;: []}</div>
+            <div class="text-gray-500 mb-1">config_data.json</div>
+            <div>{</div>
+            <div class="pl-4">&quot;files&quot;: [&quot;weights.pt&quot;, &quot;openings.npz&quot;]</div>
+            <div>}</div>
           </div>
+          <p class="text-xs text-gray-500 mt-2">
+            List every file you need downloaded. For EndpointHandler bots, they are placed in a local cache directory whose path is passed to <code class="bg-black/30 px-1 rounded">__init__(self, path)</code>. For Gradio Artificial Gladiators, load them yourself inside your Space (e.g. from the HF Hub using <code class="bg-black/30 px-1 rounded">huggingface_hub.hf_hub_download</code>).
+          </p>
+        </div>
+
+        <!-- Repo 3 - Space -->
+        <div class="rounded-lg border border-borderDark bg-surface p-5">
+          <h3 class="font-semibold text-green-400 mb-2">Repo 3 — Gradio Space <span class="text-xs font-normal text-gray-500">(HF Space — required for Interface 1)</span></h3>
+          <p class="text-xs text-gray-400 mb-3">
+            The platform calls your Artificial Gladiator over HTTP using the Gradio 4 SSE API. On each move it posts to
+            <code class="bg-black/30 px-1 rounded">/gradio_api/call/get_move</code> on your Space's subdomain and streams the response.
+          </p>
+
+          <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-2.5 text-xs text-red-300 mb-3 flex items-start gap-2">
+            <span class="shrink-0">⚠️</span>
+            <span>
+              <strong>Must be fully Public — no exceptions.</strong>
+              The platform posts to your Space's HTTP API with no authentication token.
+              A private or sleeping Space will cause the move request to fail or time out, forfeiting the turn.
+            </span>
+          </div>
+
+          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
+            <div class="text-gray-500 mb-1">Required layout:</div>
+            <div>your-username/my-bot-space/</div>
+            <div class="pl-4 text-green-400">├── app.py               ← Gradio app exposing get_move()</div>
+            <div class="pl-4 text-gray-300">└── requirements.txt     ← gradio + all dependencies</div>
+          </div>
+          <p class="text-xs text-gray-500">
+            After deploying, copy the Space's public subdomain
+            (e.g. <code class="bg-black/30 px-1 rounded">your-username-my-bot-space.hf.space</code>) and paste it as the
+            <strong class="text-gray-200">HF Space Link</strong> when registering your Artificial Gladiator.
+          </p>
         </div>
       </div>
     </div>
@@ -140,7 +222,7 @@
       <div class="w-10 h-10 rounded-full bg-gold flex items-center justify-center font-bold text-black shrink-0">3</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Prove Ownership &amp; SHA Pinning</h2>
-        <p class="text-gray-400 text-sm mb-4">Before your model can play, you must prove you own the repository. The platform also pins the commit SHA to detect any changes during tournaments.</p>
+        <p class="text-gray-400 text-sm mb-4">Before your Artificial Gladiator can gladiate, you must prove you own the repository. The platform also pins the commit SHA to detect any changes during tournaments.</p>
 
         <h3 class="text-sm font-semibold text-gray-200 mb-3">Ownership Verification (one-time per repo)</h3>
         <ol class="space-y-3 text-sm mb-5">
@@ -150,25 +232,25 @@
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
-            <span>Create a file named <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> at the <strong>root of your HF model repo</strong> with the exact code shown — no extra characters or whitespace.</span>
+            <span>Create a file named <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> at the <strong>root of your HF model repo</strong> containing exactly the verification code — no trailing whitespace or extra characters.</span>
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
-            <span>Click <strong>&quot;Verify Ownership&quot;</strong>. The platform downloads your <code class="bg-surface px-1 rounded">AGL_VERIFY.txt</code> and confirms the code matches.</span>
+            <span>Click <strong>"Verify Ownership"</strong>. The platform downloads and checks the file. Once confirmed, you're cleared to compete.</span>
           </li>
         </ol>
 
         <h3 class="text-sm font-semibold text-gray-200 mb-2">SHA Pinning (ongoing)</h3>
         <ul class="space-y-2 text-sm text-gray-400 mb-4">
-          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">At tournament registration</strong> — the exact commit SHA of your repo is recorded.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">Before each tournament round</strong> — the SHA is re-checked. If your repo changed since registration, you are automatically disqualified.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">At tournament registration</strong> — the exact commit SHA of your model repo is recorded.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">Before each round</strong> — the SHA is re-checked. Any commit since registration triggers automatic disqualification.</span></li>
         </ul>
 
         <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-3 text-sm text-red-300 mb-3">
           ⚠️ <strong>Do not push changes</strong> to your model repo after joining a tournament. SHA mismatch = automatic disqualification.
         </div>
         <div class="rounded-lg bg-green-900/20 border border-green-700/50 px-4 py-3 text-sm text-green-300">
-          ✅ No Hugging Face token required. All checks use your <strong>public</strong> repo — no credentials needed from you.
+          ✅ No Hugging Face token required. All checks use public repo access — no credentials needed from you.
         </div>
       </div>
     </div>
@@ -179,28 +261,22 @@
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center font-bold text-white shrink-0">4</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Register Your Model in the Platform</h2>
-        <p class="text-gray-400 text-sm mb-4">Go to <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">Profile → AI Models</a> and fill in the repo IDs for each game you want to play. No token needed.</p>
+        <h2 class="text-xl font-bold mb-1">Register Your Artificial Gladiator in the Platform</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          Go to <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">Profile → AG Models</a> and fill in the repo details for each game type you want to play.
+        </p>
 
-        <div class="grid sm:grid-cols-2 gap-4 mb-4">
-          <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm">
-            <div class="font-semibold text-gold mb-2">♟ Chess</div>
-            <ul class="text-gray-400 space-y-1.5 text-xs">
-              <li>• <strong class="text-gray-200">Model Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/repo-name</code></li>
-              <li>• <strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/data-repo</code> (optional)</li>
-            </ul>
-          </div>
-          <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm">
-            <div class="font-semibold text-purple-400 mb-2">🔴 Breakthrough</div>
-            <ul class="text-gray-400 space-y-1.5 text-xs">
-              <li>• <strong class="text-gray-200">Model Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/bt-repo</code></li>
-              <li>• <strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/bt-data</code> (recommended — holds zone DB)</li>
-            </ul>
-          </div>
+        <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
+          <div class="font-semibold text-gray-200 mb-3">Fields per game type</div>
+          <ul class="text-gray-400 space-y-2 text-xs">
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Model Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code> — your Artificial Gladiator code repository</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG-data</code> — your data repository (leave blank if not used)</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">HF Space Link</strong> — <code class="bg-black/30 px-1 rounded">username-my-AG-space.hf.space</code> — your Gradio Space subdomain (Gradio interface only)</span></li>
+          </ul>
         </div>
 
         <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-3 text-sm text-amber-300">
-          ⚠️ After registering, you need <strong>30 rated games</strong> with that model before you can enter tournaments. Updating your repo resets this counter.
+          ⚠️ After registering, you need <strong>30 rated games</strong> with that Artificial Gladiator before you can enter tournaments. Changing your repo IDs resets this counter.
         </div>
       </div>
     </div>
@@ -214,11 +290,11 @@
         <h2 class="text-xl font-bold mb-1">Compete in Games &amp; Tournaments</h2>
         <div class="grid sm:grid-cols-2 gap-4 mb-5">
           <div class="rounded-lg border border-borderDark bg-surface p-4">
-            <div class="font-semibold text-gold mb-2">⚔️ Quick Matches</div>
+            <div class="font-semibold text-gold mb-2">Quick Matches</div>
             <p class="text-xs text-gray-400">Head to the <a href="{% url 'games:lobby' %}" class="text-brand hover:underline">Lobby</a>, challenge another player. Your AI plays automatically in real time. Results update your Elo.</p>
           </div>
           <div class="rounded-lg border border-borderDark bg-surface p-4">
-            <div class="font-semibold text-purple-400 mb-2">🏆 Tournaments</div>
+            <div class="font-semibold text-purple-400 mb-2">Tournaments</div>
             <p class="text-xs text-gray-400">Browse open tournaments, register, play 30 rated games to qualify, mark yourself <strong class="text-white">Ready</strong>. The system schedules and runs all matches automatically.</p>
           </div>
         </div>
@@ -227,7 +303,7 @@
           <div class="flex flex-wrap gap-2 items-center text-xs">
             <span class="bg-brand/20 text-brand px-2 py-1 rounded">Board FEN sent</span>
             <span class="text-gray-600">→</span>
-            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">EndpointHandler.__call__ invoked</span>
+            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Gradio Space <code>get_move</code> called</span>
             <span class="text-gray-600">→</span>
             <span class="bg-gold/20 text-gold px-2 py-1 rounded">Move validated</span>
             <span class="text-gray-600">→</span>
@@ -239,37 +315,124 @@
     </div>
   </div>
 
+  <!-- Best Practices -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-4">Best Practices</h2>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-brand mb-2">Pre-load at startup</div>
+        <p class="text-xs text-gray-400">Load models, weights, and opening books in <code class="bg-black/30 px-1 rounded">__init__</code> (EndpointHandler) or at module level (Gradio Space). Never load files inside <code class="bg-black/30 px-1 rounded">get_move</code> — cold load time counts against your move clock.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-gold mb-2">⏱ Respect the time limit</div>
+        <p class="text-xs text-gray-400">The platform enforces a per-move timeout. Budget your search depth or inference time accordingly. Returning a random legal move as a fallback avoids timeouts that would forfeit the game entirely.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-purple-400 mb-2">Avoid cold starts</div>
+        <p class="text-xs text-gray-400">Hugging Face Spaces can go to sleep after inactivity. Use the <em>Always On</em> option if available on your plan, or periodically ping your Space to keep it warm and prevent the first move from timing out.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-green-400 mb-2">Pin your dependencies</div>
+        <p class="text-xs text-gray-400">Use exact version pins in <code class="bg-black/30 px-1 rounded">requirements.txt</code> (e.g. <code class="bg-black/30 px-1 rounded">torch==2.2.0</code>) to prevent breakage from upstream updates between tournament rounds.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-amber-400 mb-2">Validate move format</div>
+        <p class="text-xs text-gray-400">Always return a valid move string. Invalid or empty responses are treated as illegal moves and may result in a forfeited turn. Check the expected move format for the game type in the Lobby.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-gray-200 mb-2">Test before tournaments</div>
+        <p class="text-xs text-gray-400">Play several quick matches in the Lobby to confirm your bot responds correctly at game speed before entering a tournament. The 30-game qualification window is the ideal calibration period.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Troubleshooting -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-4">Troubleshooting</h2>
+    <div class="space-y-4 text-sm">
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Move timed out / AG forfeited the turn</div>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your Space may have been sleeping — enable <em>Always On</em> or warm it up before matches start.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Inference is too slow — reduce search depth, switch to a lighter model, or pre-cache results.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Check the Space logs on Hugging Face for Python errors or out-of-memory crashes.</span></li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Ownership verification failed</div>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Ensure <code class="bg-black/30 px-1 rounded">AGL_VERIFY.txt</code> is at the <em>root</em> of your model repo — not inside a subfolder.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>The file content must match exactly — no trailing newline, no extra spaces.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>The model repo must be Public or Gated — if Gated, you must have granted access to <strong class="text-gray-200">ArtificialGladiatorLeague</strong> on Hugging Face.</span></li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Disqualified — SHA mismatch</div>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>You pushed a commit to your model repo after registering for the tournament.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Even trivial changes (README edits, whitespace) produce a new SHA. Freeze the repo once registered.</span></li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Invalid move returned</div>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your move string matches the expected format for the game (UCI for Chess, coordinate string for Breakthrough).</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Make sure you return a plain string — not a list, not a JSON object, not <code class="bg-black/30 px-1 rounded">{"move": "..."}</code>.</span></li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Data files not loading</div>
+        <ul class="text-xs text-gray-400 space-y-1.5">
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your data repo is <strong class="text-gray-200">fully Public</strong> on Hugging Face — gated or private repos cannot be downloaded by the platform.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Check that filenames in <code class="bg-black/30 px-1 rounded">config_data.json</code> match exactly (case-sensitive) the filenames in your repo.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
   <!-- FAQ -->
   <div class="card mb-10">
-    <h2 class="text-xl font-bold mb-4">❓ Frequently Asked Questions</h2>
+    <h2 class="text-xl font-bold mb-4">Frequently Asked Questions</h2>
     <div class="space-y-5 text-sm divide-y divide-borderDark">
       <div class="pt-4 first:pt-0">
-        <p class="font-semibold text-gray-200">Can I use any ML framework (PyTorch, TensorFlow, scikit-learn…)?</p>
-        <p class="text-gray-400 mt-1">Yes. List dependencies in <code class="bg-surface px-1 rounded">requirements.txt</code>. The platform installs them in a sandboxed environment before running your handler.</p>
+        <p class="font-semibold text-gray-200">Can I use PyTorch, TensorFlow, JAX, scikit-learn, or any other ML framework?</p>
+        <p class="text-gray-400 mt-1">Yes. List all pip packages in <code class="bg-surface px-1 rounded">requirements.txt</code>. They are installed in your Gradio Space (or local sandbox for EndpointHandler Artificial Gladiators) before your code runs.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Do I need a Hugging Face token?</p>
-        <p class="text-gray-400 mt-1">No. Your repos must be <strong class="text-white">public</strong>. No credentials are required from you.</p>
+        <p class="font-semibold text-gray-200">What game types are supported?</p>
+        <p class="text-gray-400 mt-1">Currently <strong class="text-white">Chess</strong> and <strong class="text-white">Breakthrough</strong>. Each game is registered independently, so you can enter different Artificial Gladiators for each.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">What happens if I update my model repo?</p>
-        <p class="text-gray-400 mt-1">Outside tournaments you can update freely, then re-verify. Inside a tournament, updating after registration triggers an <strong class="text-white">automatic disqualification</strong> (SHA mismatch).</p>
+        <p class="font-semibold text-gray-200">Do I need a Hugging Face account?</p>
+        <p class="text-gray-400 mt-1">Yes — to create repos and deploy a Space. No HF API token is required by the platform; all access is anonymous via public resources.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Can I submit different models for Chess and Breakthrough?</p>
-        <p class="text-gray-400 mt-1">Yes. Each game type is registered independently with its own model and data repos.</p>
+        <p class="font-semibold text-gray-200">Can I update my Artificial Gladiator between games (outside tournaments)?</p>
+        <p class="text-gray-400 mt-1">
+          Yes, you can update your Artificial Gladiator or change your repository links outside of tournaments. 
+          However, <strong class="text-white">any change to your Model Repo, Data Repo, or HF Space Link will reset your rated games counter</strong>. 
+          You will need to play another <strong class="text-white">30 rated games</strong> before you can enter tournaments again.
+        </p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">What move format does Breakthrough use?</p>
-        <p class="text-gray-400 mt-1">Coordinate strings: column + row, e.g. <code class="bg-surface px-1 rounded text-brand">e2e3</code> (from e2 to e3 on an 8×8 board).</p>
+        <p class="font-semibold text-gray-200">Can my Artificial Gladiator's model repo be Gated?</p>
+        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your code. The platform only reads the file listing for verification — it does not download your source files for Gradio-interface bots. However, you must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can read that listing; without this, ownership verification will fail.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">What is the zone DB in config_data.json?</p>
-        <p class="text-gray-400 mt-1">A precomputed lookup table (e.g. <code class="bg-surface px-1 rounded">.npz</code>) for fast Breakthrough move evaluation. The <code class="bg-surface px-1 rounded">zone_db</code> key names which file in your data repo is the zone DB.</p>
+        <p class="font-semibold text-gray-200">Why must the data repo and Space be fully Public?</p>
+        <p class="text-gray-400 mt-1">The platform's servers make anonymous HTTP requests to both. No user token is passed. Private or gated access on these resources will cause failures at match time.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Why do I need 30 rated games before tournaments?</p>
-        <p class="text-gray-400 mt-1">It ensures your Elo is meaningful and your model is stable before entering a structured competition.</p>
+        <p class="font-semibold text-gray-200">Which interface should I choose — Gradio Space or EndpointHandler?</p>
+        <p class="text-gray-400 mt-1">Start with the Gradio Space. It's easier to deploy, easier to debug (logs are visible on HF), and you control the hardware tier. Use EndpointHandler only if you need sandbox-level control or have specific platform-integration requirements.</p>
+      </div>
+      <div class="pt-4">
+        <p class="font-semibold text-gray-200">Why do I need 30 rated games before entering tournaments?</p>
+        <p class="text-gray-400 mt-1">It establishes a meaningful Elo rating and confirms your model is stable and reliably responsive before entering structured competition.</p>
+      </div>
+      <div class="pt-4">
+        <p class="font-semibold text-gray-200">How strict is the per-move time limit?</p>
+        <p class="text-gray-400 mt-1">Exceeding the limit forfeits the move. The exact time depends on the game and match settings — check the Lobby or tournament details. Always implement a fast fallback (e.g. a random legal move) so your bot never times out completely.</p>
       </div>
     </div>
   </div>
@@ -278,7 +441,7 @@
   <div class="text-center mb-12">
     <p class="text-gray-400 mb-4">Ready to enter the arena?</p>
     <div class="flex flex-wrap justify-center gap-3">
-      <a href="{% url 'users:ai_models' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Go to AI Models</a>
+      <a href="{% url 'users:ai_models' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Go to AG Models</a>
       <a href="{% url 'games:lobby' %}" class="px-6 py-2.5 text-sm font-semibold rounded-lg border border-borderDark text-gray-300 hover:bg-surfaceLight transition">Go to Lobby</a>
     </div>
   </div>

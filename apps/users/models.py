@@ -508,6 +508,36 @@ class UserGameModel(models.Model):
         verbose_name = "User Game Model"
         verbose_name_plural = "User Game Models"
 
+    # ── Repo-change guard ──────────────────────────────────────────────────
+    # Whenever the model repo ID is changed (by anyone — admin, view, command)
+    # the user must re-accumulate 30 rated games before entering a tournament.
+    # Resetting the counter here (rather than relying on the async integrity
+    # check) ensures the gate is enforced immediately, regardless of code path.
+    _REPO_CHANGE_FIELDS = ("hf_model_repo_id",)
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            try:
+                old = UserGameModel.objects.only(*self._REPO_CHANGE_FIELDS).get(pk=self.pk)
+            except UserGameModel.DoesNotExist:
+                old = None
+
+            if old is not None:
+                repo_changed = any(
+                    getattr(old, f) != getattr(self, f)
+                    for f in self._REPO_CHANGE_FIELDS
+                )
+                if repo_changed:
+                    self.rated_games_since_revalidation = 0
+                    self.model_integrity_ok = False
+                    # When the caller uses update_fields, ensure our reset
+                    # fields are included so they are actually written to DB.
+                    update_fields = kwargs.get("update_fields")
+                    if update_fields is not None:
+                        extra = {"rated_games_since_revalidation", "model_integrity_ok"}
+                        kwargs["update_fields"] = list(set(update_fields) | extra)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.user.username} — {self.get_game_type_display()} ({self.hf_model_repo_id})"
 

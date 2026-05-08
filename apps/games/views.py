@@ -93,6 +93,24 @@ def _broadcast_lobby_update(action: str, game) -> None:
         log.debug("Could not broadcast lobby update for game %s", game.pk)
 
 
+def _wants_json(request) -> bool:
+    """Return True when the client is an AJAX/fetch call that expects JSON."""
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or "application/json" in request.headers.get("Accept", "")
+    )
+
+
+def has_valid_repo(user) -> bool:
+    """Return True if *user* has a valid repo for at least chess.
+
+    Delegates to the canonical ``has_repo_for_game_type`` in consumers so
+    both the HTTP and WebSocket paths share the same logic.
+    """
+    from .consumers import has_repo_for_game_type
+    return has_repo_for_game_type(user, "chess")
+
+
 def _live_ai_games_queryset(*, exclude_game_id: int | None = None):
     qs = (
         Game.objects.filter(
@@ -309,6 +327,8 @@ def _build_waiting_games():
             "fide_css": fide["css"],
             "time_control": game.time_control,
             "variant": _classify_time_control(game.time_control).capitalize(),
+            "game_type": game.game_type,
+            "game_type_label": Game.GameType(game.game_type).label,
             "join_url": reverse("games:join_game", args=[game.pk]),
         })
     return items
@@ -382,20 +402,29 @@ def create_lobby_game(request):
     """Create a new open lobby game from the modal form."""
     if request.method != "POST":
         return redirect("games:lobby")
+    ajax = _wants_json(request)
+    from .consumers import has_repo_for_game_type
     game_type = request.POST.get("game_type", Game.GameType.CHESS)
     if game_type not in {Game.GameType.CHESS, Game.GameType.BREAKTHROUGH}:
         game_type = Game.GameType.CHESS
-    if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
-        messages.error(request, "You must set an AI model before creating a game.")
+    # Primary gate: user must have a repo for this specific game type
+    if not has_repo_for_game_type(request.user, game_type):
+        _game_label = Game.GameType(game_type).label
+        _no_repo_msg = f"You can not create or join a game of {_game_label}. Please submit your Artificial Gladiator first."
+        if ajax:
+            return JsonResponse({"error": _no_repo_msg, "no_repo": True}, status=403)
+        messages.error(request, _no_repo_msg)
         return redirect("games:lobby")
     # Proof-of-Ownership gate: repo must be verified
     _gm = request.user.get_game_model(game_type)
     if _gm and not _gm.is_verified:
-        messages.error(
-            request,
+        _msg = (
             "Your model repository must be verified before creating games. "
-            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'."
         )
+        if ajax:
+            return JsonResponse({"error": _msg}, status=403)
+        messages.error(request, _msg)
         return redirect("games:lobby")
     base_minutes = request.POST.get("base_minutes", "3")
     increment_sec = request.POST.get("increment_seconds", "1")
@@ -440,26 +469,38 @@ def create_lobby_game(request):
         ai_thinking_seconds=1.0,
     )
     _broadcast_lobby_update("new_waiting_game", game)
-    return redirect("games:game_detail", game_id=game.pk)
+    dest = reverse("games:game_detail", args=[game.pk])
+    if ajax:
+        return JsonResponse({"redirect": dest})
+    return redirect(dest)
 
 
 @login_required
 def create_game(request):
     """Create a new open game (quick pair) — fallback for non‑WS clients."""
+    ajax = _wants_json(request)
+    from .consumers import has_repo_for_game_type
     game_type = request.POST.get("game_type", Game.GameType.CHESS)
     if game_type not in {Game.GameType.CHESS, Game.GameType.BREAKTHROUGH}:
         game_type = Game.GameType.CHESS
-    if game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game_type):
-        messages.error(request, "You must set an AI model before creating a game.")
+    # Primary gate: user must have a repo for this specific game type
+    if not has_repo_for_game_type(request.user, game_type):
+        _game_label = Game.GameType(game_type).label
+        _no_repo_msg = f"You can not create or join a game of {_game_label}. Please submit your Artificial Gladiator first."
+        if ajax:
+            return JsonResponse({"error": _no_repo_msg, "no_repo": True}, status=403)
+        messages.error(request, _no_repo_msg)
         return redirect("games:lobby")
     # Proof-of-Ownership gate: repo must be verified
     _gm = request.user.get_game_model(game_type)
     if _gm and not _gm.is_verified:
-        messages.error(
-            request,
+        _msg = (
             "Your model repository must be verified before creating games. "
-            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'."
         )
+        if ajax:
+            return JsonResponse({"error": _msg}, status=403)
+        messages.error(request, _msg)
         return redirect("games:lobby")
     tc = request.POST.get("time_control", "3+1")
     parts = tc.split("+")
@@ -478,12 +519,16 @@ def create_game(request):
         ai_thinking_seconds=1.0,
     )
     _broadcast_lobby_update("new_waiting_game", game)
-    return redirect("games:game_detail", game_id=game.pk)
+    dest = reverse("games:game_detail", args=[game.pk])
+    if ajax:
+        return JsonResponse({"redirect": dest})
+    return redirect(dest)
 
 
 @login_required
 def join_game(request, game_id):
     """Join an open game, filling whichever side is empty."""
+    ajax = _wants_json(request)
     game = get_object_or_404(
         Game.objects.select_related("white", "black"),
         pk=game_id,
@@ -491,18 +536,29 @@ def join_game(request, game_id):
     )
     # Already in this game
     if request.user in (game.white, game.black):
-        return redirect("games:game_detail", game_id=game.pk)
-    if game.game_type != Game.GameType.BREAKTHROUGH and not request.user.get_repo_for_game(game.game_type):
-        messages.error(request, "You must set an AI model before joining a game.")
+        dest = reverse("games:game_detail", args=[game.pk])
+        if ajax:
+            return JsonResponse({"redirect": dest})
+        return redirect(dest)
+    # Primary gate: user must have a repo for this specific game type
+    from .consumers import has_repo_for_game_type
+    if not has_repo_for_game_type(request.user, game.game_type):
+        _game_label = Game.GameType(game.game_type).label
+        _no_repo_msg = f"You can not create or join a game of {_game_label}. Please submit your Artificial Gladiator first."
+        if ajax:
+            return JsonResponse({"error": _no_repo_msg, "no_repo": True}, status=403)
+        messages.error(request, _no_repo_msg)
         return redirect("games:lobby")
     # Proof-of-Ownership gate: repo must be verified
     _gm = request.user.get_game_model(game.game_type)
     if _gm and not _gm.is_verified:
-        messages.error(
-            request,
+        _msg = (
             "Your model repository must be verified before joining games. "
-            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'.",
+            "Go to your profile, add AGL_VERIFY.txt to your repo, and click 'Verify Ownership'."
         )
+        if ajax:
+            return JsonResponse({"error": _msg}, status=403)
+        messages.error(request, _msg)
         return redirect("games:lobby")
     if game.black is None:
         game.black = request.user
@@ -511,10 +567,15 @@ def join_game(request, game_id):
         game.white = request.user
         game.save(update_fields=["white"])
     else:
+        if ajax:
+            return JsonResponse({"error": "This game is already full."}, status=409)
         messages.error(request, "This game is already full.")
         return redirect("games:lobby")
     _broadcast_lobby_update("remove_waiting_game", game)
-    return redirect("games:game_detail", game_id=game.pk)
+    dest = reverse("games:game_detail", args=[game.pk])
+    if ajax:
+        return JsonResponse({"redirect": dest})
+    return redirect(dest)
 
 
 @login_required

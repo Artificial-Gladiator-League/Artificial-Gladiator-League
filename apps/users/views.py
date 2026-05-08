@@ -7,6 +7,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.hashers import make_password
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.http import JsonResponse
@@ -15,7 +16,7 @@ from django.urls import reverse_lazy
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
-from django.views.generic import CreateView, UpdateView
+from django.views.generic import UpdateView
 
 from .tokens import account_activation_token
 
@@ -117,8 +118,34 @@ def _compute_stats(entries: list) -> dict:
     }
 
 
+def _category_for_elo(elo: int) -> dict:
+    """Return a category dict for a given ELO value (mirrors CustomUser.get_category)."""
+    if elo >= 2700:
+        return {"tier": "Super Grandmaster", "icon": "👑", "css": "text-yellow-300"}
+    elif elo >= 2500:
+        return {"tier": "Grandmaster",       "icon": "🏆", "css": "text-purple-400"}
+    elif elo >= 2400:
+        return {"tier": "International Master", "icon": "🥇", "css": "text-yellow-400"}
+    elif elo >= 2300:
+        return {"tier": "FIDE Master",       "icon": "🥈", "css": "text-blue-300"}
+    elif elo >= 2200:
+        return {"tier": "Candidate Master",  "icon": "🥈", "css": "text-gray-300"}
+    elif elo >= 2000:
+        return {"tier": "Expert",            "icon": "🥇", "css": "text-orange-400"}
+    elif elo >= 1800:
+        return {"tier": "Class A",           "icon": "🔴", "css": "text-red-400"}
+    elif elo >= 1600:
+        return {"tier": "Class B",           "icon": "🟠", "css": "text-orange-300"}
+    elif elo >= 1400:
+        return {"tier": "Class C",           "icon": "🟡", "css": "text-yellow-500"}
+    elif elo >= 1200:
+        return {"tier": "Class D",           "icon": "🟢", "css": "text-green-400"}
+    else:
+        return {"tier": "Beginner",          "icon": "🥉", "css": "text-amber-600"}
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Registration (CreateView) + IP cheating check
+#  Registration — username-only, rate-limited, reCAPTCHA v3
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def _get_client_ip(request):
     """Extract the real client IP from the request."""
@@ -128,55 +155,63 @@ def _get_client_ip(request):
     return request.META.get("REMOTE_ADDR", "")
 
 
-class RegisterView(CreateView):
-    model = CustomUser
-    form_class = RegistrationForm
-    template_name = "users/register.html"
-    success_url = reverse_lazy("users:activation_sent")
-
-    def form_valid(self, form):
-        user = form.save(commit=False)
-        user.is_active = False  # Require email verification before activation
-        user.save()
-
-        # Record IP for multi-account detection
-        ip = _get_client_ip(self.request)
-        if ip:
-            _check_duplicate_ip(ip, user)
-        # Send activation email with a secure single-use token
-        _send_activation_email(self.request, user)
-        return redirect(self.success_url)
+def _ratelimit_decorator():
+    """Return the ratelimit decorator if django-ratelimit is installed, else identity."""
+    try:
+        from ratelimit.decorators import ratelimit
+        return ratelimit(key="ip", rate="5/h", method="POST", block=False)
+    except ImportError:
+        return lambda f: f
 
 
-def _send_activation_email(request, user):
-    """Send a single-use HMAC activation link to the user's email.
+def register(request):
+    if request.user.is_authenticated:
+        return redirect("users:profile")
 
-    Sends both plain-text and HTML versions using the Django template engine.
-    """
-    from django.template.loader import render_to_string
-    from django.core.mail import EmailMultiAlternatives
+    form = RegistrationForm(request.POST or None)
 
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = account_activation_token.make_token(user)
-    protocol = "https" if request.is_secure() else "http"
-    domain = request.get_host()
-    link = f"{protocol}://{domain}/users/activate/{uid}/{token}/"
+    if request.method == "POST":
+        ip = _get_client_ip(request)
 
-    context = {
-        "user": user,
-        "activation_link": link,
-    }
-    subject = "Activate your Artificial Gladiator account"
-    text_body = render_to_string("users/emails/activation_email.txt", context)
-    html_body = render_to_string("users/emails/activation_email.html", context)
+        if getattr(request, "limited", False):
+            log.warning("Registration rate-limited for IP %s", ip)
+            form.add_error(None, "Too many registration attempts from your IP. Please try again later.")
+            return render(request, "users/register.html", {"form": form})
 
-    email = EmailMultiAlternatives(
-        subject=subject,
-        body=text_body,
-        to=[user.email],
-    )
-    email.attach_alternative(html_body, "text/html")
-    email.send()
+        if form.is_valid():
+            username = form.cleaned_data["username"]
+            password = form.cleaned_data["password"]
+            ai_name = form.cleaned_data["ai_name"]
+            user = CustomUser(username=username, ai_name=ai_name, is_active=True)
+            user.password = make_password(password)
+            user.save()
+            log.info("New user registered: %s (AI: %s, IP: %s)", username, ai_name, ip)
+            login(request, user)
+            return redirect("users:profile")
+
+        # Log form errors to aid debugging (e.g. empty RECAPTCHA_PUBLIC_KEY)
+        log.debug(
+            "Registration form invalid for IP %s — errors: %s",
+            ip,
+            form.errors.as_json(),
+        )
+
+        # Surface a clear error if reCAPTCHA specifically failed
+        if "captcha" in form.errors:
+            log.warning(
+                "reCAPTCHA validation failed for IP %s. "
+                "Check that RECAPTCHA_PUBLIC_KEY and RECAPTCHA_PRIVATE_KEY are "
+                "set correctly in your environment. Get keys at: "
+                "https://www.google.com/recaptcha/admin/create",
+                ip,
+            )
+            form.add_error(None, "Invalid CAPTCHA - bots not allowed.")
+
+    return render(request, "users/register.html", {"form": form})
+
+
+# Apply rate-limiting at module load time so the decorator wraps the function
+register = _ratelimit_decorator()(register)
 
 
 def activation_sent(request):
@@ -451,6 +486,8 @@ def public_profile(request, username):
     return render(request, "users/profile.html", {
         "user_profile": profile_user,
         "category": profile_user.get_category(),
+        "category_chess": _category_for_elo(profile_user.elo_chess),
+        "category_breakthrough": _category_for_elo(profile_user.elo_breakthrough),
         "is_own_profile": False,
         "friendship_status": friendship_status,
         "friend_request_id": friend_request_id,
@@ -713,6 +750,11 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         user = self.request.user
         ctx["user_profile"] = user
         ctx["category"] = user.get_category()
+
+        # Per-game categories derived from each game's ELO independently
+        ctx["category_chess"] = _category_for_elo(user.elo_chess)
+        ctx["category_breakthrough"] = _category_for_elo(user.elo_breakthrough)
+
         ctx["is_own_profile"] = True
         ctx["fields_locked"] = True
         ctx["friends_list"] = user.friends.only("pk", "username", "elo", "last_login")
@@ -747,6 +789,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "time_control": m.time_control,
                 "tc_css": tc_cat["css"],
                 "tc_label": tc_cat["label"],
+                "game_type": getattr(m.tournament, "game_type", "chess") or "chess",
             })
         for m in matches_as_p2:
             tc_cat = _tc_category(m.time_control)
@@ -765,6 +808,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "time_control": m.time_control,
                 "tc_css": tc_cat["css"],
                 "tc_label": tc_cat["label"],
+                "game_type": getattr(m.tournament, "game_type", "chess") or "chess",
             })
         tournament_entries.sort(key=lambda h: h["date"], reverse=True)
 
@@ -807,6 +851,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "time_control": g.time_control,
                 "tc_css": tc_cat["css"],
                 "tc_label": tc_cat["label"],
+                "game_type": g.game_type,
             })
         for g in casual_as_black:
             tc_cat = _tc_category(g.time_control)
@@ -827,6 +872,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "time_control": g.time_control,
                 "tc_css": tc_cat["css"],
                 "tc_label": tc_cat["label"],
+                "game_type": g.game_type,
             })
         oneonone_entries.sort(key=lambda h: h["date"], reverse=True)
 
@@ -860,6 +906,45 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "time_controls": time_controls,
             }
 
+        # Split entries by game type
+        chess_tournament = [e for e in tournament_entries if e.get("game_type", "chess") == "chess"]
+        chess_casual     = [e for e in oneonone_entries if e.get("game_type", "chess") == "chess"]
+        bt_tournament    = [e for e in tournament_entries if e.get("game_type") == "breakthrough"]
+        bt_casual        = [e for e in oneonone_entries if e.get("game_type") == "breakthrough"]
+
+        chess_all = chess_tournament + chess_casual
+        chess_all.sort(key=lambda h: h["date"], reverse=True)
+        bt_all = bt_tournament + bt_casual
+        bt_all.sort(key=lambda h: h["date"], reverse=True)
+
+        ctx["game_type_stats"] = [
+            {
+                "game_type": "chess",
+                "label": "Chess",
+                "icon": "♟",
+                "elo": user.elo_chess,
+                "elo_css": "text-brand",
+                "overall": _compute_stats(chess_all),
+                "formats": [
+                    _build_format_block("Tournament Games", "🏆", chess_tournament),
+                    _build_format_block("One-on-One Games", "⚔️", chess_casual),
+                ],
+            },
+            {
+                "game_type": "breakthrough",
+                "label": "Breakthrough",
+                "icon": "♙",
+                "elo": user.elo_breakthrough,
+                "elo_css": "text-purple-400",
+                "overall": _compute_stats(bt_all),
+                "formats": [
+                    _build_format_block("Tournament Games", "🏆", bt_tournament),
+                    _build_format_block("One-on-One Games", "⚔️", bt_casual),
+                ],
+            },
+        ]
+
+        # Keep legacy format_stats for backward compat if anything else uses it
         ctx["format_stats"] = [
             _build_format_block("Tournament Games", "🏆", tournament_entries),
             _build_format_block("One-on-One Games", "⚔️", oneonone_entries),
@@ -873,13 +958,10 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 "type": g["type"],
                 "label": g["label"],
                 "model": gm,
+                # model_files_status is loaded lazily via AJAX (users:model_file_status_api)
+                # to avoid blocking the profile page load with HuggingFace HTTP requests.
                 "model_files_status": None,
             }
-            # Build file-status for any game with a registered model (includes breakthrough and chess)
-            if gm and gm.hf_model_repo_id:
-                entry["model_files_status"] = _build_breakthrough_file_status(
-                    user, gm,
-                )
             game_configs.append(entry)
         ctx["game_configs"] = game_configs
 
@@ -919,12 +1001,15 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             games_needed_after_change = max(0, TOURNAMENT_MIN_RATED_GAMES - games_since_change)
 
             # User changed repo (or was DQ'd from a tournament) and
-            # hasn't played 30 games since. Three signals for this:
+            # hasn't played 30 games since. Four signals for this:
             # 1. Normal repo-change path: had 30+ total games, counter reset.
             # 2. Integrity flag flipped to False by DQ / SHA change detection.
             # 3. DQ history exists for this game type AND counter < 30
             #    (covers the case where re-validation already cleared the
             #    integrity flag back to True but cooldown hasn't been served).
+            # 4. User has more total rated games than games since last
+            #    revalidation — meaning the counter was reset at some point
+            #    (repo changed while user had < 30 total games).
             repo_changed = (
                 gm is not None
                 and (
@@ -932,6 +1017,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                      and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
                     or not gm.model_integrity_ok
                     or (gtype in dq_game_types
+                        and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
+                    or (rated_count > games_since_change
                         and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
                 )
             )
@@ -1233,6 +1320,24 @@ def match_moves(request, match_id):
 
 
 @login_required
+def model_file_status_api(request, game_type):
+    """Return model + data repo file status as JSON (lazy-loaded by profile page).
+
+    Called by the AI Models tab via AJAX to avoid blocking the profile page load
+    with synchronous outbound HuggingFace HTTP requests.
+    """
+    if game_type not in [g["type"] for g in GAME_TYPES]:
+        return JsonResponse({"error": "Invalid game type."}, status=400)
+    gm = request.user.get_game_model(game_type)
+    if not gm or not gm.hf_model_repo_id:
+        return JsonResponse({"status": "no_model"})
+    result = _build_breakthrough_file_status(request.user, gm)
+    if result is None:
+        return JsonResponse({"status": "no_data"})
+    return JsonResponse({"status": "ok", **result})
+
+
+@login_required
 def activity_heatmap(request):
     """Return per-day game counts + game details for the last 365 days.
 
@@ -1277,7 +1382,12 @@ def activity_heatmap(request):
     # bucket by date
     buckets = defaultdict(list)  # date_str -> [game_dict, ...]
 
+    game_type_filter = request.GET.get("game_type")  # optional: 'chess' or 'breakthrough'
+
     for m in t_as_p1:
+        gtype = getattr(m.tournament, "game_type", "chess") or "chess"
+        if game_type_filter and gtype != game_type_filter:
+            continue
         d = m.timestamp.date().isoformat()
         tc_cat = _tc_category(m.time_control)
         buckets[d].append({
@@ -1291,8 +1401,12 @@ def activity_heatmap(request):
             "tournament": m.tournament.name, "round": m.round_num,
             "time": m.timestamp.strftime("%H:%M"),
             "played_as": "white",
+            "game_type": gtype,
         })
     for m in t_as_p2:
+        gtype = getattr(m.tournament, "game_type", "chess") or "chess"
+        if game_type_filter and gtype != game_type_filter:
+            continue
         d = m.timestamp.date().isoformat()
         tc_cat = _tc_category(m.time_control)
         buckets[d].append({
@@ -1306,8 +1420,11 @@ def activity_heatmap(request):
             "tournament": m.tournament.name, "round": m.round_num,
             "time": m.timestamp.strftime("%H:%M"),
             "played_as": "black",
+            "game_type": gtype,
         })
     for g in c_as_w:
+        if game_type_filter and g.game_type != game_type_filter:
+            continue
         d = g.timestamp.date().isoformat()
         tc_cat = _tc_category(g.time_control)
         buckets[d].append({
@@ -1324,6 +1441,8 @@ def activity_heatmap(request):
             "game_type": g.game_type,
         })
     for g in c_as_b:
+        if game_type_filter and g.game_type != game_type_filter:
+            continue
         d = g.timestamp.date().isoformat()
         tc_cat = _tc_category(g.time_control)
         buckets[d].append({

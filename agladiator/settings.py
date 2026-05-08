@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     # Forum and chat apps removed
     # Third‑party
     "channels",
+    "django_recaptcha",
 ]
 
 # ── Middleware ─────────────────────────────────
@@ -200,6 +201,48 @@ LOGIN_REDIRECT_URL = "/games/lobby/"
 LOGOUT_REDIRECT_URL = "/"
 
 AUTH_USER_MODEL = "users.CustomUser"
+
+# ── Google reCAPTCHA v3 ───────────────────────
+# 1. Go to https://www.google.com/recaptcha/admin/create
+# 2. Choose "reCAPTCHA v3", add your domain (e.g. artificialgladiator.com)
+# 3. Copy the Site Key → RECAPTCHA_PUBLIC_KEY
+#    Copy the Secret Key → RECAPTCHA_PRIVATE_KEY
+# 4. Set both in your .env file or server environment variables.
+RECAPTCHA_PUBLIC_KEY = os.environ.get("RECAPTCHA_PUBLIC_KEY", "")
+RECAPTCHA_PRIVATE_KEY = os.environ.get("RECAPTCHA_PRIVATE_KEY", "")
+
+# When RECAPTCHA_TESTING is True, django-recaptcha accepts any token without
+# calling Google — no real keys required.  Always False in production.
+RECAPTCHA_TESTING = os.environ.get("RECAPTCHA_TESTING", "").lower() in ("true", "1", "yes")
+
+# In DEBUG mode always bypass Google score validation: localhost gets a score
+# of 0.0 from the real API which would block every local registration attempt.
+# In production, ensure RECAPTCHA_TESTING is NOT set (or set to false) so real
+# score validation runs.
+if DEBUG:
+    RECAPTCHA_TESTING = True
+
+# In DEBUG mode, if no real keys have been configured, fall back to Google's
+# official always-pass test keys so the widget renders (data-sitekey is never
+# empty) and form submissions succeed locally without a real Google account.
+# See: https://developers.google.com/recaptcha/docs/faq
+#      #id-like-to-run-automated-tests-with-recaptcha-what-should-i-do
+if DEBUG and not RECAPTCHA_PUBLIC_KEY:
+    RECAPTCHA_PUBLIC_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Google test site key
+    RECAPTCHA_PRIVATE_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Google test secret key
+
+# Silence the system check that fires when the well-known Google test keys are
+# detected — they are used intentionally in local development.
+if DEBUG:
+    SILENCED_SYSTEM_CHECKS = ["django_recaptcha.recaptcha_test_key_error"]
+
+# Minimum v3 score to accept in production (0.0 = bot, 1.0 = human).
+# Has no effect when RECAPTCHA_TESTING=True.
+RECAPTCHA_REQUIRED_SCORE = float(os.environ.get("RECAPTCHA_REQUIRED_SCORE", "0.5"))
+
+# ── django-ratelimit defaults ─────────────────
+# Registration endpoint is decorated with @ratelimit(key='ip', rate='5/h').
+# No global override needed; the decorator on views.register controls the limit.
 
 # ── Email ─────────────────────────────────────
 # Console backend for development; override with SMTP in production.
@@ -412,3 +455,4 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 1800.0,
     },
 }
+

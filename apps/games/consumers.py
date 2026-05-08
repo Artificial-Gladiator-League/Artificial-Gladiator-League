@@ -13,6 +13,27 @@ from apps.tournaments.models import Tournament
 log = logging.getLogger(__name__)
 
 
+# ── Repo validation ────────────────────────────────────────────────────────
+def has_repo_for_game_type(user, game_type: str) -> bool:
+    """Return True if *user* has a non-empty HF model repo for *game_type*.
+
+    Uses ``UserGameModel.hf_model_repo_id`` (the canonical per-game field)
+    plus the legacy ``CustomUser.hf_model_repo_id`` fallback for chess.
+    Both chess and breakthrough require a submitted repo to create or join games.
+    """
+    try:
+        from apps.users.models import UserGameModel
+        gm = UserGameModel.objects.get(user=user, game_type=game_type)
+        return bool(gm.hf_model_repo_id and gm.hf_model_repo_id.strip())
+    except Exception:
+        pass
+    # Legacy fallback: chess repo on the user object itself
+    if game_type == "chess":
+        legacy = getattr(user, "hf_model_repo_id", "") or ""
+        return bool(legacy.strip())
+    return False
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  In‑memory matchmaking queues (per time‑control)
 #  Production: move to Redis sorted sets.
@@ -93,6 +114,22 @@ class LobbyConsumer(AsyncWebsocketConsumer):
         if not allowed:
             await self.send(text_data=json.dumps({
                 "type": "error", "message": reason,
+            }))
+            return
+
+        # ── Repo gate: block users without a model for this game type ──────
+        repo_ok = await database_sync_to_async(has_repo_for_game_type)(self.user, game_type)
+        if not repo_ok:
+            log.warning(
+                "BLOCKED no repo: user=%s game_type=%s — refusing queue entry",
+                self.user.username, game_type,
+            )
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": (
+                    f"Missing {game_type} repo. "
+                    "Upload your Artificial Gladiator to Hugging Face first."
+                ),
             }))
             return
 
@@ -326,6 +363,32 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
+        # ── Repo gate: block players who lack a model for this game type ───
+        # We read game_type from the DB here (cheap single-field query).
+        # Spectators are always allowed through — only block if the
+        # connecting user is an actual player in this game.
+        if self.user and not self.user.is_anonymous:
+            game_type_for_check = await self._get_game_type()
+            is_player = await self._user_is_player()
+            if is_player:
+                repo_ok = await database_sync_to_async(has_repo_for_game_type)(
+                    self.user, game_type_for_check
+                )
+                if not repo_ok:
+                    log.warning(
+                        "BLOCKED no repo: user=%s game=%s game_type=%s — closing WS",
+                        self.user.username, self.game_id, game_type_for_check,
+                    )
+                    await self.send(text_data=json.dumps({
+                        "type": "error",
+                        "message": (
+                            f"Missing {game_type_for_check} repo. "
+                            "Upload your Artificial Gladiator to Hugging Face first."
+                        ),
+                    }))
+                    await self.close(code=4003)
+                    return
+
         # Log model cache status for this user
         await self._log_model_cache_status()
 
@@ -441,6 +504,26 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def _handle_start(self):
         """Either player clicks 'Start Match' to transition from waiting to ongoing."""
+        # ── Repo gate (redundant safety net — HTTP view already checked, but
+        #    a player could reach here via a raw WS message) ────────────────
+        if self.user and not self.user.is_anonymous:
+            game_type_for_check = await self._get_game_type()
+            repo_ok = await database_sync_to_async(has_repo_for_game_type)(
+                self.user, game_type_for_check
+            )
+            if not repo_ok:
+                log.warning(
+                    "BLOCKED no repo at start: user=%s game=%s game_type=%s",
+                    self.user.username, self.game_id, game_type_for_check,
+                )
+                await self.send(text_data=json.dumps({
+                    "type": "error",
+                    "message": (
+                        f"Missing {game_type_for_check} repo. "
+                        "Upload your Artificial Gladiator to Hugging Face first."
+                    ),
+                }))
+                return
         result = await self._process_start()
         if result.get("error"):
             await self.send(text_data=json.dumps({
@@ -825,6 +908,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             return Game.objects.values_list('game_type', flat=True).get(pk=self.game_id)
         except Game.DoesNotExist:
             return 'chess'
+
+    @database_sync_to_async
+    def _user_is_player(self):
+        """Return True if self.user is white or black in this game."""
+        from django.db.models import Q
+        from .models import Game
+        if not self.user or self.user.is_anonymous:
+            return False
+        try:
+            return Game.objects.filter(
+                pk=self.game_id,
+            ).filter(
+                Q(white=self.user) | Q(black=self.user)
+            ).exists()
+        except Exception:
+            return False
 
     @database_sync_to_async
     def _get_lobby_game_data(self):

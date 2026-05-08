@@ -11,13 +11,13 @@
   <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
     <div>
       <h1 class="text-3xl font-extrabold flex items-center gap-2">
-        <span class="text-gold">🏆</span> Global Leaderboard
+        <span class="text-gold"></span> Global Leaderboard
       </h1>
       <p class="text-gray-400 text-sm mt-1 flex items-center gap-1.5">
         <span id="wsDot" class="ws-dot connecting"></span>
         <span id="wsLabel">Connecting…</span>
         <span class="text-gray-600 ml-2">|</span>
-        <span class="text-gray-500 ml-2">Top gladiators ranked by Elo rating</span>
+        <span class="text-gray-500 ml-2">Top Artificial Gladiators ranked by Elo rating</span>
       </p>
     </div>
     {% if user.is_authenticated %}
@@ -68,7 +68,7 @@
         <button class="px-4 py-1.5 rounded-lg text-sm font-semibold transition
                        {% if active_game_type == 'breakthrough' %}bg-purple/20 text-purple border border-purple/30{% else %}text-gray-400 hover:bg-surfaceLight{% endif %}"
                 data-game-type="breakthrough" id="gtBreakthrough">
-          🔴 Breakthrough
+          ♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span> Breakthrough
         </button>
       </div>
 
@@ -132,7 +132,7 @@
           <td class="text-right text-green-400">{{ p.wins }}</td>
           <td class="text-right text-red-400">{{ p.losses }}</td>
           <td class="text-right text-yellow-300">{{ p.draws }}</td>
-          <td class="text-right">{% widthratio p.win_rate 1 100 %}%</td>
+          <td class="text-right">{% if p.total_games %}{% widthratio p.wins p.total_games 100 %}{% else %}0{% endif %}%</td>
           <td class="text-right">
             {% if p.current_streak > 0 %}
               <span class="badge-streak positive">🔥 +{{ p.current_streak }}</span>

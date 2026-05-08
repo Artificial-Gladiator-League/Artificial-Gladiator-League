@@ -91,10 +91,19 @@ class GDPRRequestAdmin(admin.ModelAdmin):
 @admin.register(UserGameModel)
 class UserGameModelAdmin(admin.ModelAdmin):
     form = UserGameModelForm
-    list_display = ("user", "game_type", "hf_model_repo_id", "model_integrity_ok", "rated_games_played")
+    list_display = ("user", "game_type", "hf_model_repo_id", "model_integrity_ok", "rated_games_played", "rated_games_since_revalidation")
     list_filter = ("game_type", "model_integrity_ok")
     search_fields = ("user__username", "hf_model_repo_id")
     readonly_fields = (
         "original_model_commit_sha", "last_known_commit_id",
         "approved_full_sha", "pinned_at",
     )
+    actions = ["reset_readiness_counter"]
+
+    @admin.action(description="Reset tournament readiness counter to 0 (repo changed)")
+    def reset_readiness_counter(self, request, queryset):
+        updated = queryset.update(
+            rated_games_since_revalidation=0,
+            model_integrity_ok=False,
+        )
+        self.message_user(request, f"Reset readiness counter for {updated} model(s).")

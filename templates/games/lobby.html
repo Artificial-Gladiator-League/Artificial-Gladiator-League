@@ -13,10 +13,11 @@
         <span id="wsLabel">Connecting…</span>
       </p>
     </div>
-    <div class="flex items-center gap-3 text-sm">
-      {% fide_badge user_profile %}
-      <span class="text-gray-400">{{ user_profile.username }}</span>
-    </div>
+  </div>
+
+  <div id="noRepoAlert" class="hidden rounded-lg px-4 py-3 text-sm flex items-center justify-center gap-2 bg-red-900/60 text-red-200 border border-red-800">
+    <span class="flex-shrink-0">⚠️</span>
+    <span id="noRepoAlertMsg"></span>
   </div>
 
   <section class="space-y-6">
@@ -35,7 +36,7 @@
           <span class="text-gray-400 text-xs">battling</span>
         </div>
         <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-gray-900 border border-gray-800">
-          <span class="text-purple text-xs">⚔️</span>
+          <span class="text-purple text-xs"></span>
           <span id="liveArenasCount" class="font-semibold text-brand">{{ active_tournaments_count|default:"0" }}</span>
           <span class="text-gray-400 text-xs">arenas</span>
         </div>
@@ -48,20 +49,21 @@
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold flex items-center gap-2">
             Open Tables
-            <span class="text-xs text-gray-500 font-normal">— waiting for an opponent</span>
+            <span class="text-xs text-gray-500 font-normal"></span>
           </h2>
         </div>
 
         <div class="card p-4" id="waitingGamesCard">
-          <div id="waitingGamesHeader" class="hidden sm:grid grid-cols-4 gap-3 px-4 py-2 text-xs uppercase tracking-widest text-gray-500 font-semibold border-b border-gray-800 mb-2" {% if not waiting_games %}style="display:none;"{% endif %}>
+          <div id="waitingGamesHeader" class="hidden sm:grid grid-cols-5 gap-3 px-4 py-2 text-xs uppercase tracking-widest text-gray-500 font-semibold border-b border-gray-800 mb-2" {% if not waiting_games %}style="display:none;"{% endif %}>
             <span>Player</span>
             <span>Rating</span>
+            <span>Game</span>
             <span>Variant</span>
             <span class="text-right">Action</span>
           </div>
           <div id="waitingGamesList" class="space-y-2">
             {% for game in waiting_games %}
-              <div class="flex flex-col sm:grid sm:grid-cols-4 sm:items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3" data-game-pk="{{ game.pk }}">
+              <div class="flex flex-col sm:grid sm:grid-cols-5 sm:items-center gap-3 rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3" data-game-pk="{{ game.pk }}">
                 <div class="min-w-0 flex items-center gap-2">
                   <p class="text-sm font-semibold text-gray-100 truncate">
                     {% if game.fide_abbr %}
@@ -73,6 +75,13 @@
                 <div>
                   <span class="text-sm font-semibold text-brand">{{ game.white_elo }}</span>
                   <span class="text-xs text-gray-500 ml-1">ELO</span>
+                </div>
+                <div>
+                  <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold
+                    {% if game.game_type == 'chess' %}bg-purple-500/15 text-purple-300 border border-purple-400/30
+                    {% else %}bg-orange-500/15 text-orange-300 border border-orange-400/30{% endif %}">
+                    {% if game.game_type == 'chess' %}♟{% else %}♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span>{% endif %} {{ game.game_type_label }}
+                  </span>
                 </div>
                 <div>
                   <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold
@@ -100,7 +109,7 @@
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold flex items-center gap-2">
             Ongoing Games
-            <span class="text-xs text-gray-500 font-normal">— live AI battles</span>
+            <span class="text-xs text-gray-500 font-normal"></span>
           </h2>
           <span class="text-xs text-gray-500"><span id="ongoingGamesCount">{{ ongoing_games|length }}</span> game{{ ongoing_games|length|pluralize }}</span>
         </div>
@@ -165,7 +174,7 @@
     <div class="flex items-center justify-between gap-3">
       <h2 class="text-lg font-semibold flex items-center gap-2">
          Live & Recent Games
-        <span class="text-xs text-gray-500 font-normal">— real-time previews</span>
+        <span class="text-xs text-gray-500 font-normal"></span>
       </h2>
       <span class="text-xs text-gray-500"><span id="liveGamesCount">{{ display_games|length }}</span> game{{ display_games|length|pluralize }}</span>
     </div>
@@ -235,10 +244,6 @@
     <!-- WS-added live games appear here as flat rows -->
     <div id="liveGamesList" class="space-y-2"></div>
 
-    <div id="liveGamesEmpty" class="rounded-xl border border-dashed border-gray-800 bg-gray-900/40 px-4 py-8 text-center text-sm text-gray-500"
-         {% if display_games %}style="display:none;"{% endif %}>
-      No live or recent games yet.
-    </div>
   </section>
 
 </div>
@@ -955,7 +960,35 @@
         removeLiveGame(data.game_pk);
         removeOngoingGame(data.game_pk);
         break;
+
+      case 'error':
+        // Server-sent error (e.g. missing repo gate) — show red toast,
+        // do NOT modify the waiting/ongoing lists.
+        showLobbyErrorToast(data.message || 'Action blocked by server.');
+        break;
     }
+  }
+
+  function showLobbyErrorToast(msg) {
+    var container = document.getElementById('toastContainer');
+    if (!container) return;
+    var escH = function (s) {
+      var d = document.createElement('div');
+      d.textContent = String(s || '');
+      return d.innerHTML;
+    };
+    var el = document.createElement('div');
+    el.className =
+      'pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-xl ' +
+      'bg-red-900/90 text-red-200 text-sm font-medium shadow-lg backdrop-blur-sm ' +
+      'transition-all translate-x-0 opacity-100 border border-red-700';
+    el.innerHTML = '<span class="flex-shrink-0 text-base">\u26a0\ufe0f</span><span>' + escH(msg) + '</span>';
+    container.appendChild(el);
+    setTimeout(function () {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(100%)';
+      setTimeout(function () { el.remove(); }, 300);
+    }, 6000);
   }
 
   // ── Dynamic ongoing games section ────────────
@@ -1150,6 +1183,124 @@
   }
 
   connectWS();
+})();
+</script>
+
+<script>
+// ── Repo-gate: intercept Join / Create and surface 403 as a toast ─────────
+(function () {
+  function escH(s) {
+    const d = document.createElement('div');
+    d.textContent = String(s || '');
+    return d.innerHTML;
+  }
+
+  function showErrorToast(msg) {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const el = document.createElement('div');
+    el.className =
+      'pointer-events-auto flex items-center gap-2 px-4 py-3 rounded-xl ' +
+      'bg-red-900/90 text-red-200 text-sm font-medium shadow-lg backdrop-blur-sm ' +
+      'transition-all translate-x-0 opacity-100 border border-red-700';
+    el.innerHTML = '<span class="flex-shrink-0 text-base">\u26a0\ufe0f</span><span>' + escH(msg) + '</span>';
+    container.appendChild(el);
+    setTimeout(function () {
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(100%)';
+      setTimeout(function () { el.remove(); }, 300);
+    }, 6000);
+  }
+
+  function getCsrf() {
+    const m = document.cookie.match(/csrftoken=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function ajaxHeaders() {
+    return {
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json',
+      'X-CSRFToken': getCsrf(),
+    };
+  }
+
+  var _noRepoAlertTimer = null;
+  function showNoRepoAlert(msg) {
+    var alertEl = document.getElementById('noRepoAlert');
+    var msgEl = document.getElementById('noRepoAlertMsg');
+    if (!alertEl || !msgEl) return;
+    msgEl.textContent = msg;
+    alertEl.style.transition = '';
+    alertEl.style.opacity = '1';
+    alertEl.classList.remove('hidden');
+    alertEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (_noRepoAlertTimer) clearTimeout(_noRepoAlertTimer);
+    _noRepoAlertTimer = setTimeout(function () {
+      alertEl.style.transition = 'opacity 0.5s ease';
+      alertEl.style.opacity = '0';
+      setTimeout(function () {
+        alertEl.classList.add('hidden');
+        alertEl.style.opacity = '1';
+        alertEl.style.transition = '';
+      }, 500);
+    }, 30000);
+  }
+
+  function handleJsonResponse(res, fallbackUrl) {
+    res.json().then(function (data) {
+      if (res.status === 403 && data.no_repo) {
+        // Close create-game modal if open
+        var modal = document.getElementById('createLobbyModal');
+        if (modal) modal.classList.add('hidden');
+        showNoRepoAlert(data.error || 'Please submit your Artificial Gladiator first.');
+      } else if (res.status === 403 || res.status === 409) {
+        showErrorToast(data.error || 'Action not allowed.');
+      } else if (data.redirect) {
+        window.location.href = data.redirect;
+      } else {
+        window.location.href = fallbackUrl;
+      }
+    }).catch(function () {
+      window.location.href = fallbackUrl;
+    });
+  }
+
+  // ── Intercept "Join Game" clicks via event delegation ────────────────────
+  // Covers both server-rendered rows and WS-injected rows.
+  var waitingCard = document.getElementById('waitingGamesCard');
+  if (waitingCard) {
+    waitingCard.addEventListener('click', function (e) {
+      var link = e.target.closest('a.btn-outline');
+      if (!link) return;
+      if (link.textContent.trim().toLowerCase().indexOf('join') === -1) return;
+      e.preventDefault();
+      var url = link.href;
+      fetch(url, { method: 'GET', headers: ajaxHeaders(), credentials: 'same-origin' })
+        .then(function (res) { handleJsonResponse(res, url); })
+        .catch(function () { window.location.href = url; });
+    });
+  }
+
+  // ── Intercept "Create Game" modal form submit ─────────────────────────────
+  var createModal = document.getElementById('createLobbyModal');
+  if (createModal) {
+    var form = createModal.querySelector('form');
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var formData = new FormData(form);
+        fetch(form.action, {
+          method: 'POST',
+          headers: ajaxHeaders(),
+          body: formData,
+          credentials: 'same-origin',
+        })
+          .then(function (res) { handleJsonResponse(res, form.action); })
+          .catch(function () { form.submit(); });
+      });
+    }
+  }
 })();
 </script>
 {% endblock %}

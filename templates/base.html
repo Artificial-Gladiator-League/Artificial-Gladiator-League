@@ -93,9 +93,8 @@
       <div class="flex items-center justify-between h-16">
 
         <!-- Logo -->
-        <a href="{% url 'core:home' %}" class="flex items-center gap-3 group" aria-label="Artificial Gladiator League home">
+        <a href="{% url 'core:home' %}" class="flex items-center gap-3 group no-underline" aria-label="Artificial Gladiator League home">
           <img src="{% static 'favicon.svg' %}" alt="agladiator" class="h-8 w-8 group-hover:scale-110 transition-transform rounded">
-
           <div class="leading-tight flex items-center">
             <div class="text-center">
               <span class="text-brand glow-brand font-black">Artificial</span><br />
@@ -120,10 +119,10 @@
             </div>
             <div id="playDropdownMenu" class="hidden absolute left-0 mt-1 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
               <button type="button" id="navCreateLobbyBtn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition w-full text-left cursor-pointer">
-                <span>🎮</span> Create Lobby Game
+                <span></span> Create Lobby Game
               </button>
               <a href="{% url 'tournaments:list' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
-                <span>⚔️</span> Arena Tournament
+                <span>  </span> Arena Tournament
               </a>
             </div>
           </div>

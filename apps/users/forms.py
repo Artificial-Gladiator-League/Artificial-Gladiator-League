@@ -2,11 +2,48 @@ import logging
 import re
 
 from django import forms
-from django.contrib.auth.forms import AuthenticationForm, UserCreationForm
+from django.contrib.auth.forms import AuthenticationForm
 
 from .models import CustomUser, GDPRRequest
 
+
 log = logging.getLogger(__name__)
+
+
+def _get_recaptcha_field():
+    """Return a ReCaptchaField (v3) in production; a no-op hidden field in DEBUG.
+
+    Google's reCAPTCHA v3 API always returns score 0.0 for requests from
+    localhost/127.0.0.1, so bypassing validation entirely in DEBUG mode is the
+    only reliable way to allow local development without blocking every signup.
+    """
+    from django.conf import settings
+
+    # In local development (DEBUG=True), skip reCAPTCHA altogether.
+    # The hidden field is optional so no token is required and no Google call
+    # is ever made.  Production (DEBUG=False) always uses the real field.
+    if getattr(settings, "DEBUG", False):
+        return forms.CharField(widget=forms.HiddenInput, required=False)
+
+    try:
+        from django_recaptcha.fields import ReCaptchaField
+        from django_recaptcha.widgets import ReCaptchaV3
+        pk = getattr(settings, "RECAPTCHA_PUBLIC_KEY", "")
+        if not pk:
+            log.warning(
+                "RECAPTCHA_PUBLIC_KEY is not set. "
+                "The reCAPTCHA widget will have an empty data-sitekey and all "
+                "submissions will fail. Set the key in your .env file or "
+                "environment variables. Get keys at: "
+                "https://www.google.com/recaptcha/admin/create"
+            )
+        return ReCaptchaField(widget=ReCaptchaV3)
+    except ImportError:
+        log.warning(
+            "django-recaptcha is not installed. reCAPTCHA validation is disabled. "
+            "Install it with: pip install django-recaptcha"
+        )
+        return forms.CharField(widget=forms.HiddenInput, required=False)
 
 # Dark‑mode Tailwind attrs reused across all form widgets
 _INPUT_CSS = (
@@ -242,39 +279,66 @@ def validate_gated_hf_repo(repo_id: str, hf_token: str) -> None:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Registration
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-class RegistrationForm(UserCreationForm):
-    email = forms.EmailField(
+class RegistrationForm(forms.Form):
+    """Username-only registration form with password confirmation and reCAPTCHA v3."""
+
+    username = forms.CharField(
+        max_length=150,
         required=True,
-        widget=forms.EmailInput(attrs=_dark_attrs(placeholder="you@example.com")),
-        help_text="Required. We'll send an activation link to verify your account.",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "Username",
+            "autocomplete": "username",
+        }),
+    )
+    password = forms.CharField(
+        required=True,
+        widget=forms.PasswordInput(attrs={
+            "class": "form-control",
+            "placeholder": "Password",
+            "autocomplete": "new-password",
+        }),
+    )
+    confirm_password = forms.CharField(
+        required=True,
+        label="Confirm password",
+        widget=forms.PasswordInput(attrs={
+            "class": "form-control",
+            "placeholder": "Confirm password",
+            "autocomplete": "new-password",
+        }),
     )
     ai_name = forms.CharField(
         max_length=120,
         required=True,
-        widget=forms.TextInput(attrs=_dark_attrs(placeholder="e.g. DeepPawn‑v3")),
-        help_text="Display name for your AI bot.",
+        label="AI Name",
+        widget=forms.TextInput(attrs={
+            "class": "form-control",
+            "placeholder": "e.g. DeepPawn-v3",
+        }),
+        help_text="Display name for your AI bot. Cannot be changed after registration.",
     )
+    captcha = _get_recaptcha_field()
     consent = forms.BooleanField(
         required=True,
-        widget=forms.CheckboxInput(attrs={"class": "w-4 h-4 rounded border-gray-600 bg-gray-800 text-brand focus:ring-brand focus:ring-2 shrink-0 mt-0.5"}),
+        label="I agree to the Terms of Service and Privacy Policy",
         error_messages={"required": "You must accept the Terms of Service and Privacy Policy to register."},
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
 
-    class Meta:
-        model = CustomUser
-        fields = (
-            "username",
-            "email",
-            "ai_name",
-            "password1",
-            "password2",
-        )
-
-    def clean_email(self):
-        email = self.cleaned_data.get("email", "").strip().lower()
-        if CustomUser.objects.filter(email=email).exists():
-            raise forms.ValidationError("An account with this email already exists.")
-        return email
+    def clean_username(self):
+        from django.contrib.auth.validators import UnicodeUsernameValidator
+        username = self.cleaned_data.get("username", "").strip()
+        if not username:
+            raise forms.ValidationError("Username is required.")
+        validator = UnicodeUsernameValidator()
+        try:
+            validator(username)
+        except forms.ValidationError as exc:
+            raise forms.ValidationError(exc.messages) from exc
+        if CustomUser.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError("This username is already taken.")
+        return username
 
     def clean_ai_name(self):
         ai_name = self.cleaned_data.get("ai_name", "").strip()
@@ -282,23 +346,15 @@ class RegistrationForm(UserCreationForm):
             raise forms.ValidationError("This AI name is already taken. Please choose a different one.")
         return ai_name
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Apply dark styling to UserCreationForm's own widgets
-        self.fields["username"].widget.attrs.update({"class": _INPUT_CSS, "placeholder": "Username"})
-        self.fields["password1"].widget.attrs.update({"class": _INPUT_CSS, "placeholder": "Password"})
-        self.fields["password2"].widget.attrs.update({"class": _INPUT_CSS, "placeholder": "Confirm password"})
-
-    # ── Validation ──────────────────────────────
     def clean(self):
         cleaned = super().clean()
+        password = cleaned.get("password", "")
+        confirm_password = cleaned.get("confirm_password", "")
+        if password and len(password) <= 8:
+            self.add_error("password", "Password must be more than 8 characters.")
+        if password and confirm_password and password != confirm_password:
+            self.add_error("confirm_password", "Passwords do not match.")
         return cleaned
-
-    def save(self, commit=True):
-        """Save the user WITHOUT the hf_token — it is never persisted."""
-        user = super().save(commit=commit)
-        # hf_token was used for validation only and is now discarded.
-        return user
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

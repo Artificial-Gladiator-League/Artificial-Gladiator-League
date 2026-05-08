@@ -11,7 +11,7 @@ urlpatterns = [
     path("oauth/hf/", hf_oauth_start, name="hf_oauth_start"),
     path("oauth/hf/callback/", hf_oauth_callback, name="hf_oauth_callback"),
     path("oauth/hf/complete/", hf_oauth_complete, name="hf_oauth_complete"),
-    path("register/", views.RegisterView.as_view(), name="register"),
+    path("register/", views.register, name="register"),
     path("activate/<uidb64>/<token>/", views.activate, name="activate"),
     path("activation-sent/", views.activation_sent, name="activation_sent"),
     path("login/", views.UserLoginView.as_view(), name="login"),
@@ -22,6 +22,7 @@ urlpatterns = [
     path("match/<int:match_id>/moves/", views.match_moves, name="match_moves"),
     path("game/<int:game_id>/moves/", views.game_moves, name="game_moves"),
     path("activity-heatmap/", views.activity_heatmap, name="activity_heatmap"),
+    path("profile/model-file-status/<str:game_type>/", views.model_file_status_api, name="model_file_status_api"),
     path("search/", views.user_search, name="user_search"),
     # GDPR
     path("gdpr/", views.gdpr_portal, name="gdpr"),

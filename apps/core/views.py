@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
 
@@ -206,6 +206,106 @@ def how_to_upload(request):
     return render(request, "core/how_to_upload.html")
 
 
+def _per_game_stats(player_ids, game_type):
+    """Return per-game W/L/D/total/streak keyed by player PK for the given game_type."""
+    terminal = [
+        Game.Status.WHITE_WINS, Game.Status.BLACK_WINS, Game.Status.DRAW,
+        Game.Status.TIMEOUT_WHITE, Game.Status.TIMEOUT_BLACK,
+    ]
+    wins_map = dict(
+        Game.objects
+        .filter(winner_id__in=player_ids, game_type=game_type)
+        .values('winner_id')
+        .annotate(c=Count('pk'))
+        .values_list('winner_id', 'c')
+    )
+    draws_as_white = dict(
+        Game.objects
+        .filter(white_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW)
+        .values('white_id')
+        .annotate(c=Count('pk'))
+        .values_list('white_id', 'c')
+    )
+    draws_as_black = dict(
+        Game.objects
+        .filter(black_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW)
+        .values('black_id')
+        .annotate(c=Count('pk'))
+        .values_list('black_id', 'c')
+    )
+    played_as_white = dict(
+        Game.objects
+        .filter(white_id__in=player_ids, game_type=game_type, status__in=terminal)
+        .values('white_id')
+        .annotate(c=Count('pk'))
+        .values_list('white_id', 'c')
+    )
+    played_as_black = dict(
+        Game.objects
+        .filter(black_id__in=player_ids, game_type=game_type, status__in=terminal)
+        .values('black_id')
+        .annotate(c=Count('pk'))
+        .values_list('black_id', 'c')
+    )
+
+    # Compute per-game streak: fetch each player's recent terminal games for
+    # this game type, ordered newest-first, then walk until the outcome changes.
+    win_statuses = {Game.Status.WHITE_WINS, Game.Status.BLACK_WINS, Game.Status.TIMEOUT_BLACK, Game.Status.TIMEOUT_WHITE}
+    draw_statuses = {Game.Status.DRAW}
+    recent_games = (
+        Game.objects
+        .filter(
+            game_type=game_type,
+            status__in=terminal,
+        )
+        .filter(Q(white_id__in=player_ids) | Q(black_id__in=player_ids))
+        .order_by('-last_move_at', '-timestamp')
+        .values('pk', 'white_id', 'black_id', 'winner_id', 'status')
+    )
+    # Group by player
+    from collections import defaultdict
+    player_games = defaultdict(list)
+    for g in recent_games:
+        for side in ('white_id', 'black_id'):
+            uid = g[side]
+            if uid in player_ids:
+                player_games[uid].append(g)
+
+    def _streak(uid, games):
+        streak = 0
+        last = None  # 'win', 'draw', 'loss'
+        for g in games:
+            if g['status'] in win_statuses:
+                outcome = 'win' if g['winner_id'] == uid else 'loss'
+            else:
+                outcome = 'draw'
+            if last is None:
+                last = outcome
+            if outcome != last:
+                break
+            if outcome == 'win':
+                streak = (streak + 1) if streak >= 0 else 1
+            elif outcome == 'loss':
+                streak = (streak - 1) if streak <= 0 else -1
+            # draws reset / hold at 0
+        return streak
+
+    result = {}
+    for uid in player_ids:
+        wins = wins_map.get(uid, 0)
+        draws = draws_as_white.get(uid, 0) + draws_as_black.get(uid, 0)
+        played = played_as_white.get(uid, 0) + played_as_black.get(uid, 0)
+        losses = max(0, played - wins - draws)
+        result[uid] = {
+            'wins': wins,
+            'losses': losses,
+            'draws': draws,
+            'total_games': played,
+            'streak': _streak(uid, player_games.get(uid, [])),
+        }
+    return result
+
+
 def leaderboard(request):
     tab = request.GET.get("tab", "global")
     if tab not in CATEGORY_FILTERS:
@@ -214,7 +314,15 @@ def leaderboard(request):
     if game_type not in GAME_ELO_FIELD:
         game_type = "chess"
 
-    players = _ranked_qs(tab, game_type)
+    players = list(_ranked_qs(tab, game_type))
+    stats_map = _per_game_stats([p.pk for p in players], game_type)
+    for p in players:
+        st = stats_map.get(p.pk, {})
+        p.wins = st.get('wins', p.wins)
+        p.losses = st.get('losses', p.losses)
+        p.draws = st.get('draws', p.draws)
+        p.total_games = st.get('total_games', p.total_games)
+        p.current_streak = st.get('streak', p.current_streak)
     counts = _category_counts()
 
     return render(request, "core/leaderboard.html", {
@@ -236,10 +344,16 @@ def leaderboard_json(request):
         game_type = "chess"
     elo_field = GAME_ELO_FIELD[game_type]
 
-    players = _ranked_qs(tab, game_type)
+    players = list(_ranked_qs(tab, game_type))
+    stats_map = _per_game_stats([p.pk for p in players], game_type)
     rows = []
     for rank, p in enumerate(players, 1):
         cat = p.get_category()
+        st = stats_map.get(p.pk, {})
+        wins = st.get('wins', p.wins)
+        losses = st.get('losses', p.losses)
+        draws = st.get('draws', p.draws)
+        played = st.get('total_games', p.total_games)
         rows.append({
             "rank": rank,
             "username": p.username,
@@ -248,11 +362,11 @@ def leaderboard_json(request):
             "elo": getattr(p, elo_field),
             "elo_chess": p.elo_chess,
             "elo_breakthrough": p.elo_breakthrough,
-            "wins": p.wins,
-            "losses": p.losses,
-            "draws": p.draws,
-            "win_pct": round(p.win_rate * 100),
-            "streak": p.current_streak,
+            "wins": wins,
+            "losses": losses,
+            "draws": draws,
+            "win_pct": round(wins / played * 100) if played else 0,
+            "streak": st.get('streak', p.current_streak),
             "tier_icon": cat["icon"],
             "tier_label": cat["tier"],
             "tier_css": cat["css"],
