@@ -36,7 +36,8 @@ INSTALLED_APPS = [
     # Forum and chat apps removed
     # Third‑party
     "channels",
-    "django_recaptcha",
+    # django_recaptcha removed — native reCAPTCHA v3 via Google siteverify API
+    # (no package needed; reinstall with fix_recaptcha.bat if you revert)
 ]
 
 # ── Middleware ─────────────────────────────────
@@ -231,10 +232,6 @@ if DEBUG and not RECAPTCHA_PUBLIC_KEY:
     RECAPTCHA_PUBLIC_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Google test site key
     RECAPTCHA_PRIVATE_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Google test secret key
 
-# Silence the system check that fires when the well-known Google test keys are
-# detected — they are used intentionally in local development.
-if DEBUG:
-    SILENCED_SYSTEM_CHECKS = ["django_recaptcha.recaptcha_test_key_error"]
 
 # Minimum v3 score to accept in production (0.0 = bot, 1.0 = human).
 # Has no effect when RECAPTCHA_TESTING=True.

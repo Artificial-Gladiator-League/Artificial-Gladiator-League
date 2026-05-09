@@ -22,12 +22,14 @@
     </div>
     {% if user.is_authenticated %}
     <div class="flex items-center gap-3 text-sm bg-surfaceLight dark:bg-surfaceLight border border-borderDark rounded-lg px-4 py-2">
-      <span class="text-gray-400">{{ user.country_flag|safe }} {% fide_badge user %} {{ user.username }}</span>
-      {% if active_game_type == "breakthrough" %}
-      <span class="font-bold text-purple-400">{{ user.elo_breakthrough }} BT Elo</span>
+      {% if user.ai_name %}
+      <span class="font-semibold text-gray-200">{{ user.ai_name }}</span>
       {% else %}
-      <span class="font-bold text-gold">{{ user.elo_chess }} Chess Elo</span>
+      <span class="font-semibold text-gray-200">{% fide_badge user %} {{ user.username }}</span>
       {% endif %}
+      <span id="headerElo" class="font-bold {% if active_game_type == 'breakthrough' %}text-purple-400{% else %}text-gold{% endif %}">
+        {% if active_game_type == "breakthrough" %}{{ user.elo_breakthrough }} BT Elo{% else %}{{ user.elo_chess }} Chess Elo{% endif %}
+      </span>
       <span class="{{ user.get_category.css }}">{{ user.get_category.icon }} {{ user.get_category.tier }}</span>
     </div>
     {% endif %}
@@ -89,38 +91,23 @@
         <table class="stats-table lb-table text-sm w-full" id="lbTable">
       <thead>
         <tr>
-          <th class="w-14 sortable" data-col="rank">#<span class="sort-arrow">▲</span></th>
-          <th class="sortable" data-col="username">Gladiator<span class="sort-arrow">▲</span></th>
-          <th>AI Bot</th>
-          <th class="text-right sortable sorted" data-col="elo" data-dir="desc">
-            {% if active_game_type == "breakthrough" %}BT Elo{% else %}Chess Elo{% endif %}
-            <span class="sort-arrow">▼</span>
+          <th class="text-left">AG Champion</th>
+          <th class="!text-right whitespace-nowrap sortable sorted" data-col="elo" data-dir="desc">
+            <span id="eloColHeader">{% if active_game_type == "breakthrough" %}BT Elo{% else %}Chess Elo{% endif %}</span><span class="sort-arrow">▼</span>
           </th>
-          <th class="text-center w-24">Title</th>
-          <th class="text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
-          <th class="text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
-          <th class="text-right sortable" data-col="draws">D<span class="sort-arrow">▲</span></th>
-          <th class="text-right sortable" data-col="win_pct">Win&nbsp;%<span class="sort-arrow">▲</span></th>
-          <th class="text-right sortable" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
+          <th class="!text-center w-24">Title</th>
+          <th class="!text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable" data-col="draws">D<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable" data-col="win_pct">Win %<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
         </tr>
       </thead>
       <tbody id="lbBody">
         {% for p in players %}
         <tr data-username="{{ p.username }}">
-          <td class="font-semibold {% if forloop.counter == 1 %}rank-1{% elif forloop.counter == 2 %}rank-2{% elif forloop.counter == 3 %}rank-3{% else %}text-gray-500{% endif %}">
-            {% if forloop.counter == 1 %}🥇{% elif forloop.counter == 2 %}🥈{% elif forloop.counter == 3 %}🥉{% else %}{{ forloop.counter }}{% endif %}
-          </td>
-          <td class="font-medium">
-            <div class="flex items-center gap-2">
-              <div class="w-6 h-6 rounded-full bg-purple/30 flex items-center justify-center text-xs font-bold text-purple">
-                {{ p.username|make_list|first|upper }}
-              </div>
-              <span class="mr-1">{{ p.country_flag|safe }}</span>
-              <a href="#" class="hover:text-gold transition">{% fide_badge p %} {{ p.username }}</a>
-            </div>
-          </td>
-          <td class="text-gray-400 text-xs">{{ p.ai_name|default:"—" }}</td>
-          <td class="text-right font-bold {% if active_game_type == 'breakthrough' %}text-purple-400{% else %}text-gold{% endif %}">
+          <td class="text-left text-gray-400 text-xs">{{ p.ai_name|default:"—" }}</td>
+          <td class="text-right font-bold tabular-nums {% if active_game_type == 'breakthrough' %}text-purple-400{% else %}text-gold{% endif %}">
             {% if active_game_type == "breakthrough" %}{{ p.elo_breakthrough }}{% else %}{{ p.elo_chess }}{% endif %}
           </td>
           <td class="text-center">
@@ -145,7 +132,7 @@
         </tr>
         {% empty %}
         <tr id="emptyRow">
-          <td colspan="10" class="text-center text-gray-500 py-12">
+          <td colspan="8" class="text-center text-gray-500 py-12">
             <div class="text-3xl mb-2">⚔️</div>
             No gladiators in this category yet.
             {% if not user.is_authenticated %}
@@ -164,7 +151,7 @@
     <div class="w-56 shrink-0">
       <div class="card p-0 sticky top-24">
         <div class="px-4 py-3 border-b border-borderDark">
-          <h3 class="text-sm font-bold text-gray-200">FIDE Tier Rankings</h3>
+          <h3 class="text-sm font-bold text-gray-200">AGL ranking (Based on FIDE ranking)</h3>
         </div>
         <table class="w-full text-xs">
           <thead>
@@ -263,6 +250,16 @@
         }
       });
       fetchTab(activeTab);
+      /* update top-right Elo badge */
+      const headerElo = document.getElementById('headerElo');
+      const eloColHeader = document.getElementById('eloColHeader');
+      if (gt === 'breakthrough') {
+        if (headerElo) { headerElo.textContent = '{{ user.elo_breakthrough }} BT Elo'; headerElo.className = 'font-bold text-purple-400'; }
+        if (eloColHeader) eloColHeader.textContent = 'BT Elo';
+      } else {
+        if (headerElo) { headerElo.textContent = '{{ user.elo_chess }} Chess Elo'; headerElo.className = 'font-bold text-gold'; }
+        if (eloColHeader) eloColHeader.textContent = 'Chess Elo';
+      }
     });
   });
 
@@ -294,7 +291,7 @@
   /* ── Render table from JSON ────────────────── */
   function renderTable(rows) {
     if (!rows.length) {
-      tbody.innerHTML = `<tr id="emptyRow"><td colspan="10" class="text-center text-gray-500 py-12"><div class="text-3xl mb-2">⚔️</div>No gladiators in this category yet.</td></tr>`;
+      tbody.innerHTML = `<tr id="emptyRow"><td colspan="8" class="text-center text-gray-500 py-12"><div class="text-3xl mb-2">⚔️</div>No gladiators in this category yet.</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((p, i) => {
@@ -310,10 +307,8 @@
 
       const eloColor = activeGameType === 'breakthrough' ? 'text-purple-400' : 'text-gold';
       return `<tr data-username="${esc(p.username)}">
-        <td class="font-semibold ${rankCls}">${rankLabel}</td>
-        <td class="font-medium"><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-purple/30 flex items-center justify-center text-xs font-bold text-purple">${initial}</div><span class="mr-1">${p.flag}</span><a href="#" class="hover:text-gold transition">${esc(p.username)}</a></div></td>
-        <td class="text-gray-400 text-xs">${esc(p.ai_name)}</td>
-        <td class="text-right font-bold ${eloColor}">${p.elo}</td>
+        <td class="text-left text-gray-400 text-xs">${esc(p.ai_name)}</td>
+        <td class="text-right font-bold tabular-nums ${eloColor}">${p.elo}</td>
         <td class="text-center"><span class="${p.tier_css}" title="${esc(p.tier_label)}">${p.tier_icon} <span class="text-xs ml-0.5 hidden sm:inline">${esc(p.tier_label)}</span></span></td>
         <td class="text-right text-green-400">${p.wins}</td>
         <td class="text-right text-red-400">${p.losses}</td>
@@ -345,7 +340,7 @@
       const rows = tbody.querySelectorAll('tr[data-username]');
       rows.forEach(row => {
         const name = row.dataset.username.toLowerCase();
-        const aiName = (row.children[2]?.textContent || '').toLowerCase();
+        const aiName = (row.children[1]?.textContent || '').toLowerCase();
         row.style.display = (name.includes(q) || aiName.includes(q)) ? '' : 'none';
       });
     });
@@ -371,7 +366,7 @@
   function sortTable(col, dir) {
     const rows = Array.from(tbody.querySelectorAll('tr[data-username]'));
     if (!rows.length) return;
-    const idx = { rank: 0, username: 1, elo: 3, wins: 5, losses: 6, draws: 7, win_pct: 8, streak: 9 }[col];
+    const idx = { elo: 1, wins: 3, losses: 4, draws: 5, win_pct: 6, streak: 7 }[col];
     if (idx === undefined) return;
     const numeric = col !== 'username';
     rows.sort((a, b) => {

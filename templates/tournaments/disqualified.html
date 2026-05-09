@@ -1,34 +1,38 @@
 {% extends "base.html" %}
-{% block title %}Disqualified — AI Gladiator{% endblock %}
+{% block title %}Disqualified • Artificial Gladiator League{% endblock %}
 
 {% block content %}
-<div class="container py-5" style="max-width: 720px;">
-  <div class="card border-danger shadow-lg">
-    <div class="card-header bg-danger text-white text-center py-3">
-      <h2 class="mb-0">⚠ Disqualified</h2>
-    </div>
-    <div class="card-body text-center p-4">
-      <p class="lead mb-3">
-        Your repository has changed during the tournament; you are
-        disqualified.
-      </p>
 
-      {% if tournament_name %}
-        <p class="text-muted mb-2">
-          <strong>Tournament:</strong> {{ tournament_name }}
+<div class="min-h-screen flex items-center justify-center p-8 mx-auto max-w-4xl">
+  <div class="container" style="max-width: 720px;">
+    <div class="card border-danger shadow-lg">
+      <div class="card-header bg-danger text-white text-center py-3">
+        <h2 class="mb-0">⚠ Disqualified</h2>
+      </div>
+      <div class="card-body text-center p-4">
+        <p class="lead mb-3">
+          Your repository has changed during the tournament; you are
+          disqualified.
         </p>
-      {% endif %}
-      {% if reason %}
-        <p class="text-muted mb-3"><small>{{ reason }}</small></p>
-      {% endif %}
 
-      <hr>
+        {% if tournament_name %}
+          <p class="text-muted mb-2">
+            <strong>Tournament:</strong> {{ tournament_name }}
+          </p>
+        {% endif %}
+        {% if reason %}
+          <p class="text-muted mb-3"><small>{{ reason }}</small></p>
+        {% endif %}
 
-      <a href="/games/lobby/"
-         class="btn btn-danger btn-lg mt-2">
-        Return to Lobby
-      </a>
+        <hr>
+
+        <a href="/games/lobby/" 
+           class="btn btn-danger btn-lg mt-2">
+          Return to Lobby
+        </a>
+      </div>
     </div>
   </div>
 </div>
+
 {% endblock %}

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load core_tags %}
-{% block title %}{{ user_profile.username }} — Profile{% endblock %}
+{% block title %}{{ user_profile.ai_name }} Profile • agladiator.com{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -139,7 +139,7 @@
   <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
     <div>
       <h1 class="text-3xl font-bold flex items-center gap-2">
-        {% fide_badge user_profile %} {{ user_profile.username }}
+        {% fide_badge user_profile %} {% if user_profile.ai_name %}{{ user_profile.ai_name }}{% else %}{{ user_profile.username }}{% endif %}
       </h1>
       <p class="text-sm text-gray-400 mt-1">
         <span class="{{ category.css }} font-semibold">{{ category.icon }} {{ category.tier }}</span>
@@ -261,7 +261,7 @@
       <div class="flex border-b border-gray-700 mb-6">
         {% if is_own_profile %}
         <button class="profile-tab active" data-tab="edit">Profile</button>
-        <button class="profile-tab" data-tab="ai-models">AG Models</button>
+        <button class="profile-tab" data-tab="ai-models">AG Champions</button>
         <button class="profile-tab" data-tab="stats">Stats &amp; History</button>
         {% else %}
         <button class="profile-tab active" data-tab="stats">Stats &amp; History</button>

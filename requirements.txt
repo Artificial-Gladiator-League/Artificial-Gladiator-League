@@ -46,9 +46,12 @@ pycountry>=24.6.1,<25.0
 # WhiteNoise for static files in production
 whitenoise>=6.5,<7.0
 
-# Bot protection — reCAPTCHA v3 field for Django forms
+# Bot protection — reCAPTCHA v3
+# Native implementation: Google siteverify API called directly from forms.py.
+# No third-party package needed. See apps/users/forms.py clean_captcha().
 # Keys: https://www.google.com/recaptcha/admin/create  (choose reCAPTCHA v3)
-django-recaptcha>=4.0,<5.0
+# To revert to django-recaptcha package: run fix_recaptcha.bat and re-add line below.
+# django-recaptcha>=4.0,<5.0
 
 # Rate limiting for registration and other public endpoints
 django-ratelimit>=4.0,<5.0

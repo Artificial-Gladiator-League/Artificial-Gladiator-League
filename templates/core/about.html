@@ -1,16 +1,16 @@
 ﻿{% extends "base.html" %}
-{% block title %}About | agladiator.com{% endblock %}
+{% block title %}About • agladiator.com{% endblock %}
 
 {% block content %}
 <div class="animate-fade-in legal-page">
 
   <!-- ── Hero ────────────────────────────────── -->
   <div class="text-center my-10">
-    <h1 class="text-4xl md:text-5xl font-extrabold text-brand leading-tight">
-      Where AG gladiate - Home for Artificial Gladiators
+    <h1 class="text-4xl md:text-5xl text-gray font-extrabold leading-tight">
+      The Official Home of Artificial Gladiator League
     </h1>
     <p class="mt-4 text-lg md:text-xl text-gray-400 max-w-2xl mx-auto">
-      Build your Artificial Gladiator (AG), upload it from Hugging Face, and watch it gladiate — 
+      Build your Artificial Gladiator (<span class="text-brand glow-brand">AG</span>), upload it from Hugging Face, and watch it gladiate — 
       completely free.
     </p>
   </div>
@@ -22,17 +22,15 @@
     zero research background. Just curiosity and a stubborn refusal to quit.
     I taught myself to code, dove into high mathematics, and in March 2026 I published
     <a href="https://www.researchgate.net/publication/403185460_Graph_Game_Theory_An_Algebraic_Approach_for_General_Game_Playing" target="_blank" rel="noopener">
-    "Graph Game Theory: A New Algebraic Approach for General Game Playing"</a> on ResearchGate.
+    "Graph Game Theory: An Algebraic Approach for General Game Playing"</a> on ResearchGate.
     For three years I worked on the paper while building Artificial Gladiator League — a place where anyone with internet
     access and strong will can prove their AG chops against the world.
   </p>
 
-  <!-- ── Who it's for ────────────────────────── -->
   <h2 class="text-2xl font-bold mt-10 mb-3">Built for you</h2>
   <p>
     Whether you're a <strong>hobbyist</strong> writing your first minimax,
-    a <strong>student</strong> exploring reinforcement learning,
-    a <strong>seasoned pro</strong> pushing Elo limits, or a
+    a <strong>student</strong> exploring reinforcement learning, or a
     <strong>company</strong> scouting fresh AI talent — this platform is your home.
   </p>
 
@@ -40,30 +38,29 @@
   <h2 class="text-2xl font-bold mt-10 mb-3">What we believe</h2>
   <ul class="space-y-2">
     <li><strong>Access beats pedigree.</strong> A great idea can come from anywhere — no paywall, no gatekeeping.</li>
-    <li><strong>Open source is a superpower.</strong> Every line of this platform is public. Fork it, improve it, teach with it.</li>
+    <li><strong>Open source is a superpower.</strong> Every line of this platform will be public soon. Fork it, improve it, teach with it. <strong>Repo link coming shortly after final polish.</strong></li>
     <li><strong>Competition drives growth.</strong> Friendly rivalry makes everyone's code sharper.</li>
     <li><strong>Fair play is non‑negotiable.</strong> Fair play is enforced, not hoped for.</li>
-    <li><strong>Community comes first.</strong> The core principle: participating in AG games and tournaments stays free forever because we believe in open AI for everyone.</li>
+    <li><strong>Community comes first.</strong> The core principle: participating in Artificial Gladiator League (<span class="text-brand glow-brand">AGL</span>) games and tournaments stays free forever because we believe in open AI for everyone.</li>
   </ul>
 
-  <!-- ── Proof / Status ──────────────────────── -->
   <h2 class="text-2xl font-bold mt-10 mb-3">Where we are today</h2>
   <p>
-    The site is focused entirely on <strong>AG vs AG</strong> plus ongoing community events.
+    The platform is focused entirely on <strong>AG vs AG</strong>, along with ongoing tournament events centered around Chess and Breakthrough 8x8. <strong>This is an MVP in active development—expect rapid improvements based on community feedback.</strong>
   </p>
 
-  <!-- ── Future Vision + CTA ─────────────────── -->
   <h2 class="text-2xl font-bold mt-10 mb-3">What's next</h2>
+  <ul class="space-y-2 mt-4">
+    <li>Tournaments founded for money, sponsored by companies.</li>
+    <li>More games beyond Chess and Breakthrough 8x8.</li>
+    <li>A place where people can upload games they created themselves - games where AGs will gladiate against each other.</li>
+    <li>An AG merchandise marketplace.</li>
+    <li>A place to share knowledge and strategies with the community.</li>
+    <li>And many more...</li>
+  </ul>
   <p>
-    More games beyond chess. A creator toolkit so <em>you</em> can design your own game
-    modes. An AG merchandise marketplace. Talent discovery programs.
-    And tournaments founded for money, sponsored by companies.
+    This is just the beginning and it all depends on you. The more people join, the richer the arena becomes. So what are you waiting for? 
+    <a href="{% url 'users:register' %}" class="text-brand font-semibold hover:underline"> Join the arena</a> and show the world what your AG can do.
   </p>
-  <p class="mt-4 text-lg">
-    This is just the beginning. 
-    <a href="{% url 'users:register' %}" class="text-brand font-semibold hover:underline">
-      Join the arena</a> and show the world what your AG can do.
-  </p>
-
 </div>
 {% endblock %}

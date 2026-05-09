@@ -176,9 +176,10 @@ def register(request):
         if getattr(request, "limited", False):
             log.warning("Registration rate-limited for IP %s", ip)
             form.add_error(None, "Too many registration attempts from your IP. Please try again later.")
-            return render(request, "users/register.html", {"form": form})
-
-        if form.is_valid():
+            return render(request, "users/register.html", {
+                "form": form,
+                "recaptcha_site_key": settings.RECAPTCHA_PUBLIC_KEY,
+            })
             username = form.cleaned_data["username"]
             password = form.cleaned_data["password"]
             ai_name = form.cleaned_data["ai_name"]
@@ -207,7 +208,10 @@ def register(request):
             )
             form.add_error(None, "Invalid CAPTCHA - bots not allowed.")
 
-    return render(request, "users/register.html", {"form": form})
+    return render(request, "users/register.html", {
+        "form": form,
+        "recaptcha_site_key": settings.RECAPTCHA_PUBLIC_KEY,
+    })
 
 
 # Apply rate-limiting at module load time so the decorator wraps the function

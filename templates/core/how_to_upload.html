@@ -1,22 +1,19 @@
 {% extends "base.html" %}
-{% block title %}How to Upload Your AI | agladiator.com{% endblock %}
+{% block title %}How to register Your AG • agladiator.com{% endblock %}
 
 {% block content %}
 <div class="animate-fade-in max-w-4xl mx-auto">
-
-  <!-- Hero -->
   <div class="text-center mb-12">
-    <h1 class="text-4xl md:text-5xl font-extrabold text-brand leading-tight">
-      How to Upload Your Artificial Gladiator
+    <h1 class="text-4xl md:text-5xl text-gray font-extrabold leading-tight">
+      How to register Your Artificial Gladiator
     </h1>
     <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-      A step-by-step guide to connecting your Artificial Gladiator (AG) to the Artificial Gladiator League — from writing your Artificial Gladiator to gladiating in games and tournaments. Any algorithm, any framework.
+      A step-by-step guide to registering your Artificial Gladiator (<span class="text-brand glow-brand">AG</span>) to the Artificial Gladiator League (<span class="text-brand glow-brand">AGL</span>) platform — from bringing to life your AG to gladiating with your AG in games and tournaments.
     </p>
   </div>
 
-  <!-- Step bar -->
   <div class="flex flex-wrap justify-center gap-4 mb-12 text-xs text-center">
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Create Your AG</span></div>
+    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Bringing to life Your AG</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
     <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-purple flex items-center justify-center font-bold text-white">2</div><span class="text-gray-400">Create Repos</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
@@ -32,10 +29,10 @@
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Create Your Artificial Gladiator</h2>
+        <h2 class="text-xl font-bold mb-1">Bringing to life your AG</h2>
         <p class="text-gray-400 text-sm mb-5">
-          Your Artificial Gladiator is a Python function that receives a board position and returns a legal move string.
-          The logic inside is entirely up to you — random play, minimax, MCTS, a neural network, or anything else.
+          Your AG is a Python brain that receives a board position and returns a legal move string.
+          The logic inside is entirely up to you — Monte Carlo Vector Search (MCVS), random play, minimax, MCTS, a neural network, or anything else.
           The recommended integration is a <strong class="text-white">Gradio Space</strong> hosted on Hugging Face:
           easy to deploy, easy to debug, and no server to manage on your end.
         </p>
@@ -89,7 +86,7 @@
         <!-- Flexibility callout -->
         <div class="rounded-lg bg-brand/10 border border-brand/30 px-4 py-3 text-sm">
           <strong class="text-brand">Any algorithm is welcome.</strong>
-          <span class="text-gray-300"> Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches — if it returns a valid move string within the time limit, it qualifies.</span>
+          <span class="text-gray-300"> Monte Carlo Vector Search (MCVS), Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches — if it returns a valid move string within the time limit, it qualifies.</span>
         </div>
       </div>
     </div>
@@ -206,11 +203,46 @@
             <div class="pl-4 text-green-400">├── app.py               ← Gradio app exposing get_move()</div>
             <div class="pl-4 text-gray-300">└── requirements.txt     ← gradio + all dependencies</div>
           </div>
-          <p class="text-xs text-gray-500">
+          <p class="text-xs text-gray-500 mb-4">
             After deploying, copy the Space's public subdomain
             (e.g. <code class="bg-black/30 px-1 rounded">your-username-my-bot-space.hf.space</code>) and paste it as the
             <strong class="text-gray-200">HF Space Link</strong> when registering your Artificial Gladiator.
           </p>
+
+          <div class="rounded-lg border border-borderDark bg-surface p-5">
+            <h3 class="font-semibold text-gray-200 mb-3">Example:</h3>
+
+            <p class="text-sm text-gray-400 mb-3">
+              Create and publish your three Hugging Face repositories here:
+              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-model" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
+                Model repo
+              </a>,
+              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-data" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
+                Data repo
+              </a>
+            </p>
+
+            <p class="text-sm text-gray-400 mb-3">
+              The
+              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-model"
+                class="text-purple-400 hover:underline"
+                target="_blank"
+                rel="noopener noreferrer">
+                Model repo
+              </a>
+              is based on the paper,
+              <a href="https://www.researchgate.net/publication/403185460_Graph_Game_Theory_An_Algebraic_Approach_for_General_Game_Playing"
+                class="text-purple hover:underline"
+                target="_blank"
+                rel="noopener">
+                Graph Game Theory: An Algebraic Approach for General Game Playing
+              </a>.
+            </p>
+
+            <p class="text-xs text-gray-500">
+              After deploying, copy the Space’s public subdomain and paste it as the HF Space Link when registering your AG.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -222,13 +254,13 @@
       <div class="w-10 h-10 rounded-full bg-gold flex items-center justify-center font-bold text-black shrink-0">3</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Prove Ownership &amp; SHA Pinning</h2>
-        <p class="text-gray-400 text-sm mb-4">Before your Artificial Gladiator can gladiate, you must prove you own the repository. The platform also pins the commit SHA to detect any changes during tournaments.</p>
+        <p class="text-gray-400 text-sm mb-4">Before your AG can gladiate, you must prove you own the repository. The platform also pins the commit SHA to detect any changes during tournaments.</p>
 
         <h3 class="text-sm font-semibold text-gray-200 mb-3">Ownership Verification (one-time per repo)</h3>
         <ol class="space-y-3 text-sm mb-5">
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
-            <span>Register your repo on the <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">AI Models</a> page. The platform generates a unique 32-character verification code.</span>
+            <span>Register your repo on the <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">AG Champion</a> page. The platform generates a unique 32-character verification code.</span>
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
@@ -236,18 +268,18 @@
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
-            <span>Click <strong>"Verify Ownership"</strong>. The platform downloads and checks the file. Once confirmed, you're cleared to compete.</span>
+            <span>Click <strong>"Verify Ownership"</strong>. The platform downloads and checks the file. Once confirmed, you're cleared to gladiate.</span>
           </li>
         </ol>
 
         <h3 class="text-sm font-semibold text-gray-200 mb-2">SHA Pinning (ongoing)</h3>
         <ul class="space-y-2 text-sm text-gray-400 mb-4">
           <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">At tournament registration</strong> — the exact commit SHA of your model repo is recorded.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">Before each round</strong> — the SHA is re-checked. Any commit since registration triggers automatic disqualification.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">During each round</strong> — the SHA is re-checked dozens of times. Any commit since registration triggers automatic disqualification.</span></li>
         </ul>
 
         <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-3 text-sm text-red-300 mb-3">
-          ⚠️ <strong>Do not push changes</strong> to your model repo after joining a tournament. SHA mismatch = automatic disqualification.
+          ⚠️ <strong>Do not push changes</strong> to your AG Champion repo after joining a tournament. SHA mismatch = automatic disqualification.
         </div>
         <div class="rounded-lg bg-green-900/20 border border-green-700/50 px-4 py-3 text-sm text-green-300">
           ✅ No Hugging Face token required. All checks use public repo access — no credentials needed from you.
@@ -261,22 +293,22 @@
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center font-bold text-white shrink-0">4</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Register Your Artificial Gladiator in the Platform</h2>
+        <h2 class="text-xl font-bold mb-1">Register Your AG Champion in the Platform</h2>
         <p class="text-gray-400 text-sm mb-4">
-          Go to <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">Profile → AG Models</a> and fill in the repo details for each game type you want to play.
+          Go to <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">Profile → AG Champions</a> and fill in the repo details for each game type you want to gladiate.
         </p>
 
         <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
           <div class="font-semibold text-gray-200 mb-3">Fields per game type</div>
           <ul class="text-gray-400 space-y-2 text-xs">
-            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Model Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code> — your Artificial Gladiator code repository</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">AG Champion Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code> — your Artificial Gladiator code repository</span></li>
             <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG-data</code> — your data repository (leave blank if not used)</span></li>
             <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">HF Space Link</strong> — <code class="bg-black/30 px-1 rounded">username-my-AG-space.hf.space</code> — your Gradio Space subdomain (Gradio interface only)</span></li>
           </ul>
         </div>
 
         <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-3 text-sm text-amber-300">
-          ⚠️ After registering, you need <strong>30 rated games</strong> with that Artificial Gladiator before you can enter tournaments. Changing your repo IDs resets this counter.
+          ⚠️ After registering, you need <strong>30 rated games</strong> to gladiate with your AG Champion before you can enter tournaments. Changing your repo IDs resets this counter.
         </div>
       </div>
     </div>
@@ -291,7 +323,7 @@
         <div class="grid sm:grid-cols-2 gap-4 mb-5">
           <div class="rounded-lg border border-borderDark bg-surface p-4">
             <div class="font-semibold text-gold mb-2">Quick Matches</div>
-            <p class="text-xs text-gray-400">Head to the <a href="{% url 'games:lobby' %}" class="text-brand hover:underline">Lobby</a>, challenge another player. Your AI plays automatically in real time. Results update your Elo.</p>
+            <p class="text-xs text-gray-400">Head to the <a href="{% url 'games:lobby' %}" class="text-brand hover:underline">Lobby</a>, challenge another player. Your AG Champion plays automatically in real time. Results update your Elo.</p>
           </div>
           <div class="rounded-lg border border-borderDark bg-surface p-4">
             <div class="font-semibold text-purple-400 mb-2">Tournaments</div>
@@ -341,7 +373,7 @@
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gray-200 mb-2">Test before tournaments</div>
-        <p class="text-xs text-gray-400">Play several quick matches in the Lobby to confirm your bot responds correctly at game speed before entering a tournament. The 30-game qualification window is the ideal calibration period.</p>
+        <p class="text-xs text-gray-400">Gladiate several quick matches in the Lobby to confirm your AG Champion responds correctly at game speed before entering a tournament. The 30-game qualification window is the ideal calibration period.</p>
       </div>
     </div>
   </div>
@@ -369,7 +401,7 @@
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Disqualified — SHA mismatch</div>
         <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>You pushed a commit to your model repo after registering for the tournament.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>You pushed a commit to your AG Champion repo after registering for the tournament.</span></li>
           <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Even trivial changes (README edits, whitespace) produce a new SHA. Freeze the repo once registered.</span></li>
         </ul>
       </div>
@@ -396,27 +428,27 @@
     <div class="space-y-5 text-sm divide-y divide-borderDark">
       <div class="pt-4 first:pt-0">
         <p class="font-semibold text-gray-200">Can I use PyTorch, TensorFlow, JAX, scikit-learn, or any other ML framework?</p>
-        <p class="text-gray-400 mt-1">Yes. List all pip packages in <code class="bg-surface px-1 rounded">requirements.txt</code>. They are installed in your Gradio Space (or local sandbox for EndpointHandler Artificial Gladiators) before your code runs.</p>
+        <p class="text-gray-400 mt-1">Yes. List all pip packages in <code class="bg-surface px-1 rounded">requirements.txt</code>. They are installed in your Gradio Space (or local sandbox for EndpointHandler AG Champions) before your code runs.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What game types are supported?</p>
-        <p class="text-gray-400 mt-1">Currently <strong class="text-white">Chess</strong> and <strong class="text-white">Breakthrough</strong>. Each game is registered independently, so you can enter different Artificial Gladiators for each.</p>
+        <p class="text-gray-400 mt-1">Currently <strong class="text-white">Chess</strong> and <strong class="text-white">Breakthrough</strong>. Each game is registered independently, so you can enter different AG Champions for each.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Do I need a Hugging Face account?</p>
         <p class="text-gray-400 mt-1">Yes — to create repos and deploy a Space. No HF API token is required by the platform; all access is anonymous via public resources.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Can I update my Artificial Gladiator between games (outside tournaments)?</p>
+        <p class="font-semibold text-gray-200">Can I update my AG Champion between games (outside tournaments)?</p>
         <p class="text-gray-400 mt-1">
-          Yes, you can update your Artificial Gladiator or change your repository links outside of tournaments. 
-          However, <strong class="text-white">any change to your Model Repo, Data Repo, or HF Space Link will reset your rated games counter</strong>. 
+          Yes, you can update your AG Champion or change your repository links outside of tournaments. 
+          However, <strong class="text-white">any change to your AG Champion's Repo, Data Repo, or HF Space Link will reset your rated games counter</strong>. 
           You will need to play another <strong class="text-white">30 rated games</strong> before you can enter tournaments again.
         </p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Can my Artificial Gladiator's model repo be Gated?</p>
-        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your code. The platform only reads the file listing for verification — it does not download your source files for Gradio-interface bots. However, you must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can read that listing; without this, ownership verification will fail.</p>
+        <p class="font-semibold text-gray-200">Should my AG Champion's model repo be Gated?</p>
+        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your AG Champion from misusing it by other human users. The platform only reads the file listing for verification — it does not download your source files for Gradio-interface AG Champions. However, you must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can read that listing; without this, ownership verification will fail.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Why must the data repo and Space be fully Public?</p>
@@ -428,7 +460,7 @@
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Why do I need 30 rated games before entering tournaments?</p>
-        <p class="text-gray-400 mt-1">It establishes a meaningful Elo rating and confirms your model is stable and reliably responsive before entering structured competition.</p>
+        <p class="text-gray-400 mt-1">It establishes a meaningful Elo rating and confirms your AG Champion is stable and reliably responsive before entering structured competition.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">How strict is the per-move time limit?</p>
@@ -441,7 +473,7 @@
   <div class="text-center mb-12">
     <p class="text-gray-400 mb-4">Ready to enter the arena?</p>
     <div class="flex flex-wrap justify-center gap-3">
-      <a href="{% url 'users:ai_models' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Go to AG Models</a>
+      <a href="{% url 'users:ai_models' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Go to AG Champions</a>
       <a href="{% url 'games:lobby' %}" class="px-6 py-2.5 text-sm font-semibold rounded-lg border border-borderDark text-gray-300 hover:bg-surfaceLight transition">Go to Lobby</a>
     </div>
   </div>

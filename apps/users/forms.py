@@ -11,39 +11,14 @@ log = logging.getLogger(__name__)
 
 
 def _get_recaptcha_field():
-    """Return a ReCaptchaField (v3) in production; a no-op hidden field in DEBUG.
+    """Return a hidden field to receive the reCAPTCHA v3 token injected by JS.
 
-    Google's reCAPTCHA v3 API always returns score 0.0 for requests from
-    localhost/127.0.0.1, so bypassing validation entirely in DEBUG mode is the
-    only reliable way to allow local development without blocking every signup.
+    The token is set by grecaptcha.execute() in register.html before submit.
+    Server-side score validation happens in RegistrationForm.clean_captcha()
+    via a direct call to Google's siteverify API — no third-party package needed.
+    DEBUG mode skips verification because localhost always scores 0.0.
     """
-    from django.conf import settings
-
-    # In local development (DEBUG=True), skip reCAPTCHA altogether.
-    # The hidden field is optional so no token is required and no Google call
-    # is ever made.  Production (DEBUG=False) always uses the real field.
-    if getattr(settings, "DEBUG", False):
-        return forms.CharField(widget=forms.HiddenInput, required=False)
-
-    try:
-        from django_recaptcha.fields import ReCaptchaField
-        from django_recaptcha.widgets import ReCaptchaV3
-        pk = getattr(settings, "RECAPTCHA_PUBLIC_KEY", "")
-        if not pk:
-            log.warning(
-                "RECAPTCHA_PUBLIC_KEY is not set. "
-                "The reCAPTCHA widget will have an empty data-sitekey and all "
-                "submissions will fail. Set the key in your .env file or "
-                "environment variables. Get keys at: "
-                "https://www.google.com/recaptcha/admin/create"
-            )
-        return ReCaptchaField(widget=ReCaptchaV3)
-    except ImportError:
-        log.warning(
-            "django-recaptcha is not installed. reCAPTCHA validation is disabled. "
-            "Install it with: pip install django-recaptcha"
-        )
-        return forms.CharField(widget=forms.HiddenInput, required=False)
+    return forms.CharField(widget=forms.HiddenInput, required=False)
 
 # Dark‑mode Tailwind attrs reused across all form widgets
 _INPUT_CSS = (
@@ -325,6 +300,50 @@ class RegistrationForm(forms.Form):
         error_messages={"required": "You must accept the Terms of Service and Privacy Policy to register."},
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
+
+    def clean_captcha(self):
+        """Verify the reCAPTCHA v3 token against Google's siteverify API."""
+        import json
+        import urllib.parse
+        import urllib.request
+        from django.conf import settings
+
+        token = self.cleaned_data.get("captcha", "")
+
+        # Bypass in DEBUG — localhost always gets score 0.0 from Google.
+        if getattr(settings, "DEBUG", False):
+            return token
+
+        secret = getattr(settings, "RECAPTCHA_PRIVATE_KEY", "")
+        if not secret:
+            log.warning("RECAPTCHA_PRIVATE_KEY not set — skipping server-side reCAPTCHA check.")
+            return token
+
+        if not token:
+            raise forms.ValidationError("reCAPTCHA verification failed. Please try again.")
+
+        payload = urllib.parse.urlencode({"secret": secret, "response": token}).encode()
+        try:
+            with urllib.request.urlopen(
+                "https://www.google.com/recaptcha/api/siteverify",
+                data=payload,
+                timeout=5,
+            ) as resp:
+                result = json.loads(resp.read().decode())
+        except Exception as exc:
+            log.warning("reCAPTCHA API error: %s", exc)
+            raise forms.ValidationError("reCAPTCHA verification failed. Please try again.")
+
+        if not result.get("success"):
+            raise forms.ValidationError("reCAPTCHA verification failed. Please try again.")
+
+        score = float(result.get("score", 0.0))
+        required = float(getattr(settings, "RECAPTCHA_REQUIRED_SCORE", 0.5))
+        if score < required:
+            log.warning("reCAPTCHA score %.2f below threshold %.2f", score, required)
+            raise forms.ValidationError("reCAPTCHA score too low. Please try again.")
+
+        return token
 
     def clean_username(self):
         from django.contrib.auth.validators import UnicodeUsernameValidator
