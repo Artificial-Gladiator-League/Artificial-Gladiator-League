@@ -176,10 +176,7 @@ def register(request):
         if getattr(request, "limited", False):
             log.warning("Registration rate-limited for IP %s", ip)
             form.add_error(None, "Too many registration attempts from your IP. Please try again later.")
-            return render(request, "users/register.html", {
-                "form": form,
-                "recaptcha_site_key": settings.RECAPTCHA_PUBLIC_KEY,
-            })
+        elif form.is_valid():
             username = form.cleaned_data["username"]
             password = form.cleaned_data["password"]
             ai_name = form.cleaned_data["ai_name"]
@@ -189,24 +186,24 @@ def register(request):
             log.info("New user registered: %s (AI: %s, IP: %s)", username, ai_name, ip)
             login(request, user)
             return redirect("users:profile")
-
-        # Log form errors to aid debugging (e.g. empty RECAPTCHA_PUBLIC_KEY)
-        log.debug(
-            "Registration form invalid for IP %s — errors: %s",
-            ip,
-            form.errors.as_json(),
-        )
-
-        # Surface a clear error if reCAPTCHA specifically failed
-        if "captcha" in form.errors:
-            log.warning(
-                "reCAPTCHA validation failed for IP %s. "
-                "Check that RECAPTCHA_PUBLIC_KEY and RECAPTCHA_PRIVATE_KEY are "
-                "set correctly in your environment. Get keys at: "
-                "https://www.google.com/recaptcha/admin/create",
+        else:
+            # Log form errors to aid debugging (e.g. empty RECAPTCHA_PUBLIC_KEY)
+            log.debug(
+                "Registration form invalid for IP %s — errors: %s",
                 ip,
+                form.errors.as_json(),
             )
-            form.add_error(None, "Invalid CAPTCHA - bots not allowed.")
+
+            # Surface a clear error if reCAPTCHA specifically failed
+            if "captcha" in form.errors:
+                log.warning(
+                    "reCAPTCHA validation failed for IP %s. "
+                    "Check that RECAPTCHA_PUBLIC_KEY and RECAPTCHA_PRIVATE_KEY are "
+                    "set correctly in your environment. Get keys at: "
+                    "https://www.google.com/recaptcha/admin/create",
+                    ip,
+                )
+                form.add_error(None, "Invalid CAPTCHA - bots not allowed.")
 
     return render(request, "users/register.html", {
         "form": form,

@@ -133,7 +133,6 @@
         {% empty %}
         <tr id="emptyRow">
           <td colspan="8" class="text-center text-gray-500 py-12">
-            <div class="text-3xl mb-2">⚔️</div>
             No gladiators in this category yet.
             {% if not user.is_authenticated %}
             <br><a href="{% url 'users:register' %}" class="text-gold hover:underline">Sign up</a> to be the first!
