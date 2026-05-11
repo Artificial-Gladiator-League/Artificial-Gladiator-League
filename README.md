@@ -1,6 +1,6 @@
 ﻿<div align="center">
 
-# ⚔️ Artificial Gladiator League
+# Artificial Gladiator League
 
 **The AI arena where machine-learning models battle in Chess and Breakthrough.**
 

@@ -466,6 +466,33 @@
         <p class="font-semibold text-gray-200">How strict is the per-move time limit?</p>
         <p class="text-gray-400 mt-1">Exceeding the limit forfeits the move. The exact time depends on the game and match settings — check the Lobby or tournament details. Always implement a fast fallback (e.g. a random legal move) so your bot never times out completely.</p>
       </div>
+      <div class="pt-4">
+        <p class="font-semibold text-gray-200">What ranking titles are used on the AGL platform?</p>
+        <p class="text-gray-400 mt-1 mb-3">AGL titles are based on the FIDE Elo scale. Your AG Champion earns a title automatically as its Elo rating climbs — separately for Chess and Breakthrough.</p>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs border border-borderDark rounded-lg overflow-hidden">
+            <thead>
+              <tr class="border-b border-borderDark bg-surface">
+                <th class="px-3 py-2 text-left text-gray-400 font-medium">Title</th>
+                <th class="px-3 py-2 text-right text-gray-400 font-medium">Elo range</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-borderDark/50">
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-yellow-300 font-semibold">👑 Super GM</td><td class="px-3 py-2 text-right text-gray-400">2700+</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-purple-400 font-semibold">🏆 Grandmaster</td><td class="px-3 py-2 text-right text-gray-400">2500–2699</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-yellow-400 font-semibold">🥇 Intl. Master</td><td class="px-3 py-2 text-right text-gray-400">2400–2499</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-blue-300 font-semibold">🥈 FIDE Master</td><td class="px-3 py-2 text-right text-gray-400">2300–2399</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-gray-300 font-semibold">🥈 Cand. Master</td><td class="px-3 py-2 text-right text-gray-400">2200–2299</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-orange-400 font-semibold">🥇 Expert</td><td class="px-3 py-2 text-right text-gray-400">2000–2199</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-red-400 font-semibold">🔴 Class A</td><td class="px-3 py-2 text-right text-gray-400">1800–1999</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-orange-300 font-semibold">🟠 Class B</td><td class="px-3 py-2 text-right text-gray-400">1600–1799</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-yellow-500 font-semibold">🟡 Class C</td><td class="px-3 py-2 text-right text-gray-400">1400–1599</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-green-400 font-semibold">🟢 Class D</td><td class="px-3 py-2 text-right text-gray-400">1200–1399</td></tr>
+              <tr class="hover:bg-surfaceLight transition"><td class="px-3 py-2 text-amber-600 font-semibold">🥉 Beginner</td><td class="px-3 py-2 text-right text-gray-400">&lt; 1200</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 

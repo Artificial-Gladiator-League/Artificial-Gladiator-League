@@ -36,12 +36,9 @@
   </div>
 
   <!-- ═══════════════════════════════════════════
-       Two-column layout: table left, FIDE ref right
+       Leaderboard table
        ═══════════════════════════════════════════ -->
-  <div class="flex gap-6 items-start">
-
-    <!-- ── Left: leaderboard ────────────────── -->
-    <div class="flex-1 min-w-0">
+  <div>
 
       <!-- Filter bar -->
       <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
@@ -144,72 +141,9 @@
       </table>
       </div><!-- /card -->
 
-    </div><!-- /left column -->
+  </div><!-- /leaderboard -->
 
-    <!-- ── Right: FIDE Tier Reference ───────── -->
-    <div class="w-56 shrink-0">
-      <div class="card p-0 sticky top-24">
-        <div class="px-4 py-3 border-b border-borderDark">
-          <h3 class="text-sm font-bold text-gray-200">AGL ranking (Based on FIDE ranking)</h3>
-        </div>
-        <table class="w-full text-xs">
-          <thead>
-            <tr class="border-b border-borderDark">
-              <th class="px-3 py-2 text-left text-gray-400 font-medium">Title</th>
-              <th class="px-3 py-2 text-right text-gray-400 font-medium">Elo</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-yellow-300 font-semibold">👑 Super GM</td>
-              <td class="px-3 py-2 text-right text-gray-400">2700+</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-purple-400 font-semibold">🏆 Grandmaster</td>
-              <td class="px-3 py-2 text-right text-gray-400">2500–2699</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-yellow-400 font-semibold">🥇 Intl. Master</td>
-              <td class="px-3 py-2 text-right text-gray-400">2400–2499</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-blue-300 font-semibold">🥈 FIDE Master</td>
-              <td class="px-3 py-2 text-right text-gray-400">2300–2399</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-gray-300 font-semibold">🥈 Cand. Master</td>
-              <td class="px-3 py-2 text-right text-gray-400">2200–2299</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-orange-400 font-semibold">🥇 Expert</td>
-              <td class="px-3 py-2 text-right text-gray-400">2000–2199</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-red-400 font-semibold">🔴 Class A</td>
-              <td class="px-3 py-2 text-right text-gray-400">1800–1999</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-orange-300 font-semibold">🟠 Class B</td>
-              <td class="px-3 py-2 text-right text-gray-400">1600–1799</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-yellow-500 font-semibold">🟡 Class C</td>
-              <td class="px-3 py-2 text-right text-gray-400">1400–1599</td>
-            </tr>
-            <tr class="border-b border-borderDark/50 hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-green-400 font-semibold">🟢 Class D</td>
-              <td class="px-3 py-2 text-right text-gray-400">1200–1399</td>
-            </tr>
-            <tr class="hover:bg-surfaceLight transition">
-              <td class="px-3 py-2 text-amber-600 font-semibold">🥉 Beginner</td>
-              <td class="px-3 py-2 text-right text-gray-400">&lt; 1200</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div><!-- /right column -->
 
-  </div><!-- /two-column layout -->
 
 </div>
 {% endblock %}
@@ -290,7 +224,8 @@
   /* ── Render table from JSON ────────────────── */
   function renderTable(rows) {
     if (!rows.length) {
-      tbody.innerHTML = `<tr id="emptyRow"><td colspan="8" class="text-center text-gray-500 py-12"><div class="text-3xl mb-2">⚔️</div>No gladiators in this category yet.</td></tr>`;
+      const signUpLink = {% if not user.is_authenticated %}`<br><a href="{% url 'users:register' %}" class="text-gold hover:underline">Sign up</a> to be the first!`{% else %}''{% endif %};
+      tbody.innerHTML = `<tr id="emptyRow"><td colspan="8" class="text-center text-gray-500 py-12">No gladiators in this category yet.${signUpLink}</td></tr>`;
       return;
     }
     tbody.innerHTML = rows.map((p, i) => {
