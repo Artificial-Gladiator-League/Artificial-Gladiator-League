@@ -425,7 +425,7 @@ def _notify_user_verification_failed(user, game_type: str, error_msg: str):
     """Send a WebSocket notification when model verification fails."""
     try:
         from channels.layers import get_channel_layer
-        from apps.chat.consumers import notif_group_name
+        from apps.core.consumers import notif_group_name
 
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(

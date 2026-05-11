@@ -496,7 +496,7 @@ def _notify_disqualification(user, reason: str) -> None:
     try:
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer
-        from apps.chat.consumers import notif_group_name
+        from apps.core.consumers import notif_group_name
 
         channel_layer = get_channel_layer()
         if channel_layer is None:

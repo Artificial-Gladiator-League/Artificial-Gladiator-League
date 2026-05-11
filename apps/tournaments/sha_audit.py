@@ -594,7 +594,7 @@ def _broadcast_alert(*, tournament, user_id, username, repo_id, round_num) -> No
     #    (lobby, profile, settings, etc.) so they always land on
     #    /tournaments/disqualified/ first.
     try:
-        from apps.chat.consumers import notif_group_name
+        from apps.core.consumers import notif_group_name
         async_to_sync(layer.group_send)(
             notif_group_name(user_id),
             {

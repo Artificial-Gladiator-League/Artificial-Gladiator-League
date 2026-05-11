@@ -82,12 +82,15 @@ WSGI_APPLICATION = "agladiator.wsgi.application"
 ASGI_APPLICATION = "agladiator.asgi.application"
 
 # ── Database (MySQL) ──────────────────────────
+# All credentials MUST be supplied via environment variables / .env file.
+# Never commit real credentials to source control.
+# Create a dedicated MySQL user: GRANT ALL ON agladiator.* TO 'agladiator_user'@'localhost';
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": os.environ.get("DB_NAME", "aigladiator"),
-        "USER": os.environ.get("DB_USER", "root"),
-        "PASSWORD": os.environ.get("DB_PASSWORD", "yuval2014"),
+        "NAME": os.environ.get("DB_NAME", "agladiator"),
+        "USER": os.environ.get("DB_USER", ""),          # set in .env — do NOT use root
+        "PASSWORD": os.environ.get("DB_PASSWORD", ""),  # set in .env — no default
         "HOST": os.environ.get("DB_HOST", "127.0.0.1"),
         "PORT": os.environ.get("DB_PORT", "3306"),
         "OPTIONS": {
@@ -348,58 +351,72 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "True").lower() in ("true", "1")
 
 # ── Logging ────────────────────────────────────
+_LOG_DIR = Path(os.environ.get("DJANGO_LOG_DIR", BASE_DIR / "logs"))
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "colored": {
-            "format": "\n\033[96m[%(asctime)s]\033[0m \033[1m%(levelname)s\033[0m \033[93m%(name)s\033[0m → %(message)s",
+            "format": "\n\033[96m[%(asctime)s]\033[0m \033[1m%(levelname)s\033[0m \033[93m%(name)s\033[0m -> %(message)s",
             "datefmt": "%H:%M:%S",
+        },
+        "plain": {
+            "format": "[%(asctime)s] %(levelname)s %(name)s -> %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
         },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "colored",
+            "formatter": "colored" if DEBUG else "plain",
+        },
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": str(_LOG_DIR / "django.log"),
+            "maxBytes": 10 * 1024 * 1024,  # 10 MB
+            "backupCount": 5,
+            "formatter": "plain",
         },
     },
     "root": {
-        "handlers": ["console"],
+        "handlers": ["console", "file"],
         "level": "WARNING",
     },
     "loggers": {
         "apps": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
         "apps.games": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
         "apps.users": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "INFO",
             "propagate": False,
         },
         "apps.games.predict_chess": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },
         "apps.games.predict_breakthrough": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },
         "apps.games.bot_runner": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },
         "apps.games.consumers": {
-            "handlers": ["console"],
+            "handlers": ["console", "file"],
             "level": "DEBUG",
             "propagate": False,
         },

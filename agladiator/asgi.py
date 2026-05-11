@@ -23,7 +23,6 @@ django_asgi_app = get_asgi_application()
 from apps.core.routing import websocket_urlpatterns as core_ws                # noqa: E402
 from apps.games.routing import websocket_urlpatterns as games_ws              # noqa: E402
 from apps.tournaments.routing import websocket_urlpatterns as tournaments_ws  # noqa: E402
-from apps.chat.routing import websocket_urlpatterns as chat_ws                # noqa: E402
 
 application = ProtocolTypeRouter(
     {
@@ -31,7 +30,7 @@ application = ProtocolTypeRouter(
         "websocket": AllowedHostsOriginValidator(
             AuthMiddlewareStack(
                 URLRouter(
-                    chat_ws + games_ws + tournaments_ws + core_ws
+                    games_ws + tournaments_ws + core_ws
                 )
             )
         ),

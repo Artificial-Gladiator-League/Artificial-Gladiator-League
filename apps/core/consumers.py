@@ -3,7 +3,81 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 
 
+# ── Notification helpers ───────────────────────────────────────────────────────
+
+def notif_group_name(user_id: int) -> str:
+    """Return the channel-layer group name for a user's notification stream."""
+    return f"notifications_{user_id}"
+
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    """
+    Per-user WebSocket consumer that forwards server-push notifications to the
+    browser (toasts, redirects, etc.).  Connected from base.html at
+    /ws/notifications/.  The server sends group messages with
+    type='send_notification'; this consumer re-emits them as type='new_notification'
+    so the front-end JS handler can react.
+    """
+
+    async def connect(self):
+        self.user = self.scope.get("user")
+        if not self.user or self.user.is_anonymous:
+            await self.close()
+            return
+        self.group = notif_group_name(self.user.pk)
+        await self.channel_layer.group_add(self.group, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, "group"):
+            await self.channel_layer.group_discard(self.group, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        # Clients do not send anything to this endpoint.
+        pass
+
+    async def send_notification(self, event):
+        """Handle group_send messages and forward them to the browser."""
+        await self.send(text_data=json.dumps({
+            "type": "new_notification",
+            "verb": event.get("verb", ""),
+            "actor": event.get("actor", ""),
+            "message": event.get("message", ""),
+            "url": event.get("url", ""),
+            "redirect_url": event.get("redirect_url", ""),
+            "unread_count": event.get("unread_count", 0),
+        }))
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  LeaderboardConsumer
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 class LeaderboardConsumer(AsyncWebsocketConsumer):
+    """
+    Real‑time leaderboard — clients join the 'leaderboard' group
+    and receive push updates whenever a rated game finishes.
+    """
+
+    GROUP = "leaderboard"
+
+    async def connect(self):
+        await self.channel_layer.group_add(self.GROUP, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(self.GROUP, self.channel_name)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        # Clients don't send anything meaningful; ignore.
+        pass
+
+    async def leaderboard_update(self, event):
+        """Forward the refresh signal to the browser."""
+        await self.send(text_data=json.dumps(event["data"]))
+
+
+
     """
     Real‑time leaderboard — clients join the 'leaderboard' group
     and receive push updates whenever a rated game finishes.
