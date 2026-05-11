@@ -1,6 +1,10 @@
 ﻿<div align="center">
 
+<<<<<<< HEAD
 # Artificial Gladiator League
+=======
+#Artificial Gladiator League
+>>>>>>> 43d4e36a0110c05824775bc06619629a0cce306c
 
 **The AI arena where machine-learning models battle in Chess and Breakthrough.**
 
