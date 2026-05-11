@@ -375,6 +375,27 @@ def leaderboard_json(request):
     return JsonResponse({"tab": tab, "game_type": game_type, "rows": rows, "counts": _category_counts()})
 
 
+def presence_view(request):
+    """Simple HTTP endpoint for the lobby online-count badge.
+
+    Returns the number of distinct authenticated users who have had an active
+    session in the last 15 minutes.  Falls back to 1 when the cache/DB is
+    unavailable so the badge never shows 0 erroneously.
+    """
+    from django.contrib.sessions.models import Session
+    from django.utils import timezone
+    import datetime
+
+    try:
+        cutoff = timezone.now() - datetime.timedelta(minutes=15)
+        count = Session.objects.filter(expire_date__gte=cutoff).count()
+        count = max(count, 1)
+    except Exception:
+        count = 1
+
+    return JsonResponse({"type": "online_count", "count": count})
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Upload AI Wizard
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -570,33 +570,25 @@
   </script>
   {% endif %}
 
-  <!-- ── Presence WebSocket — online players count (all visitors) ─── -->
+  <!-- ── Presence poll — online players count (HTTP polling, no WebSocket) ─── -->
   <script>
   (function () {
     const onlineEl = document.getElementById('onlineCount');
-    let ws, retryDelay = 1000;
+    const lobbyEl  = document.getElementById('lobbyOnlineCount');
 
-    function connectPresence() {
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      ws = new WebSocket(proto + '://' + location.host + '/ws/presence/');
-
-      ws.onopen = () => { retryDelay = 1000; };
-
-      ws.onmessage = (e) => {
-        const data = JSON.parse(e.data);
-        if (data.type === 'online_count') {
-          if (onlineEl) onlineEl.textContent = data.count;
-          const lobbyEl = document.getElementById('lobbyOnlineCount');
-          if (lobbyEl) lobbyEl.textContent = data.count;
-        }
-      };
-
-      ws.onclose = () => {
-        setTimeout(connectPresence, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, 30000);
-      };
+    function updateCount(count) {
+      if (onlineEl) onlineEl.textContent = count;
+      if (lobbyEl)  lobbyEl.textContent  = count;
     }
-    connectPresence();
+
+    function pollPresence() {
+      fetch('/ws/presence/', {credentials: 'same-origin'})
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) { if (data && data.count != null) updateCount(data.count); })
+        .catch(function() {})  // silently ignore network errors
+        .finally(function() { setTimeout(pollPresence, 15000); });
+    }
+    pollPresence();
   })();
   </script>
 
