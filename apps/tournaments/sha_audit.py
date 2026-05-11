@@ -79,7 +79,7 @@ def _emit_log_line(
         f"Model: {repo_id or '<no-repo>'} | "
         f"Expected: {_short(expected_sha)} | "
         f"Current: {_short(current_sha)} | "
-        f"Result: {result} → {action}"
+        f"Result: {result} -> {action}"
     )
     # Mirror the line to both stdout (so it shows up in `manage.py` output
     # and Procfile worker logs) and the structured logger.

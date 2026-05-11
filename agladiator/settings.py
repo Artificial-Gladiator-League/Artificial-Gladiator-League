@@ -420,6 +420,11 @@ LOGGING = {
             "level": "DEBUG",
             "propagate": False,
         },
+        "apps.tournaments.sha_audit": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
+            "propagate": False,
+        },
     },
 }
 

@@ -62,7 +62,7 @@ class LobbyConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.user = self.scope.get("user")
         username = getattr(self.user, "username", "anonymous")
-        log.info("🏛️  LOBBY CONNECT  user=%s channel=%s", username, self.channel_name)
+        log.info("[LOBBY CONNECT]  user=%s channel=%s", username, self.channel_name)
         await self.channel_layer.group_add(self.GROUP, self.channel_name)
         await self.accept()
         counts = await self._tournament_counts()
@@ -73,7 +73,7 @@ class LobbyConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
-        log.info("🏛️  LOBBY DISCONNECT user=%s channel=%s close_code=%s", username, self.channel_name, close_code)
+        log.info("[LOBBY DISCONNECT] user=%s channel=%s close_code=%s", username, self.channel_name, close_code)
         self._remove_from_all_queues()
         await self.channel_layer.group_discard(self.GROUP, self.channel_name)
 
@@ -440,7 +440,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                         self.game_id, self.user.username, gm.game_type, gm.verification_status,
                     )
         except Exception:
-            log.exception("❌ _log_model_cache_status failed for user=%s", self.user.username)
+            log.exception("[ERROR] _log_model_cache_status failed for user=%s", self.user.username)
 
     async def receive(self, text_data=None, bytes_data=None):
         data = json.loads(text_data)
@@ -531,7 +531,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             }))
             return
         game_type = await self._get_game_type()
-        log.info("🚀 Game %s started — type=%s — launching bot loop", self.game_id, game_type)
+        log.info("[GAME START] Game %s started -- type=%s -- launching bot loop", self.game_id, game_type)
         # Broadcast updated game state to all participants
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_state",
@@ -549,9 +549,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                     },
                 })
             else:
-                log.warning("⚠️  [game %s] _get_lobby_game_data returned None — skipping lobby broadcast", self.game_id)
+                log.warning("[WARN] [game %s] _get_lobby_game_data returned None -- skipping lobby broadcast", self.game_id)
         except Exception as exc:
-            log.exception("❌ [game %s] Failed to broadcast ongoing_game_added: %s", self.game_id, exc)
+            log.exception("[ERROR] [game %s] Failed to broadcast ongoing_game_added: %s", self.game_id, exc)
         # Start the AI bot game loop
         asyncio.ensure_future(self._run_bot_game_loop())
 
@@ -612,7 +612,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _run_bot_game_loop(self):
         """Run the AI-vs-AI game loop after the match has been started."""
         game_type = await self._get_game_type()
-        log.info("🎮 [game %s] Bot loop starting — type=%s", self.game_id, game_type)
+        log.info("[BOT LOOP] [game %s] Bot loop starting -- type=%s", self.game_id, game_type)
         if game_type == 'breakthrough':
             await self._run_bt_bot_loop()
             return
@@ -621,7 +621,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if white_bot is None or black_bot is None:
             # Determine which side failed and forfeit properly
-            log.error("❌ [game %s] Failed to load bots — white=%s black=%s",
+            log.error("[ERROR] [game %s] Failed to load bots -- white=%s black=%s",
                       self.game_id,
                       "loaded" if white_bot else "FAILED",
                       "loaded" if black_bot else "FAILED")
@@ -936,13 +936,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         try:
             game = Game.objects.select_related("white", "black").get(pk=self.game_id)
         except Game.DoesNotExist:
-            log.warning("⚠️  [game %s] _get_lobby_game_data: game not found", self.game_id)
+            log.warning("[WARN] [game %s] _get_lobby_game_data: game not found", self.game_id)
             return None
 
         try:
             d = _serialize_display_game(game, is_live=True)
         except Exception:
-            log.exception("❌ [game %s] _serialize_display_game failed", self.game_id)
+            log.exception("[ERROR] [game %s] _serialize_display_game failed", self.game_id)
             return None
 
         # Convert preview_moves_json string → Python list so it serialises cleanly
@@ -954,7 +954,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         if d.get("date_played"):
             d["date_played"] = d["date_played"].strftime("%Y-%m-%d %H:%M:%S")
         # move_count and variant are now included by _serialize_display_game
-        log.info("✅ [game %s] _get_lobby_game_data success: white=%s black=%s", self.game_id, d.get("white_name"), d.get("black_name"))
+        log.info("[OK] [game %s] _get_lobby_game_data success: white=%s black=%s", self.game_id, d.get("white_name"), d.get("black_name"))
         return d
 
     async def _run_bt_bot_loop(self):

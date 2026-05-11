@@ -372,6 +372,7 @@ def _build_ongoing_games():
 def lobby(request):
     """Lobby with quick pairing, open AI games, and live/replay previews."""
     user = request.user
+    log.info("[LOBBY] User %s joined lobby", user.username)
     display_games = _build_display_games()
     waiting_games = _build_waiting_games()
     ongoing_games_list = _build_ongoing_games()
@@ -563,9 +564,19 @@ def join_game(request, game_id):
     if game.black is None:
         game.black = request.user
         game.save(update_fields=["black"])
+        log.info(
+            "[GAME START] %s vs %s | game_id=%s | type=%s | tc=%s",
+            game.white.username, game.black.username,
+            game.pk, game.game_type, game.time_control,
+        )
     elif game.white is None:
         game.white = request.user
         game.save(update_fields=["white"])
+        log.info(
+            "[GAME START] %s vs %s | game_id=%s | type=%s | tc=%s",
+            game.white.username, game.black.username,
+            game.pk, game.game_type, game.time_control,
+        )
     else:
         if ajax:
             return JsonResponse({"error": "This game is already full."}, status=409)
