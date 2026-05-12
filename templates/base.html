@@ -570,25 +570,52 @@
   </script>
   {% endif %}
 
-  <!-- ── Presence poll — online players count (HTTP polling, no WebSocket) ─── -->
+  <!-- ── Presence WebSocket — real-time online player count ─── -->
   <script>
   (function () {
     const onlineEl = document.getElementById('onlineCount');
     const lobbyEl  = document.getElementById('lobbyOnlineCount');
+    let presenceWs = null;
+    let reconnectTimer = null;
 
     function updateCount(count) {
       if (onlineEl) onlineEl.textContent = count;
       if (lobbyEl)  lobbyEl.textContent  = count;
     }
 
-    function pollPresence() {
-      fetch('/ws/presence/', {credentials: 'same-origin'})
-        .then(function(r) { return r.ok ? r.json() : null; })
-        .then(function(data) { if (data && data.count != null) updateCount(data.count); })
-        .catch(function() {})  // silently ignore network errors
-        .finally(function() { setTimeout(pollPresence, 15000); });
+    function connectPresence() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      presenceWs = new WebSocket(proto + '://' + location.host + '/ws/presence/');
+
+      presenceWs.onopen = function () {
+        console.debug('[presence] WebSocket connected');
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      };
+
+      presenceWs.onmessage = function (e) {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'online_count' && data.count != null) {
+            updateCount(data.count);
+          }
+        } catch (err) {
+          console.warn('[presence] Bad JSON:', err);
+        }
+      };
+
+      presenceWs.onclose = function (e) {
+        console.debug('[presence] WebSocket closed, code=' + e.code);
+        if (e.code !== 1000) {
+          reconnectTimer = setTimeout(connectPresence, 5000);
+        }
+      };
+
+      presenceWs.onerror = function (e) {
+        console.warn('[presence] WebSocket error', e);
+      };
     }
-    pollPresence();
+
+    connectPresence();
   })();
   </script>
 
