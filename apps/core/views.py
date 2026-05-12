@@ -430,3 +430,10 @@ def upload_ai_submit(request):
 
     messages.success(request, f"🎉 '{ai_name}' deployed! Your gladiator is ready for battle.")
     return redirect("users:profile")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Contact
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def contact(request):
+    return render(request, "core/contact.html")

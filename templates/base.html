@@ -107,7 +107,6 @@
         <!-- Center Nav Links -->
         <div class="hidden md:flex items-center gap-1 text-sm font-medium">
           <a href="{% url 'core:home' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Home</a>
-          <a href="{% url 'core:about' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
           <a href="{% url 'core:how_to_upload' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How to Register</a>
           <!-- Play dropdown -->
           <div class="relative" id="playDropdownWrap">
@@ -127,6 +126,8 @@
             </div>
           </div>
           <a href="{% url 'core:leaderboard' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
+          <a href="{% url 'core:about' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
+          <a href="{% url 'core:contact' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Contact</a>
           <!-- Forum removed -->
         </div>
 
@@ -253,6 +254,7 @@
           <a href="{% url 'core:terms' %}" class="text-gray-500 hover:text-gold transition">Terms</a>
           <a href="{% url 'core:cookies' %}" class="text-gray-500 hover:text-gold transition">Cookies</a>
           <a href="{% url 'core:accessibility' %}" class="text-gray-500 hover:text-gold transition">Accessibility</a>
+          <a href="{% url 'core:contact' %}" class="text-gray-500 hover:text-gold transition">Contact</a>
         </div>
       </div>
     </div>

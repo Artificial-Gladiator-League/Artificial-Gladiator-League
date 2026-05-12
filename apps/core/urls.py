@@ -14,4 +14,5 @@ urlpatterns = [
     path("leaderboard/", views.leaderboard, name="leaderboard"),
     path("api/leaderboard/", views.leaderboard_json, name="leaderboard_json"),
     path("ws/presence/", views.presence_view, name="presence"),
+    path("contact/", views.contact, name="contact"),
 ]
