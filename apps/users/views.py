@@ -275,6 +275,81 @@ def _check_duplicate_ip(ip: str, new_user):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  AI Models (per-game configuration)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+def _check_repo_is_gated(repo_id: str):
+    """Return an error string if *repo_id* fails either gating or platform-access checks.
+
+    Two checks are performed in order:
+      1. The repo must be gated (access-request enabled).  An anonymous
+         model_info call that raises GatedRepoError confirms this.
+      2. The platform account (ArtificialGladiatorLeague) must have been
+         granted access.  We verify by retrying model_info with the platform
+         token; a second GatedRepoError means the user hasn't approved us yet.
+
+    Returns None when both checks pass.
+    """
+    try:
+        from huggingface_hub import HfApi
+        from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError, HfHubHTTPError
+
+        api = HfApi()
+
+        # ── 1. Confirm the repo is gated ─────────────────────
+        try:
+            info = api.model_info(repo_id, token=False)
+            # Anonymous call succeeded — check the gated flag explicitly
+            if not getattr(info, "gated", None):
+                return (
+                    "Only gated repositories (with access requests enabled) are accepted. "
+                    "Go to your repo Settings on Hugging Face and enable 'Access Requests', "
+                    "then try again."
+                )
+            # gated flag present — fall through to platform-access check
+        except GatedRepoError:
+            pass  # anonymous blocked → repo is gated, as required
+        except RepositoryNotFoundError:
+            return f"Repository '{repo_id}' was not found on Hugging Face. Check the repo ID and make sure it is public."
+        except HfHubHTTPError as exc:
+            log.warning("HF API error checking gated status for %s: %s", repo_id, exc)
+            return "Could not reach Hugging Face to verify the repository. Please try again in a moment."
+
+        # ── 2. Confirm platform account has approved access ───
+        _NOT_APPROVED = (
+            "Required: Grant Access to Our Platform Account — "
+            "your repo must be Gated and you must approve 'ArtificialGladiatorLeague' "
+            "in the Access Settings of your Hugging Face repo, "
+            "otherwise your submission will be rejected."
+        )
+        platform_token = settings.HF_PLATFORM_TOKEN or None
+        if platform_token:
+            try:
+                api.model_info(repo_id, token=platform_token)
+                # Success — platform account has access
+            except GatedRepoError:
+                # Explicitly a gated-access denial
+                return _NOT_APPROVED
+            except HfHubHTTPError as exc:
+                # HF sometimes raises a plain 403 HfHubHTTPError instead of
+                # the GatedRepoError subclass when a token is present but not
+                # approved — treat any 403 as "not approved".
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 403:
+                    return _NOT_APPROVED
+                log.warning("Platform token access check failed for %s: %s", repo_id, exc)
+                # Fail open for other HTTP errors (5xx, timeouts, etc.)
+            except RepositoryNotFoundError as exc:
+                log.warning("Platform token access check — repo not found for %s: %s", repo_id, exc)
+                # Fail open
+        else:
+            log.warning("HF_PLATFORM_TOKEN not set — skipping platform-access check for %s", repo_id)
+
+        return None
+
+    except Exception as exc:
+        log.warning("Unexpected error in _check_repo_is_gated for %s: %s", repo_id, exc)
+        return None  # fail open so a transient error doesn't permanently block submission
+
+
 GAME_TYPES = [
     {"type": "chess", "label": "Chess"},
     {"type": "breakthrough", "label": "Breakthrough"},
@@ -332,6 +407,8 @@ def ai_models(request):
             messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
         elif data_repo_id and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data').")
+        elif (_gated_err := _check_repo_is_gated(repo_id)) is not None:
+            messages.error(request, _gated_err)
         else:
             # Check for duplicate repo across other users
             dup = UserGameModel.objects.filter(
@@ -359,17 +436,21 @@ def ai_models(request):
                         "is_verified", "verification_code",
                     ])
 
-                # Generate a fresh challenge code every time the repo is (re-)connected
-                code = generate_verification_code(gm)
                 from .ownership_verification import VERIFY_FILENAME
                 label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                messages.info(
-                    request,
-                    f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
-                    f"at the root of {repo_id} containing exactly: {code} — "
-                    "then click 'Verify Ownership' below. "
-                    "If you have an HF Space or data repo, add the same file to those roots too.",
-                )
+                if gm.is_verified:
+                    # Repo unchanged and already verified — just confirm, no code reset
+                    messages.success(request, f"{label} repo saved (already verified).")
+                else:
+                    # New repo or repo changed — issue a challenge code
+                    code = generate_verification_code(gm)
+                    messages.info(
+                        request,
+                        f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
+                        f"at the root of {repo_id} containing exactly: {code} — "
+                        "then click 'Verify Ownership' below. "
+                        "If you have an HF Space or data repo, add the same file to those roots too.",
+                    )
 
         return redirect("users:ai_models")
 
@@ -531,6 +612,7 @@ def _build_breakthrough_file_status(user, gm):
         from huggingface_hub import HfApi, hf_hub_download
         from huggingface_hub.utils import (
             EntryNotFoundError,
+            GatedRepoError,
             HfHubHTTPError,
             RepositoryNotFoundError,
             LocalEntryNotFoundError,
@@ -633,6 +715,19 @@ def _build_breakthrough_file_status(user, gm):
                     model_files = present_map
                 found_any = True
 
+    except GatedRepoError:
+        # Platform token exists but was not granted access to this gated repo.
+        try:
+            if platform_token:
+                _who = HfApi(token=platform_token).whoami() or {}
+                plat_name = _who.get("name") or _who.get("login")
+            else:
+                plat_name = None
+        except Exception:
+            plat_name = None
+        account_hint = f" Please add '{plat_name}' to the list of approved users on your Hugging Face repo." if plat_name else " Please grant access to the platform account on your Hugging Face repo."
+        model_error = f"Access denied (403) for repo '{gm.hf_model_repo_id}'.{account_hint}"
+        log.warning("GatedRepoError for %s (user=%s) — platform token present but not approved", gm.hf_model_repo_id, user.username)
     except RepositoryNotFoundError:
         model_error = f"Model repo '{gm.hf_model_repo_id}' not found or you lack access."
         log.warning("Repo not found: %s (user=%s)", gm.hf_model_repo_id, user.username, exc_info=True)
@@ -1103,6 +1198,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
         elif hf_space_url and not _re.match(r'^(?:https?://)?[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
             messages.error(request, "HF Space URL must end in .hf.space (e.g. owner-myspace.hf.space).")
+        elif (_gated_err := _check_repo_is_gated(repo_id)) is not None:
+            messages.error(request, _gated_err)
         else:
             dup = UserGameModel.objects.filter(
                 hf_model_repo_id=repo_id,
@@ -1140,23 +1237,27 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                     gm.hf_inference_endpoint_url = hf_space_url
                     gm.hf_inference_endpoint_status = "pending"
 
-                # Generate a fresh ownership challenge code
-                code = generate_verification_code(gm)
                 label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                space_note = (
-                    f" Also add '{VERIFY_FILENAME}' to the root of your HF Space repo with the same code."
-                    if hf_space_url else ""
-                )
-                data_note = (
-                    f" And add '{VERIFY_FILENAME}' to the root of your data repo ({data_repo_id}) with the same code."
-                    if data_repo_id else ""
-                )
-                messages.info(
-                    request,
-                    f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
-                    f"at the root of {repo_id} containing exactly: {code}.{space_note}{data_note} "
-                    "Then click 'Verify Ownership'.",
-                )
+                if gm.is_verified:
+                    # Repo unchanged and already verified — just confirm, no code reset
+                    messages.success(request, f"{label} repo saved (already verified).")
+                else:
+                    # New repo or repo changed — issue a challenge code
+                    code = generate_verification_code(gm)
+                    space_note = (
+                        f" Also add '{VERIFY_FILENAME}' to the root of your HF Space repo with the same code."
+                        if hf_space_url else ""
+                    )
+                    data_note = (
+                        f" And add '{VERIFY_FILENAME}' to the root of your data repo ({data_repo_id}) with the same code."
+                        if data_repo_id else ""
+                    )
+                    messages.info(
+                        request,
+                        f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
+                        f"at the root of {repo_id} containing exactly: {code}.{space_note}{data_note} "
+                        "Then click 'Verify Ownership'.",
+                    )
 
         return redirect("users:profile")
 

@@ -400,14 +400,14 @@ def perform_sha_check(
     # triggers DisqualificationInterceptMiddleware happens immediately
     # below in _react_to_mismatch → disqualify_for_repo_change.
     _alert = (
-        f"\U0001F6A8 TERMINAL: REPO CHANGED - {user.username} "
+        f"[!!!] TERMINAL: REPO CHANGED - {user.username} "
         f"disqualified from {tournament.name} (Round {rnum})"
     )
     try:
         print(_alert, flush=True)
     except UnicodeEncodeError:
         print(_alert.encode("ascii", "replace").decode("ascii"), flush=True)
-    log.warning(_alert)
+    log.warning("%s", _alert)
 
     _emit_summary_line(
         tournament=tournament, round_num=rnum, username=user.username,
@@ -419,7 +419,7 @@ def perform_sha_check(
     banner_lines = [
         "",
         "!" * 78,
-        "!!  SHA MISMATCH DETECTED — PARTICIPANT DISQUALIFIED",
+        "!!  SHA MISMATCH DETECTED - PARTICIPANT DISQUALIFIED",
         "!!  Tournament : #{} {!r} (type={})".format(
             tournament.pk, tournament.name, tournament.type,
         ),
@@ -438,7 +438,7 @@ def perform_sha_check(
         print(banner, flush=True)
     except UnicodeEncodeError:
         print(banner.encode("ascii", "replace").decode("ascii"), flush=True)
-    log.warning(banner)
+    log.warning("%s", banner)
 
     _react_to_mismatch(
         tournament=tournament,

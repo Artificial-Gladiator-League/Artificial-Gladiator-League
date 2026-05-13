@@ -260,6 +260,12 @@ def _placeholder_display_game(idx=0):
 
 
 def _build_display_games():
+    # "Real" finished statuses — exclude ABORTED (never properly played)
+    real_finished_statuses = [
+        s for s in Game.TERMINAL_STATUSES
+        if s != Game.Status.ABORTED
+    ]
+
     live_candidates = list(
         Game.objects.filter(
             status__in=[Game.Status.ONGOING, "active"],
@@ -271,7 +277,7 @@ def _build_display_games():
     )
     finished_candidates = list(
         Game.objects.filter(
-            status__in=list(Game.TERMINAL_STATUSES),
+            status__in=real_finished_statuses,
             white__isnull=False,
             black__isnull=False,
         )
@@ -607,6 +613,16 @@ def cancel_game(request, game_id):
     game.result_reason = "cancelled"
     game.save(update_fields=["status", "result", "result_reason"])
     _broadcast_lobby_update("remove_waiting_game", game)
+    # Notify any connected WebSocket clients (e.g. the second player) to redirect
+    try:
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        async_to_sync(get_channel_layer().group_send)(
+            f"game_{game.pk}",
+            {"type": "broadcast_game_cancelled"},
+        )
+    except Exception:
+        pass
     return redirect("games:lobby")
 
 
@@ -660,12 +676,19 @@ def game_detail(request, game_id):
     paginator = Paginator(top_comments, 20)
     page_obj = paginator.get_page(request.GET.get("page", 1))
 
+    def _ai_name(user):
+        if not user:
+            return ""
+        return user.ai_name or ""
+
     return render(request, "games/game_view.html", {
         "game": game,
         "base_seconds": base_sec,
         "increment": increment,
         "page_obj": page_obj,
         "comment_count": comment_count,
+        "white_ai_name": _ai_name(game.white),
+        "black_ai_name": _ai_name(game.black),
     })
 
 

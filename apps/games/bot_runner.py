@@ -70,20 +70,20 @@ def _get_bot_move(
     try:
         if game_type == "breakthrough":
             from apps.games.predict_breakthrough import get_move as bt_get_move
-            log.info("\U0001f4e1 [bot] Requesting %s move — repo='%s' fen=%.60s",
+            log.info("[bot] Requesting %s move - repo='%s' fen=%.60s",
                      game_type, hf_repo_id, fen)
             _t0 = _MOVE_TIMER()
             move = bt_get_move(fen, player, hf_repo_id)
             _elapsed = _MOVE_TIMER() - _t0
-            log.info("\u2705 [bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
+            log.info("[bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
                      move, _elapsed, game_type, hf_repo_id)
             return move
         else:
             from apps.games.predict_chess import get_move as chess_get_move
-            log.info("\U0001f4e1 [bot] Requesting %s move — repo='%s' fen=%.60s",
+            log.info("[bot] Requesting %s move - repo='%s' fen=%.60s",
                      game_type, hf_repo_id, fen)
             move, _elapsed = chess_get_move(fen, player, hf_repo_id)
-            log.info("\u2705 [bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
+            log.info("[bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
                      move, _elapsed, game_type, hf_repo_id)
             return move
     except Exception as exc:
@@ -96,7 +96,7 @@ def _get_bot_move(
         except Exception:
             pass
         log.exception(
-            "\u274c _get_bot_move failed — game_type=%s repo=%s", game_type, hf_repo_id
+            "[FAIL] _get_bot_move failed - game_type=%s repo=%s", game_type, hf_repo_id
         )
         return None
 
@@ -140,7 +140,7 @@ def get_bot_move(bot, fen: str, time_left: float = None,
         move = bot.get_move(fen, time_left=time_left, opponent_time=opponent_time)
         return move if isinstance(move, str) else None
     except Exception:
-        log.exception("❌ Bot raised an exception during get_move()")
+        log.exception("[FAIL] Bot raised an exception during get_move()")
         return None
 
 
@@ -203,10 +203,10 @@ def _run_chess_game(game) -> None:
     white_repo = _get_repo_for_user(game.white, "chess")
     black_repo = _get_repo_for_user(game.black, "chess")
 
-    log.info("🚀 [game %s] ===== CHESS GAME START =====", game.pk)
-    log.info("[game %s] ♔ White: %s (repo=%s)", game.pk,
+    log.info("[game %s] ===== CHESS GAME START =====", game.pk)
+    log.info("[game %s] White: %s (repo=%s)", game.pk,
              game.white.username if game.white else '?', white_repo)
-    log.info("[game %s] ♚ Black: %s (repo=%s)", game.pk,
+    log.info("[game %s] Black: %s (repo=%s)", game.pk,
              game.black.username if game.black else '?', black_repo)
 
     # Log cached paths for white/black if present (official handler will use these)
@@ -215,16 +215,16 @@ def _run_chess_game(game) -> None:
         if white_repo:
             w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='chess').first()
             if w_gm and getattr(w_gm, 'cached_path', None):
-                log.info("[game %s] ✅ PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
+                log.info("[game %s] PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
         if black_repo:
             b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='chess').first()
             if b_gm and getattr(b_gm, 'cached_path', None):
-                log.info("[game %s] ✅ PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
+                log.info("[game %s] PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
     except Exception:
         log.debug("Could not query UserGameModel cached paths", exc_info=True)
 
     if not white_repo or not black_repo:
-        log.error("❌ run_bot_game: Missing HF repo for game %s", game.pk)
+        log.error("[FAIL] run_bot_game: Missing HF repo for game %s", game.pk)
         _forfeit_game(game, "white" if not white_repo else "black")
         return
 
@@ -266,7 +266,7 @@ def _run_chess_game(game) -> None:
                 from apps.tournaments.sha_audit import check_player_for_tournament_game
                 if check_player_for_tournament_game(game=game, user=current_user):
                     log.warning(
-                        "❌ [game %s] Anti-cheat: %s (%s) repo changed mid-game — forfeiting.",
+                        "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting.",
                         game.pk, current_user.username, forfeit_color,
                     )
                     _forfeit_game(game, forfeit_color)
@@ -291,14 +291,14 @@ def _run_chess_game(game) -> None:
         # Chess AI logic is in predict_chess.py (runs in Docker sandbox)
         uci = _get_bot_move("chess", game.current_fen, player, repo)
         if not uci:
-            log.warning("❌ Bot (%s) failed to produce a move in game %s", forfeit_color, game.pk)
+            log.warning("[FAIL] Bot (%s) failed to produce a move in game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
             _broadcast_game_over(group_name, game)
             break
 
         ok, err = make_move(game, uci)
         if not ok:
-            log.warning("❌ Bot (%s) made illegal move %s in game %s: %s", forfeit_color, uci, game.pk, err)
+            log.warning("[FAIL] Bot (%s) made illegal move %s in game %s: %s", forfeit_color, uci, game.pk, err)
             _forfeit_game(game, forfeit_color)
             _broadcast_game_over(group_name, game)
             break
@@ -323,7 +323,7 @@ def _run_chess_game(game) -> None:
             game.save()
             _broadcast_state(group_name, game)
 
-    log.info("🏁 [game %s] ===== CHESS GAME END — result=%s reason=%s =====",
+    log.info("[game %s] ===== CHESS GAME END - result=%s reason=%s =====",
              game.pk, game.result, getattr(game, 'result_reason', ''))
 
 
@@ -342,10 +342,10 @@ def _run_breakthrough_game(game) -> None:
     white_repo = _get_repo_for_user(game.white, "breakthrough")
     black_repo = _get_repo_for_user(game.black, "breakthrough")
 
-    log.info("🚀 [game %s] ===== BREAKTHROUGH GAME START =====", game.pk)
-    log.info("[game %s] ♔ White: %s (repo=%s)", game.pk,
+    log.info("[game %s] ===== BREAKTHROUGH GAME START =====", game.pk)
+    log.info("[game %s] White: %s (repo=%s)", game.pk,
              game.white.username if game.white else '?', white_repo)
-    log.info("[game %s] ♚ Black: %s (repo=%s)", game.pk,
+    log.info("[game %s] Black: %s (repo=%s)", game.pk,
              game.black.username if game.black else '?', black_repo)
 
     # Log cached paths for white/black if present (official handler will use these)
@@ -354,16 +354,16 @@ def _run_breakthrough_game(game) -> None:
         if white_repo:
             w_gm = UserGameModel.objects.filter(hf_model_repo_id=white_repo, game_type='breakthrough').first()
             if w_gm and getattr(w_gm, 'cached_path', None):
-                log.info("[game %s] ✅ PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
+                log.info("[game %s] PRE-CACHED white model present at: %s", game.pk, w_gm.cached_path)
         if black_repo:
             b_gm = UserGameModel.objects.filter(hf_model_repo_id=black_repo, game_type='breakthrough').first()
             if b_gm and getattr(b_gm, 'cached_path', None):
-                log.info("[game %s] ✅ PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
+                log.info("[game %s] PRE-CACHED black model present at: %s", game.pk, b_gm.cached_path)
     except Exception:
         log.debug("Could not query UserGameModel cached paths", exc_info=True)
 
     if not white_repo and not black_repo:
-        log.error("❌ run_bot_game: Missing HF repos for Breakthrough game %s", game.pk)
+        log.error("[FAIL] run_bot_game: Missing HF repos for Breakthrough game %s", game.pk)
         _forfeit_game(game, "white")
         return
 
@@ -392,7 +392,7 @@ def _run_breakthrough_game(game) -> None:
                 from apps.tournaments.sha_audit import check_player_for_tournament_game
                 if check_player_for_tournament_game(game=game, user=current_user):
                     log.warning(
-                        "❌ [game %s] Anti-cheat: %s (%s) repo changed mid-game — forfeiting Breakthrough.",
+                        "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting Breakthrough.",
                         game.pk, current_user.username, forfeit_color,
                     )
                     _forfeit_game(game, forfeit_color)
@@ -417,14 +417,14 @@ def _run_breakthrough_game(game) -> None:
         # Breakthrough AI logic is in predict_breakthrough.py (runs in Docker sandbox)
         uci = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
         if not uci:
-            log.warning("❌ Bot (%s) failed to produce a move in Breakthrough game %s", forfeit_color, game.pk)
+            log.warning("[FAIL] Bot (%s) failed to produce a move in Breakthrough game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
             _broadcast_game_over(group_name, game)
             break
 
         ok, err = bt.make_move(game, uci)
         if not ok:
-            log.warning("❌ Bot (%s) made illegal move %s in Breakthrough game %s: %s",
+            log.warning("[FAIL] Bot (%s) made illegal move %s in Breakthrough game %s: %s",
                         forfeit_color, uci, game.pk, err)
             _forfeit_game(game, forfeit_color)
             _broadcast_game_over(group_name, game)
@@ -448,7 +448,7 @@ def _run_breakthrough_game(game) -> None:
             game.save()
             _broadcast_state(group_name, game)
 
-    log.info("🏁 [game %s] ===== BREAKTHROUGH GAME END — result=%s reason=%s =====",
+    log.info("[game %s] ===== BREAKTHROUGH GAME END - result=%s reason=%s =====",
              game.pk, game.result, getattr(game, 'result_reason', ''))
 
 

@@ -133,7 +133,7 @@ def get_move(
     move = _try_space_api(base_url, fen, board, token=hf_token)
     if move:
         latency = _time.monotonic() - _t0
-        log.info("✅ Space move: %s (%.2fs) repo=%s", move, latency, hf_repo_id)
+        log.info("[OK] Space move: %s (%.2fs) repo=%s", move, latency, hf_repo_id)
         return move, latency
 
     # ── Priority 2: random legal move ──

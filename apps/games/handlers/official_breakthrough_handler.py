@@ -54,8 +54,8 @@ class EndpointHandler:
         # Track which modules were loaded for diagnostics
         self._loaded_modules: list[str] = []
 
-        print(f"✅ Using OFFICIAL Breakthrough handler — model_dir={self.path}", file=sys.stderr)
-        log.info("✅ Using OFFICIAL Breakthrough handler — model_dir=%s", self.path)
+        print(f"[OK] Using OFFICIAL Breakthrough handler - model_dir={self.path}", file=sys.stderr)
+        log.info("[OK] Using OFFICIAL Breakthrough handler - model_dir=%s", self.path)
 
         # ── Log model file inventory with hashes for diagnostics ─────────────
         try:

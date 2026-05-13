@@ -23,8 +23,8 @@ class EndpointHandler:
         self._loaded = False
         self.fallback = False
 
-        log.info("✅ Using OFFICIAL Chess handler (ignoring user's handler.py)")
-        log.info("✅ Loading model weights from cache: %s", str(self.path))
+        log.info("[OK] Using OFFICIAL Chess handler (ignoring user's handler.py)")
+        log.info("[OK] Loading model weights from cache: %s", str(self.path))
 
         try:
             # Lazy import to avoid hard dependency at module import time

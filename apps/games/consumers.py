@@ -46,6 +46,12 @@ _queues: dict[str, list[dict]] = {}
 _spectator_counts: dict[int, int] = {}
 # Each entry: {"channel": channel_name, "user_id": int, "username": str}
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Ready tracking for casual game start
+#  game_id -> set of user PKs who clicked Start
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_game_ready_players: dict[int, set] = {}
+
 VALID_TIME_CONTROLS = {"1+0", "1+1", "2+0", "2+1", "3+0", "3+1"}
 
 
@@ -357,7 +363,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.user = self.scope.get("user")
         username = getattr(self.user, "username", "anonymous")
         log.info(
-            "🔌 CONNECT   game=%s user=%s channel=%s",
+            "[CONNECT] game=%s user=%s channel=%s",
             self.game_id, username, self.channel_name,
         )
         await self.channel_layer.group_add(self.group_name, self.channel_name)
@@ -403,9 +409,15 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
         log.info(
-            "🔌 DISCONNECT game=%s user=%s channel=%s close_code=%s",
+            "[DISCONNECT] game=%s user=%s channel=%s close_code=%s",
             getattr(self, "game_id", "?"), username, self.channel_name, close_code,
         )
+        # Remove from ready set so a reconnect requires re-confirming
+        game_id = getattr(self, 'game_id', None)
+        if game_id and hasattr(self, 'user') and self.user and not self.user.is_anonymous:
+            ready_set = _game_ready_players.get(game_id)
+            if ready_set:
+                ready_set.discard(self.user.pk)
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     @database_sync_to_async
@@ -419,24 +431,24 @@ class GameConsumer(AsyncWebsocketConsumer):
             game_models = UserGameModel.objects.filter(user=self.user)
             if not game_models.exists():
                 log.warning(
-                    "⚠️  CONNECT game=%s user=%s — no UserGameModel found (no AI model configured)",
+                    "[WARN] CONNECT game=%s user=%s — no UserGameModel found (no AI model configured)",
                     self.game_id, self.user.username,
                 )
                 return
             for gm in game_models:
                 if gm.cached_path and os.path.exists(gm.cached_path):
                     log.info(
-                        "✅ CONNECT game=%s user=%s game_type=%s — model ready at %s",
+                        "[OK] CONNECT game=%s user=%s game_type=%s — model ready at %s",
                         self.game_id, self.user.username, gm.game_type, gm.cached_path,
                     )
                 elif gm.cached_path:
                     log.warning(
-                        "⚠️  CONNECT game=%s user=%s game_type=%s — cached_path set but file MISSING: %s",
+                        "[WARN] CONNECT game=%s user=%s game_type=%s — cached_path set but file MISSING: %s",
                         self.game_id, self.user.username, gm.game_type, gm.cached_path,
                     )
                 else:
                     log.warning(
-                        "⚠️  CONNECT game=%s user=%s game_type=%s — no cached model (status=%s)",
+                        "[WARN] CONNECT game=%s user=%s game_type=%s — no cached model (status=%s)",
                         self.game_id, self.user.username, gm.game_type, gm.verification_status,
                     )
         except Exception:
@@ -503,27 +515,59 @@ class GameConsumer(AsyncWebsocketConsumer):
         })
 
     async def _handle_start(self):
-        """Either player clicks 'Start Match' to transition from waiting to ongoing."""
-        # ── Repo gate (redundant safety net — HTTP view already checked, but
-        #    a player could reach here via a raw WS message) ────────────────
-        if self.user and not self.user.is_anonymous:
-            game_type_for_check = await self._get_game_type()
-            repo_ok = await database_sync_to_async(has_repo_for_game_type)(
-                self.user, game_type_for_check
+        """Player clicks 'Start Match'. Game begins only when BOTH players have clicked."""
+        if not self.user or self.user.is_anonymous:
+            await self.send(text_data=json.dumps({"type": "error", "message": "Authentication required."}))
+            return
+
+        # ── Repo gate ────────────────────────────────────────────────────────
+        game_type_for_check = await self._get_game_type()
+        repo_ok = await database_sync_to_async(has_repo_for_game_type)(
+            self.user, game_type_for_check
+        )
+        if not repo_ok:
+            log.warning(
+                "BLOCKED no repo at start: user=%s game=%s game_type=%s",
+                self.user.username, self.game_id, game_type_for_check,
             )
-            if not repo_ok:
-                log.warning(
-                    "BLOCKED no repo at start: user=%s game=%s game_type=%s",
-                    self.user.username, self.game_id, game_type_for_check,
-                )
-                await self.send(text_data=json.dumps({
-                    "type": "error",
-                    "message": (
-                        f"Missing {game_type_for_check} repo. "
-                        "Upload your Artificial Gladiator to Hugging Face first."
-                    ),
-                }))
-                return
+            await self.send(text_data=json.dumps({
+                "type": "error",
+                "message": (
+                    f"Missing {game_type_for_check} repo. "
+                    "Upload your Artificial Gladiator to Hugging Face first."
+                ),
+            }))
+            return
+
+        # ── Verify user is actually a player in this game ────────────────────
+        white_id, black_id = await self._get_player_ids()
+        if white_id is None or black_id is None:
+            await self.send(text_data=json.dumps({"type": "error", "message": "Waiting for an opponent to join."}))
+            return
+        if self.user.pk not in (white_id, black_id):
+            await self.send(text_data=json.dumps({"type": "error", "message": "Only players in this game can start it."}))
+            return
+
+        # ── Record this player as ready ──────────────────────────────────────
+        ready_set = _game_ready_players.setdefault(self.game_id, set())
+        ready_set.add(self.user.pk)
+        my_color = "white" if self.user.pk == white_id else "black"
+
+        # Broadcast to group so the other player's UI updates
+        await self.channel_layer.group_send(self.group_name, {
+            "type": "broadcast_player_ready",
+            "color": my_color,
+        })
+
+        # ── If both players are ready, start the game ────────────────────────
+        if white_id not in ready_set or black_id not in ready_set:
+            # Still waiting for the other player
+            return
+
+        # Atomically claim the start (guard against duplicate triggers)
+        if _game_ready_players.pop(self.game_id, None) is None:
+            return
+
         result = await self._process_start()
         if result.get("error"):
             await self.send(text_data=json.dumps({
@@ -587,6 +631,17 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def broadcast_armageddon(self, event):
         await self.send(text_data=json.dumps(event["data"]))
+
+    async def broadcast_player_ready(self, event):
+        """Notify clients which color has clicked 'Start Match'."""
+        await self.send(text_data=json.dumps({
+            "type": "player_ready",
+            "color": event["color"],
+        }))
+
+    async def broadcast_game_cancelled(self, event):
+        """Notify all connected clients that the game was cancelled by the creator."""
+        await self.send(text_data=json.dumps({"type": "game_cancelled"}))
 
     # ── AI Bot game loop ───────────────────────
     @database_sync_to_async
@@ -908,6 +963,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             return Game.objects.values_list('game_type', flat=True).get(pk=self.game_id)
         except Game.DoesNotExist:
             return 'chess'
+
+    @database_sync_to_async
+    def _get_player_ids(self):
+        """Return (white_id, black_id) for this game, or (None, None) if not found / incomplete."""
+        from .models import Game
+        try:
+            row = Game.objects.values('white_id', 'black_id').get(pk=self.game_id)
+            return row['white_id'], row['black_id']
+        except Game.DoesNotExist:
+            return None, None
 
     @database_sync_to_async
     def _user_is_player(self):
@@ -1329,6 +1394,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         san_move_list = GameConsumer._build_san_move_list(game)
         white_fide = game.white.get_fide_title() if game.white else {}
         black_fide = game.black.get_fide_title() if game.black else {}
+        def _ai_name(user):
+            if not user:
+                return ""
+            return user.ai_name or ""
+
         return {
             "type": "game_state",
             "game_id": game.pk,
@@ -1338,8 +1408,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             "san_move_list": san_move_list,
             "white": game.white.username if game.white else "?",
             "white_elo": game.white.elo if game.white else 0,
+            "white_model": _ai_name(game.white),
             "black": game.black.username if game.black else "?",
             "black_elo": game.black.elo if game.black else 0,
+            "black_model": _ai_name(game.black),
             "white_fide_abbr": white_fide.get("abbr", ""),
             "white_fide_css": white_fide.get("css", ""),
             "white_fide_title": white_fide.get("title", ""),

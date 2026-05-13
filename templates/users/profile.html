@@ -424,20 +424,25 @@
                 placeholder="e.g. YourUsername/MyModel"
                 class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
 
-              <div class="mt-3 p-4 bg-gray-900/70 border border-gray-700 rounded-lg text-sm">
-                <strong>Important: Grant Access to Our Platform</strong><br>
-                <span class="text-gray-400">
-                  Your repo must be <strong>Gated</strong>.<br>
-                  After setting it to Gated, please grant access to our platform account: 
-                  <code class="text-brand">ArtificialGladiatorLeague</code>
-                </span>
-                
-                <a href="https://huggingface.co/{{ game.model.hf_model_repo_id|default:'yourusername/breakthrough-model' }}/settings/access" 
-                  target="_blank" 
-                  class="block mt-3 text-brand hover:underline text-sm">
-                  → Click here to go to Access Settings and add "ArtificialGladiatorLeague"
+              {% if not game.model or not game.model.model_repo_ownership_verified %}
+              <div class="mt-3 p-4 bg-yellow-900/40 border-2 border-yellow-500 rounded-lg text-sm">
+                <p class="font-bold text-yellow-300 flex items-center gap-1 mb-1">
+                  <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+                  Required: Grant Access to Our Platform Account
+                </p>
+                <p class="text-yellow-100">
+                  Your repo <strong>must be Gated</strong> and you <strong>must approve</strong>
+                  <code class="bg-yellow-800/60 px-1 rounded">ArtificialGladiatorLeague</code>
+                  in the access settings — otherwise your submission will be rejected.
+                </p>
+                <a id="id_access_link_{{ game.type }}"
+                  href="https://huggingface.co/{{ game.model.hf_model_repo_id|default:'' }}/settings/access"
+                  target="_blank"
+                  class="inline-block mt-3 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold rounded text-xs">
+                  → Open Access Settings and approve "ArtificialGladiatorLeague"
                 </a>
               </div>
+              {% endif %}
             </div>
 
             {% if game.type == 'breakthrough' %}
@@ -465,8 +470,8 @@
                      placeholder="e.g. YourUsername/breakthrough-data"
                      class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
               <span class="text-xs text-gray-500 mt-1 block">
-                Your data repo must be named <strong>YourUsername/breakthrough-data</strong> and set to <strong>public</strong> on Hugging Face.
-                It should contain a <code>config_data.json</code> that lists the required chess data files.
+                Any valid Hugging Face repo ID (e.g. <code>anyuser/my-breakthrough-data</code>). Must be set to <strong>public</strong> on Hugging Face.
+                It should contain a <code>config_data.json</code> that lists the required data files.
               </span>
             </div>
             {% elif game.type == 'chess' %}
@@ -494,8 +499,8 @@
                      placeholder="e.g. YourUsername/chess-data"
                      class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
               <span class="text-xs text-gray-500 mt-1 block">
-                Your data repo must be named <strong>YourUsername/chess-data</strong> and set to <strong>public</strong> on Hugging Face.
-                It should contain a <code>config_data.json</code> that lists the required chess data files.
+                Any valid Hugging Face repo ID (e.g. <code>anyuser/my-chess-data</code>). Must be set to <strong>public</strong> on Hugging Face.
+                It should contain a <code>config_data.json</code> that lists the required data files.
               </span>
             </div>
             {% endif %}
@@ -660,6 +665,19 @@
                   dataInput.value = val.substring(0, slash) + '/' + t + '-data';
                 } else {
                   dataInput.value = '';
+                }
+              });
+            }
+
+            // ── Access Settings link: update URL as user types repo ID ──
+            const accessLink = document.getElementById('id_access_link_' + t);
+            if (modelInput && accessLink) {
+              modelInput.addEventListener('input', function () {
+                const val = modelInput.value.trim();
+                if (val) {
+                  accessLink.href = 'https://huggingface.co/' + val + '/settings/access';
+                } else {
+                  accessLink.href = '#';
                 }
               });
             }

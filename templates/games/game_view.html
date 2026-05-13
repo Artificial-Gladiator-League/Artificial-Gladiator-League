@@ -10,7 +10,7 @@
     <div>
       <a href="{% url 'games:lobby' %}" class="text-xs text-gray-500 hover:text-brand transition">← Back to Lobby</a>
       <h1 class="text-xl font-bold mt-1">
-        {% fide_badge game.white %} <span id="headerWhite">{{ game.white.username|default:"???" }}</span> vs {% fide_badge game.black %} <span id="headerBlack">{{ game.black.username|default:"Waiting…" }}</span>
+        {% fide_badge game.white %} <span id="headerWhite">{{ white_ai_name|default:game.white.username|default:"???" }}</span> vs {% fide_badge game.black %} <span id="headerBlack">{{ black_ai_name|default:game.black.username|default:"Waiting…" }}</span>
       </h1>
       <p class="text-xs text-gray-500">{{ game.time_control }} · Casual rated game</p>
     </div>
@@ -84,7 +84,8 @@
       <!-- Start Match button (shown to either player when game is waiting AND both players present) -->
       <div id="startWrap" class="hidden w-full max-w-[560px] text-center">
         <button id="startBtn" class="btn-brand text-lg px-10 py-3">♟ Start Match</button>
-        <p class="text-xs text-gray-500 mt-2">Press to begin the game and start the clocks.</p>
+        <p class="text-xs text-gray-500 mt-2">Both players must press Start to begin the game.</p>
+        <p id="opponentReadyHint" class="hidden text-xs text-green-400 mt-1 font-semibold">Your opponent is ready!</p>
       </div>
 
       <!-- Waiting for opponent to join -->
@@ -95,9 +96,12 @@
         </div>
       </div>
 
-      <!-- Waiting for white to start (shown to black player) -->
+      <!-- You clicked Ready — waiting for the other player -->
       <div id="waitStartWrap" class="hidden w-full max-w-[560px] text-center">
-        <p class="text-sm text-gray-400 py-3">Waiting for white to start the match…</p>
+        <div class="flex items-center justify-center gap-3 py-3">
+          <span class="spinner"></span>
+          <p class="text-sm text-gray-400" id="waitStartText">You are ready! Waiting for your opponent to confirm…</p>
+        </div>
       </div>
 
       <!-- Turn indicator (visible to players only) -->
@@ -271,6 +275,8 @@ html, body, .animate-fade-in {
   var currentUser = '{{ request.user.username|default:"" }}';
   var whiteUser   = '{{ game.white.username|default:"" }}';
   var blackUser   = '{{ game.black.username|default:"" }}';
+  var whiteModel  = '{{ white_ai_name|default:game.white.username|default:"" }}';
+  var blackModel  = '{{ black_ai_name|default:game.black.username|default:"" }}';
   var whiteFlag   = '{{ game.white.country_flag|safe }}';
   var blackFlag   = '{{ game.black.country_flag|safe }}';
   var whiteElo    = '{{ game.white.elo|default:"—" }}';
@@ -294,26 +300,26 @@ html, body, .animate-fade-in {
     document.getElementById('topColorChip').innerHTML = WHITE_CHIP;
     document.getElementById('topFlag').innerHTML = whiteFlag;
     document.getElementById('topFide').innerHTML = whiteFideBadge;
-    document.getElementById('topName').textContent = whiteUser || '???';
+    document.getElementById('topName').textContent = whiteModel || whiteUser || '???';
     document.getElementById('topElo').textContent = '(' + whiteElo + ')';
     topClock.className = 'chess-clock white-clock';
     document.getElementById('bottomColorChip').innerHTML = BLACK_CHIP;
     document.getElementById('bottomFlag').innerHTML = blackFlag;
     document.getElementById('bottomFide').innerHTML = blackFideBadge;
-    document.getElementById('bottomName').textContent = blackUser || '???';
+    document.getElementById('bottomName').textContent = blackModel || blackUser || '???';
     document.getElementById('bottomElo').textContent = '(' + blackElo + ')';
     bottomClock.className = 'chess-clock black-clock';
   } else {
     document.getElementById('topColorChip').innerHTML = BLACK_CHIP;
     document.getElementById('topFlag').innerHTML = blackFlag;
     document.getElementById('topFide').innerHTML = blackFideBadge;
-    document.getElementById('topName').textContent = blackUser || '???';
+    document.getElementById('topName').textContent = blackModel || blackUser || '???';
     document.getElementById('topElo').textContent = '(' + blackElo + ')';
     topClock.className = 'chess-clock black-clock';
     document.getElementById('bottomColorChip').innerHTML = WHITE_CHIP;
     document.getElementById('bottomFlag').innerHTML = whiteFlag;
     document.getElementById('bottomFide').innerHTML = whiteFideBadge;
-    document.getElementById('bottomName').textContent = whiteUser || '???';
+    document.getElementById('bottomName').textContent = whiteModel || whiteUser || '???';
     document.getElementById('bottomElo').textContent = '(' + whiteElo + ')';
     bottomClock.className = 'chess-clock white-clock';
   }
@@ -651,29 +657,30 @@ html, body, .animate-fade-in {
             // Both players present — update black labels if they just joined
             if (!blackUser || blackUser === '???' || blackUser === '?') {
               blackUser = data.black;
+              blackModel = data.black_model || data.black;
               blackElo = data.black_elo || '—';
               if (data.black_fide_abbr) {
                 blackFideBadge = '<span class="' + data.black_fide_css + ' font-bold text-xs" title="' + data.black_fide_title + '">' + data.black_fide_abbr + '</span>';
               }
               // Update player labels on the board
               if (orientation === 'black') {
-                document.getElementById('topName').textContent = whiteUser || '???';
+                document.getElementById('topName').textContent = whiteModel || whiteUser || '???';
                 document.getElementById('topElo').textContent = '(' + whiteElo + ')';
                 document.getElementById('topFide').innerHTML = whiteFideBadge;
-                document.getElementById('bottomName').textContent = blackUser;
+                document.getElementById('bottomName').textContent = blackModel || blackUser;
                 document.getElementById('bottomElo').textContent = '(' + blackElo + ')';
                 document.getElementById('bottomFide').innerHTML = blackFideBadge;
               } else {
-                document.getElementById('topName').textContent = blackUser;
+                document.getElementById('topName').textContent = blackModel || blackUser;
                 document.getElementById('topElo').textContent = '(' + blackElo + ')';
                 document.getElementById('topFide').innerHTML = blackFideBadge;
-                document.getElementById('bottomName').textContent = whiteUser || '???';
+                document.getElementById('bottomName').textContent = whiteModel || whiteUser || '???';
                 document.getElementById('bottomElo').textContent = '(' + whiteElo + ')';
                 document.getElementById('bottomFide').innerHTML = whiteFideBadge;
               }
               // Update page header
               var headerBlack = document.getElementById('headerBlack');
-              if (headerBlack) headerBlack.textContent = blackUser;
+              if (headerBlack) headerBlack.textContent = blackModel || blackUser;
               // Re-detect myColor in case we are the joining player
               if (currentUser && currentUser === blackUser && !myColor) {
                 myColor = 'black';
@@ -734,6 +741,30 @@ html, body, .animate-fade-in {
       } else if (data.type === 'game_over') {
         showGameOver(data.result || '', data.winner || '', data.reason || '');
 
+      } else if (data.type === 'player_ready') {
+        // One player clicked Start Match — update UI accordingly
+        var readyColor = data.color;  // 'white' or 'black'
+        var opponentReadyHint = document.getElementById('opponentReadyHint');
+        if (readyColor === myColor) {
+          // I am the one who is ready — switch to waiting view
+          if (startWrap) startWrap.classList.add('hidden');
+          if (waitStartWrap) waitStartWrap.classList.remove('hidden');
+        } else {
+          // The opponent is ready — show hint on my Start button
+          if (opponentReadyHint) opponentReadyHint.classList.remove('hidden');
+          // If I'm already in waitStartWrap it means I was ready first — update text
+          var waitText = document.getElementById('waitStartText');
+          if (waitText && waitStartWrap && !waitStartWrap.classList.contains('hidden')) {
+            waitText.textContent = 'Both players ready — starting…';
+          }
+        }
+
+      } else if (data.type === 'game_cancelled') {
+        // Creator cancelled the game — redirect everyone else to lobby
+        if (myColor !== 'white') {
+          window.location.href = '{% url "games:lobby" %}';
+        }
+
       } else if (data.type === 'armageddon') {
         var msg = data.message || 'Armageddon tiebreak!';
         if (resultDetail) resultDetail.textContent = msg;
@@ -757,6 +788,9 @@ html, body, .animate-fade-in {
   if (startBtn) {
     startBtn.addEventListener('click', function () {
       if (ws && ws.readyState === WebSocket.OPEN) {
+        startBtn.disabled = true;
+        startBtn.textContent = 'Ready! Waiting for opponent…';
+        startBtn.classList.add('opacity-60', 'cursor-not-allowed');
         ws.send(JSON.stringify({ type: 'start' }));
       }
     });
