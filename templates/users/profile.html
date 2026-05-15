@@ -142,7 +142,7 @@
         {% fide_badge user_profile %} {% if user_profile.ai_name %}{{ user_profile.ai_name }}{% else %}{{ user_profile.username }}{% endif %}
       </h1>
       <p class="text-sm text-gray-400 mt-1">
-        <span class="{{ category.css }} font-semibold">{{ category.icon }} {{ category.tier }}</span>
+        <span class="{{ category.css }} font-semibold">{{ category.tier }}</span>
       </p>
     </div>
     <div class="flex items-center gap-3">
@@ -172,13 +172,13 @@
             <tr>
               <td class="text-gray-400">Chess Category</td>
               <td class="text-right font-medium {{ category_chess.css }}">
-                {{ category_chess.icon }} {{ category_chess.tier }}
+                {{ category_chess.tier }}
               </td>
             </tr>
             <tr>
               <td class="text-gray-400">Breakthrough Category</td>
               <td class="text-right font-medium {{ category_breakthrough.css }}">
-                {{ category_breakthrough.icon }} {{ category_breakthrough.tier }}
+                {{ category_breakthrough.tier }}
               </td>
             </tr>
           </tbody>
