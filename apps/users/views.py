@@ -1305,13 +1305,46 @@ def gdpr_portal(request):
 @login_required
 def gdpr_export(request):
     """Return user's full data as JSON (GDPR Art. 15 — Right of Access)."""
+    from django.db.models import Q
     user = request.user
+
+    def _game_rows(qs):
+        rows = []
+        for g in qs.select_related("white", "black"):
+            rows.append({
+                "id": g.pk,
+                "white": (g.white.ai_name or g.white.username) if g.white else None,
+                "black": (g.black.ai_name or g.black.username) if g.black else None,
+                "result": g.result,
+                "time_control": g.time_control,
+                "timestamp": g.timestamp.isoformat() if g.timestamp else None,
+                "elo_change_white": g.elo_change_white,
+                "elo_change_black": g.elo_change_black,
+                "pgn": g.pgn,
+                "move_list": g.move_list,
+            })
+        return rows
+
+    chess_games = _game_rows(
+        Game.objects.filter(
+            Q(white=user) | Q(black=user),
+            game_type=Game.GameType.CHESS,
+        )
+    )
+    breakthrough_games = _game_rows(
+        Game.objects.filter(
+            Q(white=user) | Q(black=user),
+            game_type=Game.GameType.BREAKTHROUGH,
+        )
+    )
+
     data = {
         "username": user.username,
         "date_joined": user.date_joined.isoformat(),
         "last_login": user.last_login.isoformat() if user.last_login else None,
-        "ai_name": user.ai_name,
-        "elo": user.elo,
+        "ag_name": user.ai_name,
+        "elo_chess": user.elo_chess,
+        "elo_breakthrough": user.elo_breakthrough,
         "wins": user.wins,
         "losses": user.losses,
         "draws": user.draws,
@@ -1341,9 +1374,12 @@ def gdpr_export(request):
                 "result", "elo_change_black", "time_control", "timestamp",
             )
         ),
+        "chess_games": chess_games,
+        "breakthrough_games": breakthrough_games,
     }
+    ai_name = user.ai_name or user.username
     response = JsonResponse(data, json_dumps_params={"indent": 2, "default": str})
-    response["Content-Disposition"] = f'attachment; filename="{user.username}_data_export.json"'
+    response["Content-Disposition"] = f'attachment; filename="AG_{ai_name}_data_export.json"'
     return response
 
 

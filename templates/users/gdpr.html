@@ -1,5 +1,5 @@
 ﻿{% extends "base.html" %}
-{% block title %}Data &amp; Privacy — Artificial Gladiator{% endblock %}
+{% block title %}Data &amp; Privacy • agladiator.com{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto animate-fade-in">
@@ -17,7 +17,7 @@
   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
     <a href="{% url 'users:gdpr_export' %}"
        class="card text-center hover:border-brand transition group">
-      <span class="text-3xl">📥</span>
+      <span class="text-3xl"></span>
       <p class="text-brand font-semibold mt-2 group-hover:underline">Export My Data</p>
       <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
         Download a full JSON copy of everything we store about you.
@@ -28,40 +28,12 @@
       {% csrf_token %}
       <button type="button" onclick="confirmDelete()"
               class="card w-full text-center hover:border-red-500 transition group cursor-pointer">
-        <span class="text-3xl">🗑️</span>
+        <span class="text-3xl"></span>
         <p class="text-red-400 font-semibold mt-2 group-hover:underline">Delete My Account</p>
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
           Permanently erase your account, stats, ELO, history, and AI files.
         </p>
       </button>
-    </form>
-  </div>
-
-  <!-- Submit a formal request -->
-  <div class="card mb-8">
-    <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-4">Submit a Formal Request</h2>
-    <form method="post" novalidate>
-      {% csrf_token %}
-
-      {% if form.non_field_errors %}
-        <div class="rounded-lg bg-red-900/40 border border-red-700 px-4 py-2 mb-4 text-sm text-red-300">
-          {% for error in form.non_field_errors %}
-            <p>{{ error }}</p>
-          {% endfor %}
-        </div>
-      {% endif %}
-
-      <div class="form-group">
-        <label for="id_request_type">Request type</label>
-        {{ form.request_type }}
-      </div>
-
-      <div class="form-group">
-        <label for="id_reason">Reason (optional)</label>
-        {{ form.reason }}
-      </div>
-
-      <button type="submit" class="btn-brand w-full py-2.5 mt-1">Submit Request</button>
     </form>
   </div>
 
