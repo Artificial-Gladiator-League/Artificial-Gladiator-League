@@ -207,36 +207,39 @@ LOGOUT_REDIRECT_URL = "/"
 AUTH_USER_MODEL = "users.CustomUser"
 
 # ── Google reCAPTCHA v3 ───────────────────────
-# 1. Go to https://www.google.com/recaptcha/admin/create
-# 2. Choose "reCAPTCHA v3", add your domain (e.g. artificialgladiator.com)
-# 3. Copy the Site Key → RECAPTCHA_PUBLIC_KEY
-#    Copy the Secret Key → RECAPTCHA_PRIVATE_KEY
-# 4. Set both in your .env file or server environment variables.
-RECAPTCHA_PUBLIC_KEY = os.environ.get("RECAPTCHA_PUBLIC_KEY", "")
-RECAPTCHA_PRIVATE_KEY = os.environ.get("RECAPTCHA_PRIVATE_KEY", "")
+# Setup:
+#   1. Go to https://www.google.com/recaptcha/admin/create
+#   2. Choose "reCAPTCHA v3" and add your domain (e.g. artificialgladiator.com)
+#   3. Copy Site Key  → RECAPTCHA_PUBLIC_KEY  in your .env
+#      Copy Secret Key → RECAPTCHA_PRIVATE_KEY in your .env
+#
+# Bypass flag (RECAPTCHA_TESTING):
+#   - When True, the siteverify API call is skipped and all tokens are accepted.
+#   - Automatically True in DEBUG mode so local dev is never blocked by reCAPTCHA.
+#   - Must be False (or unset) in production for real score validation to run.
 
-# When RECAPTCHA_TESTING is True, django-recaptcha accepts any token without
-# calling Google — no real keys required.  Always False in production.
+# Read and strip keys from the environment (strip guards against .env whitespace).
+RECAPTCHA_PUBLIC_KEY = os.environ.get("RECAPTCHA_PUBLIC_KEY", "").strip()
+RECAPTCHA_PRIVATE_KEY = os.environ.get("RECAPTCHA_PRIVATE_KEY", "").strip()
+
+# Allow explicit override via env; always force True in DEBUG so localhost
+# (which receives a score of 0.0 from Google) is never blocked.
 RECAPTCHA_TESTING = os.environ.get("RECAPTCHA_TESTING", "").lower() in ("true", "1", "yes")
-
-# In DEBUG mode always bypass Google score validation: localhost gets a score
-# of 0.0 from the real API which would block every local registration attempt.
-# In production, ensure RECAPTCHA_TESTING is NOT set (or set to false) so real
-# score validation runs.
 if DEBUG:
     RECAPTCHA_TESTING = True
 
-# In DEBUG mode, if no real keys have been configured, fall back to Google's
-# official always-pass test keys so the widget renders (data-sitekey is never
-# empty) and form submissions succeed locally without a real Google account.
+# In DEBUG mode with no real keys configured, fall back to Google's official
+# always-pass test credentials so the widget renders and submissions succeed
+# locally without needing a Google account.
 # See: https://developers.google.com/recaptcha/docs/faq
 #      #id-like-to-run-automated-tests-with-recaptcha-what-should-i-do
+_RECAPTCHA_TEST_SITE_KEY   = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"
+_RECAPTCHA_TEST_SECRET_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"
 if DEBUG and not RECAPTCHA_PUBLIC_KEY:
-    RECAPTCHA_PUBLIC_KEY = "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"  # Google test site key
-    RECAPTCHA_PRIVATE_KEY = "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"  # Google test secret key
+    RECAPTCHA_PUBLIC_KEY  = _RECAPTCHA_TEST_SITE_KEY
+    RECAPTCHA_PRIVATE_KEY = _RECAPTCHA_TEST_SECRET_KEY
 
-
-# Minimum v3 score to accept in production (0.0 = bot, 1.0 = human).
+# Minimum v3 score to accept (0.0 = likely bot, 1.0 = likely human).
 # Has no effect when RECAPTCHA_TESTING=True.
 RECAPTCHA_REQUIRED_SCORE = float(os.environ.get("RECAPTCHA_REQUIRED_SCORE", "0.5"))
 

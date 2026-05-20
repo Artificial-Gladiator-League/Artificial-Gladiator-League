@@ -1,7 +1,11 @@
+import json
 import logging
 import re
+import urllib.parse
+import urllib.request
 
 from django import forms
+from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
 
 from .models import CustomUser, GDPRRequest
@@ -303,24 +307,22 @@ class RegistrationForm(forms.Form):
 
     def clean_captcha(self):
         """Verify the reCAPTCHA v3 token against Google's siteverify API."""
-        import json
-        import urllib.parse
-        import urllib.request
-        from django.conf import settings
-
         token = self.cleaned_data.get("captcha", "")
 
-        # Bypass in DEBUG — localhost always gets score 0.0 from Google.
-        if getattr(settings, "DEBUG", False):
+        # RECAPTCHA_TESTING is True in DEBUG mode (set in settings.py) and can
+        # also be forced via the RECAPTCHA_TESTING env var. When True, skip all
+        # server-side validation so local dev and CI are never blocked.
+        if getattr(settings, "RECAPTCHA_TESTING", False):
             return token
+
+        # In production a token is mandatory — reject early before touching the secret.
+        if not token:
+            raise forms.ValidationError("reCAPTCHA verification failed. Please try again.")
 
         secret = getattr(settings, "RECAPTCHA_PRIVATE_KEY", "")
         if not secret:
             log.warning("RECAPTCHA_PRIVATE_KEY not set — skipping server-side reCAPTCHA check.")
             return token
-
-        if not token:
-            raise forms.ValidationError("reCAPTCHA verification failed. Please try again.")
 
         payload = urllib.parse.urlencode({"secret": secret, "response": token}).encode()
         try:
