@@ -3,7 +3,7 @@
 
 {% block extra_head %}
   <!-- Bootstrap 5 CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
   <style>
     body { background-color: #0b0e1a; }
     .register-card { background: #161b33; border: 1px solid #2d3561; }
@@ -135,6 +135,13 @@
               Bot-protection check failed. Please refresh the page and try again.
             </div>
 
+            <!-- TEMPORARY debug banner — remove once the submit issue is resolved -->
+            {% if recaptcha_site_key %}
+            <div id="rcaptcha-debug" class="alert alert-info py-2 small mb-3 d-none" role="alert">
+              <strong>reCAPTCHA debug:</strong> <span id="rcaptcha-debug-msg"></span>
+            </div>
+            {% endif %}
+
             <button type="submit" id="register-submit" class="btn btn-brand w-100 py-2">
               Create Account
             </button>
@@ -155,9 +162,10 @@
 
 {% block extra_js %}
   <!-- Bootstrap 5 JS bundle -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmcLb2vqjV3P/DP3FLYJqBHEMhpbh" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
   {% if recaptcha_site_key %}
   <!-- reCAPTCHA v3: obtain token and inject into hidden captcha field before submit -->
+  <!-- TEMPORARY: debug instrumentation added — remove dbg() calls once issue is resolved -->
   <script>
     (function () {
       'use strict';
@@ -165,39 +173,113 @@
       var form      = document.getElementById('registerForm');
       var submitBtn = document.getElementById('register-submit');
       var errDiv    = document.getElementById('recaptcha-error');
+      var dbgDiv    = document.getElementById('rcaptcha-debug');
+      var dbgMsg    = document.getElementById('rcaptcha-debug-msg');
       if (!SITE_KEY || !form || !submitBtn) return;
 
       var submitting = false; // prevent double-submission
+
+      // ── Debug helper ──────────────────────────────────────────────────────
+      // Shows a visible status banner AND writes to the console.
+      // Remove this function and all dbg() calls once the issue is resolved.
+      function dbg(step, detail) {
+        var line = '[reCAPTCHA] ' + step + (detail ? ' — ' + detail : '');
+        console.log(line);
+        if (dbgDiv && dbgMsg) {
+          dbgMsg.textContent = step + (detail ? ': ' + detail : '');
+          dbgDiv.classList.remove('d-none');
+        }
+      }
+
+      /**
+       * Inject token into the hidden captcha field (found by name so it works
+       * regardless of Django auto_id or form prefix) then do a native submit.
+       * If the hidden input is absent for any reason it is created on the fly.
+       * HTMLFormElement.prototype.submit.call() is used to avoid potential
+       * DOM property shadowing of form.submit by a named child element.
+       */
+      function doNativeSubmit(token) {
+        dbg('doNativeSubmit', 'token.length=' + (token ? token.length : 0));
+        var captchaEl = form.querySelector('input[name="captcha"]');
+        if (!captchaEl) {
+          dbg('captcha field missing — creating dynamically');
+          captchaEl = document.createElement('input');
+          captchaEl.type = 'hidden';
+          captchaEl.name = 'captcha';
+          form.appendChild(captchaEl);
+        }
+        captchaEl.value = token || '';
+        dbg('calling HTMLFormElement.prototype.submit.call(form)');
+        // Bypasses any accidental DOM-name shadowing of form.submit
+        HTMLFormElement.prototype.submit.call(form);
+      }
 
       form.addEventListener('submit', function (e) {
         e.preventDefault();
         if (submitting) return;
         submitting = true;
 
-        // Show loading state while awaiting the token network call.
+        dbg('step 1 — submit intercepted');
         var originalLabel = submitBtn.textContent;
         submitBtn.disabled = true;
         submitBtn.textContent = 'Verifying\u2026';
         if (errDiv) errDiv.classList.add('d-none');
 
-        grecaptcha.ready(function () {
-          grecaptcha
-            .execute(SITE_KEY, { action: 'register' })
-            .then(function (token) {
-              var captchaEl = document.getElementById('id_captcha');
-              if (captchaEl) captchaEl.value = token;
-              form.submit(); // native submit — bypasses this listener
-            })
-            .catch(function (err) {
-              // Token fetch failed (e.g. network error or script blocked).
-              // Re-enable the form so the user can retry.
-              console.error('reCAPTCHA execute error:', err);
-              submitting = false;
-              submitBtn.disabled = false;
-              submitBtn.textContent = originalLabel;
-              if (errDiv) errDiv.classList.remove('d-none');
-            });
-        });
+        // Guard: if the reCAPTCHA script was blocked (ad blocker, network
+        // error, etc.) grecaptcha is undefined. Submit directly — the backend
+        // skips verification when the token is empty and RECAPTCHA_TESTING is
+        // True, or raises a validation error in production.
+        if (typeof grecaptcha === 'undefined') {
+          dbg('step 2 — grecaptcha undefined, submitting without token');
+          doNativeSubmit('');
+          return;
+        }
+
+        dbg('step 2 — grecaptcha defined, calling ready()');
+
+        // Safety net: if execute() never resolves (e.g. hung network call or
+        // mismatched site key), submit after 10 s so the form is never
+        // permanently stuck. done flag prevents both branches from firing.
+        var done = false;
+        var safetyTimer = setTimeout(function () {
+          if (done) return;
+          done = true;
+          dbg('step 3 — execute() timed out (10 s), submitting without token');
+          doNativeSubmit('');
+        }, 10000);
+
+        try {
+          grecaptcha.ready(function () {
+            dbg('step 3 — ready() callback entered, calling execute()');
+            grecaptcha
+              .execute(SITE_KEY, { action: 'register' })
+              .then(function (token) {
+                if (done) return;
+                done = true;
+                clearTimeout(safetyTimer);
+                dbg('step 4 — .then() resolved', 'token.length=' + token.length);
+                doNativeSubmit(token);
+              })
+              .catch(function (err) {
+                if (done) return;
+                done = true;
+                clearTimeout(safetyTimer);
+                dbg('step 4 — .catch() fired', String(err));
+                console.error('[reCAPTCHA] execute error:', err);
+                submitting = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalLabel;
+                if (errDiv) errDiv.classList.remove('d-none');
+              });
+          });
+        } catch (err) {
+          if (done) return;
+          done = true;
+          clearTimeout(safetyTimer);
+          dbg('step 3 — ready() threw', String(err));
+          console.warn('[reCAPTCHA] ready error:', err);
+          doNativeSubmit('');
+        }
       });
     })();
   </script>
