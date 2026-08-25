@@ -12,10 +12,12 @@ urlpatterns = [
     path("disqualified/", views.disqualified, name="disqualified"),
     path("<int:pk>/", views.tournament_detail, name="detail"),
     path("<int:pk>/join/", views.join_tournament, name="join"),
+    path("<int:pk>/terms/", views.money_tournament_terms, name="money_terms"),
     path("<int:pk>/leave/", views.leave_tournament, name="leave"),
     path("<int:pk>/ready/", views.ready_tournament, name="ready"),
     path("<int:pk>/match/<int:match_id>/", views.live_match, name="live_match"),
     path("<int:pk>/match/<int:match_id>/resign/", views.resign_match, name="resign"),
+    path("<int:pk>/claim/", views.prize_claim, name="prize_claim"),
 
     # Live Chat — REMOVED
     # path("<int:pk>/chat/messages/", views.chat_messages, name="chat_messages"),

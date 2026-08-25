@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -31,9 +32,16 @@ log = logging.getLogger(__name__)
 
 try:
     from huggingface_hub import hf_hub_download, snapshot_download
+    from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
 except ImportError:  # pragma: no cover
     hf_hub_download = None  # type: ignore[assignment]
     snapshot_download = None  # type: ignore[assignment]
+
+    class _MissingHfImport(Exception):
+        pass
+
+    HfHubHTTPError = _MissingHfImport  # type: ignore[assignment,misc]
+    RepositoryNotFoundError = _MissingHfImport  # type: ignore[assignment,misc]
 
 
 def _user_base_dir(user_id: int) -> Path:
@@ -222,8 +230,14 @@ def download_model_to_cache(
     *,
     token: str | None = None,
     force: bool = False,
+    repo_type: str | None = None,
 ) -> tuple[bool, str, Path | None]:
-    """Download a HF model repository into the persistent per-user cache.
+    """Download a HF repository into the persistent per-user cache.
+
+    A Space and a Model repo can share the same "owner/name" path but are
+    different objects in the HF API, so when *repo_type* isn't given
+    explicitly we try "model" first, then fall back to "space" on a
+    RepositoryNotFoundError before giving up.
 
     This uses `huggingface_hub.snapshot_download()` and places the files
     under: {MODEL_CACHE_ROOT|USER_MODELS_BASE_DIR}/user_{id}/{game_type}/model/
@@ -236,6 +250,9 @@ def download_model_to_cache(
     repo_id = (game_model.hf_model_repo_id or "").strip()
     if not repo_id:
         return False, "No repo_id provided", None
+    if not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
+        log.warning("Invalid repo_id shape for user=%s: %r", game_model.user_id, repo_id)
+        return False, f"Invalid repo_id format: {repo_id!r} (expected 'owner/repo')", None
 
     dest = _game_dest_dir(game_model.user_id, game_model.game_type) / "model"
 
@@ -257,26 +274,52 @@ def download_model_to_cache(
             log.debug("Could not remove existing cache dir %s", dest, exc_info=True)
 
     hf_token = token or _resolve_token(game_model.user)
+    cache_dir = dest / ".hf_cache"
+    candidate_types = [repo_type] if repo_type else ["model", "space"]
 
-    try:
-        # Use a local HF cache inside the user's cache dir to avoid touching ~/.cache/huggingface
-        cache_dir = dest / ".hf_cache"
-        snapshot_download(
-            repo_id=repo_id,
-            local_dir=str(dest),
-            token=hf_token or None,
-            allow_patterns=None,  # let verification step enforce allowed files
-            cache_dir=str(cache_dir),
-        )
-    except Exception as exc:
-        log.exception("snapshot_download failed for %s", repo_id)
+    for i, candidate_type in enumerate(candidate_types):
         try:
-            shutil.rmtree(dest, ignore_errors=True)
-        except Exception:
-            pass
-        return False, f"Download failed: {exc}", None
+            # Use a local HF cache inside the user's cache dir to avoid touching ~/.cache/huggingface
+            snapshot_download(
+                repo_id=repo_id,
+                repo_type=candidate_type,
+                local_dir=str(dest),
+                token=hf_token or None,
+                allow_patterns=None,  # let verification step enforce allowed files
+                cache_dir=str(cache_dir),
+            )
+            if i > 0:
+                log.info(
+                    "download_model_to_cache: %s resolved as repo_type=%s (not 'model')",
+                    repo_id, candidate_type,
+                )
+            return True, "Downloaded to cache", dest
+        except RepositoryNotFoundError:
+            log.info(
+                "download_model_to_cache: %s not found as repo_type=%s", repo_id, candidate_type,
+            )
+            continue
+        except HfHubHTTPError as exc:
+            log.exception("snapshot_download HTTP error for %s (repo_type=%s)", repo_id, candidate_type)
+            try:
+                shutil.rmtree(dest, ignore_errors=True)
+            except Exception:
+                pass
+            return False, f"Download failed: {exc}", None
 
-    return True, "Downloaded to cache", dest
+    # Exhausted every candidate repo_type with RepositoryNotFoundError.
+    try:
+        shutil.rmtree(dest, ignore_errors=True)
+    except Exception:
+        pass
+    if hf_token:
+        # A token was supplied yet the repo still 404s under every type —
+        # more likely private/access-denied than a typo.
+        return False, (
+            "Repo found but access denied — check the Space/repo is public or "
+            "your HF token has access"
+        ), None
+    return False, f"Repository '{repo_id}' was not found on Hugging Face (tried: {', '.join(candidate_types)})", None
 
 
 def _resolve_token(user) -> str:

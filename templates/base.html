@@ -129,6 +129,24 @@
           <a href="{% url 'core:about' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
           <a href="{% url 'core:contact' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Contact</a>
           <!-- Forum removed -->
+          {% if active_play %}
+            <a href="{{ active_play.url }}"
+               class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight flex items-center gap-1.5 text-red-400 font-semibold animate-pulse">
+              <span class="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+              {% if active_play.type == 'tournament_match' %}
+                Live: Round {{ active_play.round_num }}
+              {% else %}
+                Live: vs {{ active_play.opponent }}
+              {% endif %}
+            </a>
+          {% endif %}
+          {% if prize_claim_alert %}
+            <a href="{{ prize_claim_alert.url }}"
+               class="nav-link px-3 py-2 rounded-lg hover:bg-yellow-50 dark:hover:bg-yellow-900/20 flex items-center gap-1.5 text-yellow-400 font-semibold">
+              <span class="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+              Claim Your Prize
+            </a>
+          {% endif %}
         </div>
 
         <!-- Right side: search, theme toggle, auth -->
@@ -329,6 +347,18 @@
             <input type="hidden" name="increment_seconds" id="modalIncInput" value="1">
           </div>
           <div>
+            <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Time per move (AI thinking)</label>
+            <div class="flex flex-wrap gap-2">
+              <button type="button" class="modal-thinking-btn tc-btn" data-val="3">3s</button>
+              <button type="button" class="modal-thinking-btn tc-btn active" data-val="5">5s</button>
+              <button type="button" class="modal-thinking-btn tc-btn" data-val="8">8s</button>
+              <button type="button" class="modal-thinking-btn tc-btn" data-val="12">12s</button>
+              <button type="button" class="modal-thinking-btn tc-btn" data-val="15">15s</button>
+            </div>
+            <input type="hidden" name="ai_thinking_seconds" id="modalThinkingInput" value="5">
+            <p class="text-xs text-gray-500 mt-2">Target pace for AI moves. Actual time depends on how the opponent's model is hosted — some models respond slower than others.</p>
+          </div>
+          <div>
             <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Play as</label>
             <div class="flex flex-wrap gap-2">
               <button type="button" class="modal-color-btn tc-btn active" data-val="random">🎲 Random</button>
@@ -385,10 +415,12 @@
       const closeBtn = document.getElementById('closeCreateLobby');
       const baseInput = document.getElementById('modalBaseInput');
       const incInput = document.getElementById('modalIncInput');
+      const thinkingInput = document.getElementById('modalThinkingInput');
       const preview = document.getElementById('modalPreview');
       const variant = document.getElementById('modalVariant');
       const baseBtns = modal.querySelectorAll('.modal-base-btn');
       const incBtns = modal.querySelectorAll('.modal-inc-btn');
+      const thinkingBtns = modal.querySelectorAll('.modal-thinking-btn');
       const typeBtns = modal.querySelectorAll('.modal-type-btn');
       const colorBtns = modal.querySelectorAll('.modal-color-btn');
 
@@ -420,6 +452,11 @@
         b.classList.add('active');
         incInput.value = b.dataset.val;
         updatePreview();
+      }));
+      thinkingBtns.forEach(b => b.addEventListener('click', () => {
+        thinkingBtns.forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        thinkingInput.value = b.dataset.val;
       }));
       typeBtns.forEach(b => b.addEventListener('click', () => {
         typeBtns.forEach(x => x.classList.remove('active'));

@@ -141,6 +141,12 @@ class LiveMatchConsumer(AsyncWebsocketConsumer):
         self.match_id = self.scope["url_route"]["kwargs"]["match_id"]
         self.group_name = f"match_{self.match_id}"
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        user = self.scope.get("user")
+        if user and user.is_authenticated:
+            self.user_group = f"user_{user.id}"
+            await self.channel_layer.group_add(self.user_group, self.channel_name)
+        else:
+            self.user_group = None
         await self.accept()
         # Push current match info on connect
         info = await self._get_match_info()
@@ -148,6 +154,8 @@ class LiveMatchConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
         data = json.loads(text_data)
@@ -199,6 +207,13 @@ class LiveMatchConsumer(AsyncWebsocketConsumer):
 
     async def armageddon_start(self, event):
         await self.send(text_data=json.dumps(event["data"]))
+
+    async def user_disqualified(self, event):
+        await self.send(text_data=json.dumps({
+            "type": "disqualified",
+            "tournament_name": event["tournament_name"],
+            "reason": event["reason"],
+        }))
 
     # ── DB helpers ─────────────────────────────
     @database_sync_to_async

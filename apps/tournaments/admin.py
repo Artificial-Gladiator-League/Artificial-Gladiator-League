@@ -1,6 +1,7 @@
 from django.contrib import admin, messages
+from django.utils import timezone
 from .models import (
-    Badge, GauntletStanding, Match, Tournament, TournamentChatMessage,
+    Badge, GauntletStanding, Match, PrizeClaim, Tournament, TournamentChatMessage,
     TournamentParticipant, TournamentShaCheck,
 )
 
@@ -19,7 +20,7 @@ class TournamentAdmin(admin.ModelAdmin):
         "participant_count", "capacity", "rounds_total",
         "entry_display", "start_time",
     )
-    list_filter = ("status", "type", "game_type", "category", "time_control")
+    list_filter = ("status", "type", "game_type", "category", "time_control", "is_money_tournament")
     search_fields = ("name",)
     inlines = [ParticipantInline]
 
@@ -28,7 +29,7 @@ class TournamentAdmin(admin.ModelAdmin):
             "fields": ("name", "description"),
         }),
         ("Format", {
-            "fields": ("type", "game_type", "time_control", "category", "capacity", "rounds_total"),
+            "fields": ("type", "game_type", "time_control", "category", "capacity", "rounds_total", "join_password"),
             "description": (
                 "Choose any tournament type. Capacity and rounds are auto-set "
                 "based on type but can be overridden. QA tournaments lock "
@@ -41,6 +42,28 @@ class TournamentAdmin(admin.ModelAdmin):
         ("Champion", {
             "fields": ("champion",),
         }),
+        ("Prize / Money Tournament", {
+            "fields": (
+                "is_money_tournament",
+                "prize_amount",
+                "prize_currency",
+                "prize_structure",
+                "payout_status",
+                "terms_text",
+                "terms_version",
+            ),
+            "description": (
+                "Enable \"is_money_tournament\" to activate prize-pool mode. "
+                "Entry will be restricted to Israeli residents (IP-based). "
+                "Set terms_version to a non-empty string (e.g. \"1.0\") to "
+                "require participants to accept terms before joining. "
+                "prize_structure is an optional JSON list defining per-place payouts, e.g. "
+                '[{\"place\": 1, \"label\": \"1st\", \"amount\": 60}, '
+                '{\"place\": 2, \"label\": \"2nd\", \"amount\": 30}, '
+                '{\"place\": 3, \"label\": \"3rd\", \"amount\": 10}]'
+            ),
+            "classes": ("collapse",),
+        }),
     )
 
     class Media:
@@ -48,6 +71,8 @@ class TournamentAdmin(admin.ModelAdmin):
 
     @admin.display(description="Entry")
     def entry_display(self, obj):
+        if obj.is_money_tournament and obj.prize_amount:
+            return f"💰 {obj.prize_amount} {obj.prize_currency}"
         return "Free"
 
 
@@ -70,12 +95,32 @@ class TournamentParticipantAdmin(admin.ModelAdmin):
         "user", "tournament", "seed", "current_round",
         "eliminated", "disqualified_for_sha_mismatch",
         "round_pinned_sha_short", "round_pinned_at",
+        "join_country_code", "geo_eligible", "terms_accepted_at",
+        "paypal_email_display",
     )
     list_filter = (
         "tournament", "eliminated", "disqualified_for_sha_mismatch",
+        "geo_eligible",
+    )
+    readonly_fields = (
+        "join_ip", "join_country_code", "geo_eligible",
+        "terms_accepted_at", "terms_version_accepted",
     )
     search_fields = ("user__username", "tournament__name")
-    actions = ["run_manual_sha_check"]
+    actions = ["run_manual_sha_check", "clear_paypal_email"]
+
+    @admin.display(description="PayPal email")
+    def paypal_email_display(self, obj):
+        return obj.paypal_email or "—"
+
+    @admin.action(description="Clear PayPal email (after payout confirmation)")
+    def clear_paypal_email(self, request, queryset):
+        updated = queryset.update(paypal_email="")
+        self.message_user(
+            request,
+            f"Cleared PayPal email for {updated} participant(s).",
+            level=messages.INFO,
+        )
 
     @admin.display(description="Pinned SHA")
     def round_pinned_sha_short(self, obj):
@@ -154,6 +199,50 @@ class TournamentShaCheckAdmin(admin.ModelAdmin):
     @admin.display(description="Expected")
     def expected_short(self, obj):
         return (obj.expected_sha[:12] + "...") if obj.expected_sha else "—"
+
+    @admin.display(description="Current")
+    def current_short(self, obj):
+        return (obj.current_sha[:12] + "...") if obj.current_sha else "—"
+
+
+@admin.register(PrizeClaim)
+class PrizeClaimAdmin(admin.ModelAdmin):
+    list_display = (
+        "tournament", "winner", "amount", "currency",
+        "status", "created_at", "expires_at",
+    )
+    list_filter = ("status",)
+    readonly_fields = ("claim_code", "created_at", "claimed_at", "paid_at", "paid_by_admin")
+    search_fields = ("tournament__name", "winner__username")
+    ordering = ("-created_at",)
+    actions = ["mark_as_paid"]
+
+    @admin.action(description="Mark selected as Paid")
+    def mark_as_paid(self, request, queryset):
+        now = timezone.now()
+        paid = skipped = 0
+        for claim in queryset:
+            if claim.status == PrizeClaim.Status.CLAIMED:
+                claim.status = PrizeClaim.Status.PAID
+                claim.paid_at = now
+                claim.paid_by_admin = request.user
+                claim.save(update_fields=["status", "paid_at", "paid_by_admin"])
+                try:
+                    claim.tournament.payout_status = Tournament.PayoutStatus.PAID
+                    claim.tournament.save(update_fields=["payout_status"])
+                except Exception:
+                    pass
+                paid += 1
+            else:
+                skipped += 1
+        if paid:
+            self.message_user(request, f"Marked {paid} claim(s) as paid.", level=messages.SUCCESS)
+        if skipped:
+            self.message_user(
+                request,
+                f"{skipped} claim(s) skipped — only CLAIMED items can be marked as paid.",
+                level=messages.WARNING,
+            )
 
     @admin.display(description="Current")
     def current_short(self, obj):

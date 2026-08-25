@@ -12,6 +12,19 @@ class UsersConfig(AppConfig):
     def ready(self):
         import apps.users.signals  # noqa: F401 — register post_save handlers
 
+        # Loud startup check: surface a missing/broken huggingface_hub at
+        # process boot instead of only on the first request that needs it.
+        log = logging.getLogger(__name__)
+        from apps.users import views as _views
+        if not _views._HF_AVAILABLE:
+            log.warning(
+                "=" * 70 + "\n"
+                "STARTUP WARNING: huggingface_hub failed to import — HF model "
+                "validation and file-status endpoints will be degraded.\n"
+                "Fix: activate the correct venv and run "
+                "`pip install -r requirements.txt`.\n" + "=" * 70
+            )
+
         # Startup pre-warm: ensure bot models (model_integrity_ok=True)
         # that have no `cached_path` are downloaded into the persistent
         # cache so they survive server restarts. Run in a background

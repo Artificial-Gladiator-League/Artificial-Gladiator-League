@@ -30,6 +30,32 @@ GAME_ELO_FIELD = {
     "breakthrough": "elo_breakthrough",
 }
 
+
+def _category_for_elo(elo: int) -> dict:
+    """Return a category dict for a given ELO value (matches CustomUser.get_category)."""
+    if elo >= 2700:
+        return {"tier": "Super Grandmaster", "icon": "\U0001f451", "css": "text-yellow-300"}
+    elif elo >= 2500:
+        return {"tier": "Grandmaster",       "icon": "\U0001f3c6", "css": "text-purple-400"}
+    elif elo >= 2400:
+        return {"tier": "International Master", "icon": "\U0001f947", "css": "text-yellow-400"}
+    elif elo >= 2300:
+        return {"tier": "FIDE Master",       "icon": "\U0001f948", "css": "text-blue-300"}
+    elif elo >= 2200:
+        return {"tier": "Candidate Master",  "icon": "\U0001f948", "css": "text-gray-300"}
+    elif elo >= 2000:
+        return {"tier": "Expert",            "icon": "\U0001f947", "css": "text-orange-400"}
+    elif elo >= 1800:
+        return {"tier": "Class A",           "icon": "\U0001f534", "css": "text-red-400"}
+    elif elo >= 1600:
+        return {"tier": "Class B",           "icon": "\U0001f7e0", "css": "text-orange-300"}
+    elif elo >= 1400:
+        return {"tier": "Class C",           "icon": "\U0001f7e1", "css": "text-yellow-500"}
+    elif elo >= 1200:
+        return {"tier": "Class D",           "icon": "\U0001f7e2", "css": "text-green-400"}
+    else:
+        return {"tier": "Beginner",          "icon": "\U0001f949", "css": "text-amber-600"}
+
 CATEGORY_META = {
     "global":   {"label": "Global",              "icon": "🌍", "css": "text-brand",       "tier": "",                     "elo": "All"},
     "super_gm": {"label": "Super Grandmaster",  "icon": "👑", "css": "text-yellow-300",  "tier": "Super Grandmaster",   "elo": "2700+"},
@@ -316,6 +342,7 @@ def leaderboard(request):
 
     players = list(_ranked_qs(tab, game_type))
     stats_map = _per_game_stats([p.pk for p in players], game_type)
+    elo_field = GAME_ELO_FIELD[game_type]
     for p in players:
         st = stats_map.get(p.pk, {})
         p.wins = st.get('wins', p.wins)
@@ -323,6 +350,7 @@ def leaderboard(request):
         p.draws = st.get('draws', p.draws)
         p.total_games = st.get('total_games', p.total_games)
         p.current_streak = st.get('streak', p.current_streak)
+        p.display_category = _category_for_elo(getattr(p, elo_field))
     counts = _category_counts()
 
     return render(request, "core/leaderboard.html", {
@@ -348,7 +376,7 @@ def leaderboard_json(request):
     stats_map = _per_game_stats([p.pk for p in players], game_type)
     rows = []
     for rank, p in enumerate(players, 1):
-        cat = p.get_category()
+        cat = _category_for_elo(getattr(p, elo_field))
         st = stats_map.get(p.pk, {})
         wins = st.get('wins', p.wins)
         losses = st.get('losses', p.losses)

@@ -578,12 +578,20 @@ def _fetch_verify_file(repo_id: str, repo_type: str = "model") -> tuple[str | No
     return resp.text.strip(), None
 
 
-def _get_latest_commit_time(repo_id: str):
+def _get_latest_commit_time(repo_id: str, repo_type: str = "model"):
     """Return the ``created_at`` datetime of the latest commit, or None."""
     try:
         from huggingface_hub import list_repo_commits
+        from huggingface_hub.utils import HfHubHTTPError, RepositoryNotFoundError
 
-        commits = list(list_repo_commits(repo_id, repo_type="model", token=None))
+        try:
+            commits = list(list_repo_commits(repo_id, repo_type=repo_type, token=None))
+        except RepositoryNotFoundError:
+            log.debug("_get_latest_commit_time: %s not found as repo_type=%s", repo_id, repo_type)
+            return None
+        except HfHubHTTPError as exc:
+            log.debug("_get_latest_commit_time: HF API error for %s: %s", repo_id, exc)
+            return None
         if commits:
             return commits[0].created_at
     except Exception as exc:

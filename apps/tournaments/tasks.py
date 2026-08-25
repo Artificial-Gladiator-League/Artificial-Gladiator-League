@@ -515,6 +515,173 @@ def run_probabilistic_sha_audit(self) -> dict:
     return summary
 
 
+# ── Global (always-on) SHA audit ────────────────────────────────────────────
+#
+# Covers every UserGameModel with a connected HF repo, not just active
+# tournament participants. Uses modulo sharding to bound HF API call rate.
+#
+# Scale note: with _GLOBAL_AUDIT_SHARD_COUNT=60 and a 30s tick, each user
+# shard is visited once every 1,800s (~30 min). At _AUDIT_BASE_PROBABILITY=0.25
+# the expected check interval per user is ~2 hours — well within HF rate
+# limits for any realistic user count. For 10,000+ users increase
+# _GLOBAL_AUDIT_SHARD_COUNT proportionally (e.g. 200 → ~1 HF call/tick/200 users).
+
+_GLOBAL_AUDIT_SHARD_COUNT = 60  # visit 1/N of the population per tick
+
+
+def _score_global_probability(game_model, now) -> float:
+    """Per-tick check probability for a UserGameModel outside a tournament.
+
+    Same base probability and cap as the tournament audit; tournament-specific
+    multipliers replaced with generic recency/staleness signals.
+    """
+    from datetime import timedelta
+    from django.db.models import Q
+    from apps.games.models import Game
+
+    prob = _AUDIT_BASE_PROBABILITY
+
+    # (a) Recently played any rated game — same window as the tournament audit.
+    recent_cutoff = now - timedelta(seconds=_RECENT_GAME_WINDOW_SEC)
+    played_recent = (
+        Game.objects
+        .filter(game_type=game_model.game_type)
+        .filter(Q(white=game_model.user) | Q(black=game_model.user))
+        .filter(
+            Q(last_move_at__gte=recent_cutoff) | Q(timestamp__gte=recent_cutoff),
+        )
+        .exists()
+    )
+    if played_recent:
+        prob *= 3.0
+
+    # (b) Time since last validation (date-granularity field on UserGameModel).
+    vdate = game_model.last_model_validation_date
+    if vdate is None:
+        prob *= 2.0          # never validated — prioritise
+    elif vdate == now.date():
+        prob *= 0.1          # already checked today — back off hard
+    elif (now.date() - vdate).days >= 7:
+        prob *= 1.5          # stale — boost
+
+    return min(prob, _AUDIT_PROBABILITY_CAP)
+
+
+@shared_task(bind=True, max_retries=0)
+def run_global_sha_audit(self) -> dict:
+    """Background SHA integrity check for every user with a connected HF repo.
+
+    Fires every 30s (same cadence as run_probabilistic_sha_audit). Where the
+    probabilistic audit covers only active tournament participants,  this task
+    covers everyone — so a repo change is caught even when no tournament is
+    running, and is_eligible_for_tournament() / can_join_tournament() will
+    correctly block the user the next time they try to join.
+
+    This task never disqualifies from a live match — it only flips
+    model_integrity_ok to False (plus resets rated_games_since_revalidation
+    to 0) via live_sha_check(). Disqualification during active matches is
+    run_probabilistic_sha_audit's responsibility.
+
+    Sharding: only 1/_GLOBAL_AUDIT_SHARD_COUNT of all UserGameModel rows are
+    candidates per tick (determined by user_id % shard_count). This keeps the
+    HF API call rate bounded regardless of total user count.
+    """
+    import random
+    import time
+
+    from django.conf import settings as dj_settings
+    from django.utils import timezone
+
+    if getattr(dj_settings, "CELERY_TASK_ALWAYS_EAGER", False):
+        log.warning(
+            "Global SHA audit skipped — CELERY_TASK_ALWAYS_EAGER=True. "
+            "Requires Celery Beat with a real broker."
+        )
+        return {"skipped": "eager_mode"}
+
+    from apps.tournaments.models import Tournament, TournamentParticipant
+    from apps.users.integrity import live_sha_check
+    from apps.users.models import UserGameModel
+
+    now = timezone.now()
+    shard_index = int(time.time() / 30) % _GLOBAL_AUDIT_SHARD_COUNT
+
+    # One cheap query to find users already watched by run_probabilistic_sha_audit.
+    tournament_user_ids = frozenset(
+        TournamentParticipant.objects
+        .filter(
+            tournament__status=Tournament.Status.ONGOING,
+            eliminated=False,
+            disqualified_for_sha_mismatch=False,
+        )
+        .values_list("user_id", flat=True)
+    )
+
+    all_gms = list(
+        UserGameModel.objects
+        .filter(hf_model_repo_id__gt="")
+        .select_related("user")
+    )
+
+    summary = {
+        "shard": f"{shard_index}/{_GLOBAL_AUDIT_SHARD_COUNT}",
+        "total_gms": len(all_gms),
+        "candidates": 0,
+        "rolled": 0,
+        "checked": 0,
+        "matched": 0,
+        "mismatched": 0,
+        "errors": 0,
+    }
+
+    for gm in all_gms:
+        if gm.user_id % _GLOBAL_AUDIT_SHARD_COUNT != shard_index:
+            continue
+        # Already covered this tick by run_probabilistic_sha_audit.
+        if gm.user_id in tournament_user_ids:
+            continue
+
+        summary["candidates"] += 1
+
+        prob = _score_global_probability(gm, now)
+        if random.random() >= prob:
+            continue
+        summary["rolled"] += 1
+
+        try:
+            matches, _db_sha, _latest_sha = live_sha_check(
+                gm, context="global_daily", fail_open=True,
+            )
+        except Exception:
+            log.exception(
+                "run_global_sha_audit: live_sha_check raised for user=%s game=%s",
+                getattr(gm.user, "username", "?"), gm.game_type,
+            )
+            summary["errors"] += 1
+            continue
+
+        summary["checked"] += 1
+        if matches:
+            summary["matched"] += 1
+        else:
+            summary["mismatched"] += 1
+            log.warning(
+                "run_global_sha_audit: SHA mismatch user=%s game=%s repo=%s "
+                "— model_integrity_ok=False; blocked from next tournament join.",
+                getattr(gm.user, "username", "?"), gm.game_type,
+                gm.hf_model_repo_id,
+            )
+
+    log.info(
+        "run_global_sha_audit: shard=%s total=%d candidates=%d "
+        "rolled=%d checked=%d matched=%d mismatched=%d errors=%d",
+        summary["shard"], summary["total_gms"], summary["candidates"],
+        summary["rolled"], summary["checked"],
+        summary["matched"], summary["mismatched"], summary["errors"],
+    )
+    return summary
+
+
 @shared_task(bind=True, max_retries=0)
 def run_sha_check_for_participant(self, participant_id: int) -> dict:
     """Manually trigger a single SHA check (used by admin actions)."""
@@ -587,4 +754,59 @@ def ensure_tournament_integrity(self, tournament_id: int) -> dict:
         tournament_id, report.get("actions"),
     )
     return report
+
+
+@shared_task
+def expire_stale_prize_claims() -> str:
+    """Set PrizeClaim.status=EXPIRED for unclaimed/uncollected claims past expires_at.
+
+    Runs daily via Celery Beat. Also syncs Tournament.payout_status to CANCELLED
+    and emails admins so no expired prize goes unnoticed.
+    """
+    from django.core.mail import mail_admins
+    from django.utils import timezone
+
+    from apps.tournaments.models import PrizeClaim, Tournament
+
+    now = timezone.now()
+    to_expire = list(
+        PrizeClaim.objects
+        .filter(
+            status__in=[PrizeClaim.Status.PENDING, PrizeClaim.Status.CLAIMED],
+            expires_at__lt=now,
+        )
+        .select_related("tournament", "winner")
+    )
+
+    if not to_expire:
+        return "No claims to expire."
+
+    pks = [c.pk for c in to_expire]
+    PrizeClaim.objects.filter(pk__in=pks).update(status=PrizeClaim.Status.EXPIRED)
+
+    for claim in to_expire:
+        try:
+            claim.tournament.payout_status = Tournament.PayoutStatus.CANCELLED
+            claim.tournament.save(update_fields=["payout_status"])
+        except Exception:
+            log.exception(
+                "Failed to update payout_status for tournament %s", claim.tournament_id
+            )
+
+    lines = "\n".join(
+        f"  \u2022 {c.tournament.name} (pk={c.tournament_id}) \u2014 "
+        f"winner: {c.winner.username}, was {c.status}, expired {c.expires_at:%Y-%m-%d}"
+        for c in to_expire
+    )
+    try:
+        mail_admins(
+            subject=f"[AGL] {len(to_expire)} prize claim(s) expired",
+            message=f"The following prize claims have been marked EXPIRED:\n\n{lines}",
+            fail_silently=True,
+        )
+    except Exception:
+        log.exception("Failed to send prize-expiry admin notification")
+
+    log.warning("Expired %d prize claim(s):\n%s", len(to_expire), lines)
+    return f"Expired {len(to_expire)} claim(s)."
 

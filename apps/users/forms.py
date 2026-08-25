@@ -8,7 +8,7 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
 
-from .models import CustomUser, GDPRRequest
+from .models import CustomUser, GDPRRequest, validate_hf_repo_id
 
 
 log = logging.getLogger(__name__)
@@ -425,10 +425,7 @@ class ProfileForm(forms.ModelForm):
 
     def clean_hf_model_repo_id(self):
         repo = self.cleaned_data.get("hf_model_repo_id", "").strip()
-        if repo and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo):
-            raise forms.ValidationError(
-                "Enter a valid Hugging Face repo ID (e.g. 'Maxlegrec/ChessBot')."
-            )
+        validate_hf_repo_id(repo)
         return repo
 
     def clean(self):

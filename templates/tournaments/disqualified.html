@@ -2,37 +2,49 @@
 {% block title %}Disqualified • Artificial Gladiator League{% endblock %}
 
 {% block content %}
+<div class="flex items-center justify-center min-h-[60vh] py-12 px-4">
+  <div class="w-full max-w-xl">
 
-<div class="min-h-screen flex items-center justify-center p-8 mx-auto max-w-4xl">
-  <div class="container" style="max-width: 720px;">
-    <div class="card border-danger shadow-lg">
-      <div class="card-header bg-danger text-white text-center py-3">
-        <h2 class="mb-0">⚠ Disqualified</h2>
-      </div>
-      <div class="card-body text-center p-4">
-        <p class="lead mb-3">
-          Your repository has changed during the tournament; you are
-          disqualified.
-        </p>
+    <div class="bg-red-950/60 border border-red-800 rounded-t-xl px-6 py-4 text-center">
+      <h2 class="text-xl font-bold text-red-200">⚠ You Are Disqualified</h2>
+    </div>
 
+    <div class="bg-surface border-x border-b border-borderDark rounded-b-xl px-6 py-6 space-y-4">
+
+      <p class="text-gray-300 leading-relaxed">
+        To ensure fair competition, our system periodically verifies during each round that the AI model
+        connected to your account has not changed since the round began.
+      </p>
+      <p class="text-gray-300 leading-relaxed">
+        During this tournament, that check found your model was modified mid-round. This constitutes a
+        rules violation under our fair-play policy. As a result, your participation has ended and any
+        in-progress match has been recorded as a forfeit.
+      </p>
+
+      {% if tournament_name or round_num %}
+      <div class="bg-gray-800/60 border border-borderDark rounded-lg px-4 py-3 text-sm text-gray-400 space-y-1">
         {% if tournament_name %}
-          <p class="text-muted mb-2">
-            <strong>Tournament:</strong> {{ tournament_name }}
-          </p>
+          <div><span class="font-semibold text-gray-300">Tournament:</span> {{ tournament_name }}</div>
         {% endif %}
-        {% if reason %}
-          <p class="text-muted mb-3"><small>{{ reason }}</small></p>
+        {% if round_num %}
+          <div><span class="font-semibold text-gray-300">Detected during:</span> Round {{ round_num }}</div>
         {% endif %}
+      </div>
+      {% endif %}
 
-        <hr>
+      <p class="text-gray-500 text-sm">
+        If you believe this is a mistake, please
+        <a href="{% url 'core:contact' %}" class="text-brand hover:underline">contact support</a>
+        and we will review your case.
+      </p>
 
-        <a href="/games/lobby/" 
-           class="btn btn-danger btn-lg mt-2">
+      <div class="pt-2 text-center">
+        <a href="{{ redirect_url|default:'/games/lobby/' }}" class="btn-outline">
           Return to Lobby
         </a>
       </div>
+
     </div>
   </div>
 </div>
-
 {% endblock %}

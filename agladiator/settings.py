@@ -73,6 +73,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.core.context_processors.active_play",
             ],
         },
     },
@@ -257,6 +258,18 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL",
     "noreply@artificialgladiator.com",
 )
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True").lower() in ("true", "1", "yes")
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# Comma-separated "Name <addr>" or plain addresses; mail_admins() is a no-op without this.
+ADMINS = [
+    tuple(entry.strip().split("|", 1))
+    for entry in os.environ.get("ADMIN_EMAILS", "").split(",")
+    if "|" in entry.strip()
+]
+SITE_URL = os.environ.get("SITE_URL", "https://artificialgladiator.com")
 
 # Countries blocked from registration (ISO 3166‑1 alpha‑2)
 PROHIBITED_COUNTRIES = ["KP", "IR", "SY", "CU", "SD"]
@@ -471,10 +484,22 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.tournaments.tasks.run_probabilistic_sha_audit",
         "schedule": 30.0,  # every 30 seconds
     },
+    "global-sha-audit": {
+        "task": "apps.tournaments.tasks.run_global_sha_audit",
+        "schedule": 30.0,  # same 30-second cadence; sharding bounds HF call rate
+    },
 
     "cleanup-orphaned-dirs": {
         "task": "apps.users.model_lifecycle.cleanup_orphaned_dirs",
         "schedule": 1800.0,
+    },
+    "keep-warm-ongoing-games": {
+        "task": "apps.games.tasks.keep_warm_ongoing_games",
+        "schedule": 300.0,  # every 5 minutes
+    },
+    "expire-stale-prize-claims": {
+        "task": "apps.tournaments.tasks.expire_stale_prize_claims",
+        "schedule": 86_400.0,  # daily
     },
 }
 

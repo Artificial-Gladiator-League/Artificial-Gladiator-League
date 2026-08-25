@@ -36,11 +36,12 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
+from django.core.exceptions import ValidationError
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import CustomUser
+from .models import CustomUser, validate_hf_repo_id
 
 log = logging.getLogger(__name__)
 
@@ -297,16 +298,23 @@ def hf_oauth_complete(request):
             errors["ai_name"] = "AI name is required."
         if not repo_id:
             errors["hf_model_repo_id"] = "Model repo ID is required."
-        elif CustomUser.objects.filter(hf_model_repo_id=repo_id).exists():
-            errors["hf_model_repo_id"] = (
-                "This model repository is already registered by another "
-                "user. Each account must use a unique model."
-            )
-        elif repo_id.split("/")[0].strip().lower() != hf_username.lower():
-            errors["hf_model_repo_id"] = (
-                "You can only register a model repository that belongs to "
-                "your own Hugging Face account."
-            )
+        else:
+            try:
+                validate_hf_repo_id(repo_id)
+            except ValidationError as exc:
+                errors["hf_model_repo_id"] = exc.messages[0]
+            else:
+                # Shape confirmed valid — safe to run the ownership/duplicate checks.
+                if CustomUser.objects.filter(hf_model_repo_id=repo_id).exists():
+                    errors["hf_model_repo_id"] = (
+                        "This model repository is already registered by another "
+                        "user. Each account must use a unique model."
+                    )
+                elif repo_id.split("/")[0].strip().lower() != hf_username.lower():
+                    errors["hf_model_repo_id"] = (
+                        "You can only register a model repository that belongs to "
+                        "your own Hugging Face account."
+                    )
         if email and CustomUser.objects.filter(email=email).exists():
             errors["email"] = "An account with this email already exists."
 

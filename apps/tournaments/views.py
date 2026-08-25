@@ -1,9 +1,11 @@
+import re
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -13,7 +15,9 @@ import logging
 
 from apps.games.models import Game
 
-from .models import Match, Tournament, TournamentParticipant, TournamentChatMessage
+from apps.core.utils import parse_thinking_seconds
+
+from .models import Match, PrizeClaim, Tournament, TournamentParticipant, TournamentChatMessage
 
 log = logging.getLogger(__name__)
 
@@ -183,6 +187,11 @@ def tournament_detail(request, pk):
         from .engine import start_tournament
 
         first_matches = start_tournament(tournament)
+        if tournament.status == Tournament.Status.ONGOING:
+            from apps.tournaments.sha_audit import schedule_immediate_start_check
+            schedule_immediate_start_check(
+                tournament, round_num=tournament.current_round,
+            )
         if first_matches:
             channel_layer = get_channel_layer()
             if channel_layer:
@@ -272,6 +281,21 @@ def tournament_detail(request, pk):
     # Live matches (for "Watch" buttons)
     live_matches = matches.filter(match_status=Match.MatchStatus.LIVE)
 
+    # For Gauntlet: find the participant's own live match so the template can
+    # surface a direct "Resume Your Match" CTA without auto-redirecting.
+    my_live_match = None
+    if (
+        request.user.is_authenticated
+        and is_participant
+        and tournament.type != Tournament.Type.QA
+        and tournament.status == Tournament.Status.ONGOING
+    ):
+        my_live_match = tournament.matches.filter(
+            Q(player1=request.user) | Q(player2=request.user),
+            match_status=Match.MatchStatus.LIVE,
+            is_armageddon=False,
+        ).first()
+
     can_join = False
     join_blocked_reason = ""
     games_remaining = 0
@@ -336,6 +360,7 @@ def tournament_detail(request, pk):
             "qa_participants": qa_participants,
             "qa_live_match_id": qa_live_match_id,
             "qa_match": qa_match,
+            "my_live_match": my_live_match,
             "can_join": can_join,
             "join_blocked_reason": join_blocked_reason,
             "games_remaining": games_remaining,
@@ -353,6 +378,15 @@ def live_match(request, pk, match_id):
         pk=match_id,
         tournament=tournament,
     )
+
+    if request.user.is_authenticated:
+        from .disqualification import find_active_dq_participant
+        dq = find_active_dq_participant(request.user)
+        if dq is not None:
+            request.session["dq_participant_id"] = dq.pk
+            request.session["dq_tournament_id"] = dq.tournament_id
+            request.session["dq_tournament_name"] = dq.tournament.name
+            return redirect("tournaments:disqualified")
 
     # Determine time per side based on time_control string
     parts = match.time_control.split("+")
@@ -487,6 +521,21 @@ def join_tournament(request, pk):
     from apps.users.models import UserGameModel
 
     tournament = get_object_or_404(Tournament, pk=pk, status=Tournament.Status.OPEN)
+
+    # ── Gate P: password-protected tournament ─────────────────────────────
+    if tournament.join_password:
+        submitted_pw = request.POST.get("join_password", "").strip()
+        if not submitted_pw:
+            # No password submitted — silently redirect to the page that
+            # shows the password field (no error yet).
+            if tournament.is_money_tournament:
+                return redirect("tournaments:money_terms", pk=pk)
+            return redirect("tournaments:detail", pk=pk)
+        if submitted_pw != tournament.join_password:
+            messages.error(request, "Incorrect tournament password.")
+            if tournament.is_money_tournament:
+                return redirect("tournaments:money_terms", pk=pk)
+            return redirect("tournaments:detail", pk=pk)
 
     log.info(
         "join_tournament: user=%s tournament=%s game_type=%s type=%s",
@@ -655,9 +704,45 @@ def join_tournament(request, pk):
             )
             return redirect("games:lobby")
 
-    # ══════════════════════════════════════════════════════════════
-    # Past this point the user is fully qualified.
-    # ══════════════════════════════════════════════════════════════
+    # ── Gate M‑geo: Israeli-residents-only check (money tournaments) ──
+    _join_ip: str = ""
+    _join_country: str | None = None
+    _geo_eligible: bool | None = None
+    if tournament.is_money_tournament:
+        from .eligibility import check_geo_eligibility
+        _join_ip, _join_country, _geo_eligible = check_geo_eligibility(request)
+        if _geo_eligible is False:
+            log.warning(
+                "join_tournament BLOCKED (geo): user=%s t=%s ip=%s country=%s",
+                request.user.username, tournament.pk, _join_ip, _join_country,
+            )
+            messages.error(
+                request,
+                "This tournament is open to Israeli residents only. "
+                "Your location does not qualify. "
+                "If you believe this is an error, please contact support.",
+            )
+            return redirect("tournaments:detail", pk=pk)
+
+    # ── Gate M‑terms/paypal: profile PayPal email + terms acceptance (money tournaments) ─
+    if tournament.is_money_tournament:
+        _paypal_ok = bool(request.user.paypal_email)
+        if tournament.terms_version:
+            # Terms accepted when the POST came directly from the terms page.
+            _terms_ok = request.POST.get("terms_accepted") == "1"
+        else:
+            _terms_ok = True
+        if not _paypal_ok or not _terms_ok:
+            log.info(
+                "join_tournament PAYPAL/TERMS: user=%s t=%s — redirecting to terms page",
+                request.user.username, tournament.pk,
+            )
+            if not _paypal_ok:
+                # Message will be shown by money_tournament_terms when it redirects to profile.
+                pass
+            else:
+                messages.info(request, "Please read and accept the tournament terms before joining.")
+            return redirect("tournaments:money_terms", pk=pk)
 
     # ── Already-joined guard ──────────────────────────────────────
     if tournament.participants.filter(user=request.user).exists():
@@ -681,16 +766,38 @@ def join_tournament(request, pk):
             request.user.username, tournament.pk,
         )
 
+        # ── Store the participant's chosen AI thinking-time budget ──
+        participant_thinking = parse_thinking_seconds(request)
+        TournamentParticipant.objects.filter(
+            tournament=tournament, user=request.user,
+        ).update(ai_thinking_seconds=participant_thinking)
+
+        # ── Store money-tournament audit fields ─────────────────────
+        if tournament.is_money_tournament:
+            _paypal_email = request.user.paypal_email
+            TournamentParticipant.objects.filter(
+                tournament=tournament, user=request.user,
+            ).update(
+                join_ip=_join_ip or None,
+                join_country_code=_join_country or "",
+                geo_eligible=_geo_eligible,
+                terms_accepted_at=timezone.now(),
+                terms_version_accepted=tournament.terms_version,
+                paypal_email=_paypal_email,
+            )
+
         # Auto‑close registration and start when full
         if tournament.is_full:
             tournament.status = Tournament.Status.FULL
             tournament.save(update_fields=["status"])
 
-            # QA tournaments wait for both players to press Ready
-            if tournament.type != Tournament.Type.QA:
-                # Auto-start the tournament
-                from .engine import start_tournament
-                start_tournament(tournament)
+            from .engine import start_tournament
+            start_tournament(tournament)
+            if tournament.status == Tournament.Status.ONGOING:
+                from apps.tournaments.sha_audit import schedule_immediate_start_check
+                schedule_immediate_start_check(
+                    tournament, round_num=tournament.current_round,
+                )
 
         # Also auto-start if the scheduled start_time has passed and
         # we have at least 2 players (mirrors check_stale_tournaments).
@@ -915,6 +1022,66 @@ def _round_label(round_num, total_rounds):
         return f"Round {round_num}"
 
 
+@login_required
+def money_tournament_terms(request, pk):
+    """Show money-tournament terms of participation.
+
+    Requires the user to have a PayPal email on their profile (set via
+    the profile page). If missing, redirects them there with an explanatory
+    message.
+
+    GET  — renders the terms page.
+    POST — validates the terms acceptance checkbox (required when the
+           tournament has a terms_version). On success stores the flag in
+           the session and redirects to the normal join URL.
+    """
+    tournament = get_object_or_404(
+        Tournament,
+        pk=pk,
+        status=Tournament.Status.OPEN,
+        is_money_tournament=True,
+    )
+
+    # ── Guard: profile-level PayPal email required ────────────
+    if not request.user.paypal_email:
+        messages.warning(
+            request,
+            "Please add your PayPal email to your profile before registering "
+            "for a cash tournament. You can do this in the PayPal tab of your profile.",
+        )
+        from django.urls import reverse
+        from urllib.parse import quote
+        next_path = request.path          # e.g. /tournaments/76/terms/
+        return redirect(
+            reverse("users:profile") + "?tab=paypal&next=" + quote(next_path, safe="/")
+        )
+
+    if request.method == "POST":
+        terms_accepted = request.POST.get("terms_accepted") == "1"
+
+        # Password pre-check: validate here so we can show a nice error on
+        # the terms page before the user reaches join_tournament.
+        if tournament.join_password:
+            submitted_pw = request.POST.get("join_password", "").strip()
+            if submitted_pw != tournament.join_password:
+                messages.error(request, "Incorrect tournament password.")
+                return render(request, "tournaments/money_terms.html", {"tournament": tournament})
+
+        if tournament.terms_version and not terms_accepted:
+            messages.error(request, "You must tick the checkbox to accept the terms.")
+        else:
+            if tournament.terms_version and terms_accepted:
+                log.info(
+                    "money_tournament_terms: user=%s accepted terms v=%s for t=%s",
+                    request.user.username, tournament.terms_version, tournament.pk,
+                )
+            # Redirect to detail — the form POSTs directly to join, so this
+            # branch is only reached if someone POSTs to /terms/ directly.
+            return redirect("tournaments:detail", pk=pk)
+
+    return render(request, "tournaments/money_terms.html", {"tournament": tournament})
+
+
 # ──────────────────────────────────────────────
 # Gladiator Gauntlet views
 # ──────────────────────────────────────────────
@@ -1096,22 +1263,27 @@ def disqualified(request):
     this view just renders the page. Context is pulled from the
     session keys the middleware sets, with a graceful fallback so a
     direct visit (e.g. via bookmark) still produces a coherent page.
+
+    The raw ``disqualified_reason`` string (baseline/live SHA prefixes,
+    round details) is for admins and logs only — it is never passed to
+    the template.
     """
     from .disqualification import find_active_dq_participant
 
     tournament_name = request.session.get("dq_tournament_name") or ""
-    reason = ""
+    round_num = None
 
     participant = find_active_dq_participant(request.user)
     if participant is not None:
         tournament_name = participant.tournament.name
-        reason = getattr(participant, "disqualified_reason", "") or (
-            "Repository commit SHA changed during a live tournament round."
-        )
+        raw_reason = getattr(participant, "disqualified_reason", "") or ""
+        m = re.search(r"round\s+(\d+)", raw_reason, re.IGNORECASE)
+        if m:
+            round_num = int(m.group(1))
 
     return render(request, "tournaments/disqualified.html", {
         "tournament_name": tournament_name,
-        "reason": reason,
+        "round_num": round_num,
         "redirect_url": "/games/lobby/",
     })
 
@@ -1122,8 +1294,93 @@ def preview_disqualified(request):
         raise Http404
     return render(request, "tournaments/disqualified.html", {
         "tournament_name": "Test Tournament",
-        "reason": "Your repository SHA changed during the tournament.",
+        "round_num": 3,
         "redirect_url": "/tournaments/",
+    })
+
+
+@login_required
+def prize_claim(request, pk):
+    """Congratulations page where the winner submits their claim code."""
+    tournament = get_object_or_404(Tournament, pk=pk)
+    if tournament.champion_id != request.user.pk:
+        raise PermissionDenied
+    claim = get_object_or_404(PrizeClaim, tournament=tournament)
+
+    if request.method == "POST":
+        paypal_email = request.POST.get("paypal_email", "").strip()
+        now = timezone.now()
+
+        if (
+            claim.status == PrizeClaim.Status.PENDING
+            and claim.expires_at > now
+        ):
+            if paypal_email and paypal_email != claim.paypal_email:
+                claim.admin_notes += (
+                    f"\n[{now.isoformat()}] PayPal email updated: "
+                    f"{claim.paypal_email!r} → {paypal_email!r}"
+                )
+                claim.paypal_email = paypal_email
+            claim.status = PrizeClaim.Status.CLAIMED
+            claim.claimed_at = now
+            claim.save(update_fields=["status", "claimed_at", "paypal_email", "admin_notes"])
+
+            # Email the winner a confirmation and alert admins to process the payout.
+            try:
+                from django.core.mail import send_mail, mail_admins
+                recipient = claim.paypal_email or request.user.email
+                tournament_url = f"{settings.SITE_URL}/tournaments/{tournament.pk}/"
+                if recipient:
+                    send_mail(
+                        subject=f"\U0001f3c6 Prize claim received — {tournament.name}",
+                        message=(
+                            f"Hi {request.user.username},\n\n"
+                            f"We have received your prize claim for {tournament.name}.\n\n"
+                            f"Amount: {claim.amount} {claim.currency}\n"
+                            f"PayPal address on file: {claim.paypal_email}\n\n"
+                            f"Payouts are processed manually and typically take a few business days. "
+                            f"No further action is needed from you — we will send payment directly to "
+                            f"the PayPal address above.\n\n"
+                            f"If you have any questions, please visit:\n{tournament_url}\n\n"
+                            f"— Artificial Gladiator League"
+                        ),
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[recipient],
+                        fail_silently=False,
+                    )
+                mail_admins(
+                    subject=f"[Payout needed] {tournament.name} — {request.user.username}",
+                    message=(
+                        f"A prize claim has been submitted and requires processing.\n\n"
+                        f"Tournament : {tournament.name}\n"
+                        f"Winner     : {request.user.username}\n"
+                        f"Amount     : {claim.amount} {claim.currency}\n"
+                        f"PayPal     : {claim.paypal_email}\n"
+                        f"Claimed at : {claim.claimed_at.isoformat()}\n\n"
+                        f"Admin link : {settings.SITE_URL}/admin/tournaments/prizeclaim/{claim.pk}/change/"
+                    ),
+                )
+            except Exception:
+                log.error(
+                    "prize_claim: failed to send email for claim pk=%s tournament=%s",
+                    claim.pk, tournament.pk, exc_info=True,
+                )
+
+            return render(request, "tournaments/prize_claim.html", {
+                "tournament": tournament,
+                "claim": claim,
+                "submitted": True,
+            })
+
+        return render(request, "tournaments/prize_claim.html", {
+            "tournament": tournament,
+            "claim": claim,
+            "error": True,
+        })
+
+    return render(request, "tournaments/prize_claim.html", {
+        "tournament": tournament,
+        "claim": claim,
     })
 
 

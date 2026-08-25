@@ -88,16 +88,16 @@
         <table class="stats-table lb-table text-sm w-full" id="lbTable">
       <thead>
         <tr>
-          <th class="text-left">AG Champion</th>
+          <th class="text-left !normal-case">AG Champion</th>
           <th class="!text-right whitespace-nowrap sortable sorted" data-col="elo" data-dir="desc">
             <span id="eloColHeader">{% if active_game_type == "breakthrough" %}BT Elo{% else %}Chess Elo{% endif %}</span><span class="sort-arrow">▼</span>
           </th>
-          <th class="!text-center w-24">Title</th>
-          <th class="!text-right sortable" data-col="wins">W<span class="sort-arrow">▲</span></th>
-          <th class="!text-right sortable" data-col="losses">L<span class="sort-arrow">▲</span></th>
-          <th class="!text-right sortable" data-col="draws">D<span class="sort-arrow">▲</span></th>
-          <th class="!text-right sortable" data-col="win_pct">Win %<span class="sort-arrow">▲</span></th>
-          <th class="!text-right sortable" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
+          <th class="!text-center w-24 !normal-case">Title</th>
+          <th class="!text-right sortable !normal-case" data-col="wins">Wins<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable !normal-case" data-col="losses">Losses<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable !normal-case" data-col="draws">Draws<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable !normal-case" data-col="win_pct">Win %<span class="sort-arrow">▲</span></th>
+          <th class="!text-right sortable !normal-case" data-col="streak">Streak<span class="sort-arrow">▲</span></th>
         </tr>
       </thead>
       <tbody id="lbBody">
@@ -108,9 +108,9 @@
             {% if active_game_type == "breakthrough" %}{{ p.elo_breakthrough }}{% else %}{{ p.elo_chess }}{% endif %}
           </td>
           <td class="text-center">
-            <span class="{{ p.get_category.css }}" title="{{ p.get_category.tier }}">
-              {{ p.get_category.icon }}
-              <span class="text-xs ml-0.5">{{ p.get_category.tier }}</span>
+            <span class="{{ p.display_category.css }}" title="{{ p.display_category.tier }}">
+              {{ p.display_category.icon }}
+              <span class="text-xs ml-0.5">{{ p.display_category.tier }}</span>
             </span>
           </td>
           <td class="text-right text-green-400">{{ p.wins }}</td>

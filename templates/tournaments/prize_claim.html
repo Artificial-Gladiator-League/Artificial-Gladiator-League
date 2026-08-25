@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Champion — {{ tournament.name }} | Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-2xl mx-auto">
+
+  <div class="mb-6">
+    <a href="{% url 'tournaments:detail' tournament.pk %}"
+       class="text-xs text-gray-500 hover:text-brand transition">← Back to tournament</a>
+    <h1 class="text-2xl font-bold mt-2">Congratulations, Champion.</h1>
+    <p class="text-sm text-gray-400 mt-1">{{ tournament.name }}</p>
+  </div>
+
+  {% if submitted %}
+  <!-- ── Claim confirmed ── -->
+  <div class="rounded-lg border border-green-600/40 bg-green-900/20 p-5 mb-6">
+    <p class="text-lg font-semibold text-green-300 mb-2">Claim received.</p>
+    <p class="text-sm text-gray-300">
+      Your claim for
+      <strong class="text-white">{{ claim.amount }} {{ claim.currency }}</strong>
+      has been recorded and is pending review. Payment will be sent to
+      <strong class="text-white">{{ claim.paypal_email }}</strong> via PayPal once approved.
+    </p>
+    <p class="text-sm text-gray-400 mt-3">
+      Payouts are processed manually by our team. Please allow a few business days —
+      you will receive the funds at the address above once your claim has been verified.
+      No further action is required.
+    </p>
+  </div>
+  <a href="{% url 'games:lobby' %}" class="btn-brand inline-block py-2.5 px-8 text-sm font-semibold mt-2">
+    Return to Lobby
+  </a>
+
+  {% else %}
+
+  <!-- ── Prize summary ── -->
+  <div class="rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-4 mb-6">
+    <p class="font-semibold text-yellow-300">
+      Prize: {{ claim.amount }} {{ claim.currency }}
+    </p>
+    <p class="text-xs text-gray-400 mt-1">
+      {{ tournament.name }} is over. Your AG was the last one standing in the arena,
+      and the prize belongs to you. Complete the form below to submit your official
+      claim and begin the payout process.
+    </p>
+  </div>
+
+  {% if error %}
+  <div class="rounded px-4 py-2 text-sm bg-red-900/30 text-red-300 border border-red-700 mb-5">
+    Your claim could not be processed. The claim may have expired or already been submitted.
+    If you believe this is an error, please contact support.
+  </div>
+  {% endif %}
+
+  {% if claim.status == claim.Status.CLAIMED %}
+  <div class="rounded-lg border border-blue-600/40 bg-blue-900/20 p-4 mb-6">
+    <p class="text-sm font-semibold text-blue-300 mb-1">Claim submitted.</p>
+    <p class="text-sm text-gray-300">
+      Your claim for {{ tournament.name }} was recorded on {{ claim.claimed_at|date:"N j, Y" }}
+      and is currently pending review.
+      Payment will be sent to <strong class="text-white">{{ claim.paypal_email }}</strong> once approved.
+    </p>
+  </div>
+  <a href="{% url 'games:lobby' %}" class="btn-brand inline-block py-2.5 px-8 text-sm font-semibold mt-2">
+    Return to Lobby
+  </a>
+
+  {% elif claim.status == claim.Status.PAID %}
+  <div class="rounded-lg border border-green-600/40 bg-green-900/20 p-4 mb-6">
+    <p class="text-sm font-semibold text-green-300 mb-1">Prize paid.</p>
+    <p class="text-sm text-gray-300">
+      Your prize was paid on {{ claim.paid_at|date:"N j, Y" }}.
+    </p>
+  </div>
+
+  {% elif claim.status == claim.Status.EXPIRED %}
+  <div class="rounded-lg border border-red-600/40 bg-red-900/20 p-4 mb-6">
+    <p class="text-sm font-semibold text-red-300 mb-1">This claim has expired.</p>
+    <p class="text-sm text-gray-300">
+      The claim window for {{ tournament.name }} closed on {{ claim.expires_at|date:"N j, Y" }}
+      without a submission being recorded.
+      If you believe this is an error, please contact support.
+    </p>
+  </div>
+
+  {% else %}
+  <!-- ── Claim form (status=PENDING) ── -->
+  <div class="rounded-lg border border-gray-700 bg-gray-800 p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 tracking-widest mb-4">Submit Your Claim</h2>
+
+    <form method="post">
+      {% csrf_token %}
+
+      <!-- PayPal email (editable snapshot) -->
+      <div class="mb-5">
+        <label for="paypal_email" class="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
+          PayPal Payout Address
+        </label>
+        <p class="text-xs text-gray-500 mb-2">
+          Pre-filled from your profile. Verify it carefully — this is where your prize
+          will be sent. Update it here if needed before submitting.
+        </p>
+        <input
+          type="email"
+          id="paypal_email"
+          name="paypal_email"
+          value="{{ claim.paypal_email }}"
+          class="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-brand focus:outline-none"
+        />
+      </div>
+
+      <button type="submit"
+              class="btn-brand w-full py-2.5 text-sm font-semibold">
+        Claim Your Prize
+      </button>
+    </form>
+
+    <p class="text-xs text-gray-500 mt-4">
+      This claim expires on {{ claim.expires_at|date:"N j, Y" }}.
+      Payouts are processed manually and typically take a few business days after your claim is reviewed.
+    </p>
+  </div>
+  {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}

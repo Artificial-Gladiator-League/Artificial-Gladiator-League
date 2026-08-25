@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Tournament Terms — {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-2xl mx-auto">
+
+  <div class="mb-6">
+    <a href="{% url 'tournaments:detail' tournament.pk %}"
+       class="text-xs text-gray-500 hover:text-brand transition">← Back to tournament</a>
+    <h1 class="text-2xl font-bold mt-2">
+      Money Tournament — Terms &amp; Conditions
+    </h1>
+    <p class="text-sm text-gray-400 mt-1">{{ tournament.name }}</p>
+  </div>
+
+  <!-- Prize summary -->
+  {% if tournament.prize_amount %}
+  <div class="rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-4 mb-6 flex items-center gap-3">
+    <span class="text-2xl"></span>
+    <div>
+      <p class="font-semibold text-yellow-300">
+        Prize: {{ tournament.prize_amount }} {{ tournament.prize_currency }}
+      </p>
+      <p class="text-xs text-gray-400 mt-0.5">
+        Awarded to the tournament champion. Eligibility and payout subject to the terms below.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Geo restriction notice -->
+  <div class="rounded-lg border border-blue-600/40 bg-blue-900/20 p-4 mb-6">
+    <p class="text-sm font-semibold text-blue-300 mb-1">Eligibility restriction</p>
+    <p class="text-sm text-gray-300">
+      This tournament is open to <strong>Israeli residents only</strong>.
+      Your location will be verified at registration. Participants found to be
+      ineligible after winning may forfeit the prize.
+    </p>
+  </div>
+
+  <!-- Terms text -->
+  <div class="rounded-lg border border-gray-700 bg-gray-800 p-5 mb-6">
+    <h2 class="text-sm font-semibold text-gray-300 tracking-widest mb-3">
+      Terms of Participation{% if tournament.terms_version %} — v{{ tournament.terms_version }}{% endif %}
+    </h2>
+    {% if tournament.terms_text %}
+    <div class="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">{{ tournament.terms_text }}</div>
+    {% else %}
+    <ul class="text-sm text-gray-300 space-y-2 list-disc list-inside">
+      <li>This is a <strong>private tournament</strong>. Participation is restricted to invited Israeli residents who know the tournament password.</li>
+      <li>Participation is open only to Israeli residents aged 18 and above.</li>
+      <li>By joining, you declare that you are an Israeli resident. Winners will be required to provide proof of residency before receiving the prize.</li>
+      <li>The prize will be paid to the verified champion within 30 days of tournament completion, subject to full eligibility and anti-cheat verification.</li>
+      <li>Any attempt to circumvent eligibility rules, share the password publicly, use multiple accounts, or violate the anti-cheat system will result in immediate disqualification and forfeiture of the prize.</li>
+      <li>Artificial Gladiator reserves the right to withhold the prize pending eligibility verification, at its sole discretion.</li>
+      <li>By joining you confirm that all information you provided is accurate and that you meet the eligibility requirements.</li>
+    </ul>
+    {% endif %}
+  </div>
+
+  <!-- PayPal email confirmation -->
+  <div class="rounded-lg border border-green-700/40 bg-green-900/15 p-4 mb-6 flex items-center gap-3">
+    <span class="text-xl">💳</span>
+    <div class="text-sm">
+      <p class="text-green-300 font-medium">Payout address on file</p>
+      <p class="text-gray-300 mt-0.5">
+        Prize will be sent to your payout email:
+        <strong class="text-white">{{ request.user.paypal_email }}</strong>
+      </p>
+      <p class="text-gray-500 mt-1 text-xs">
+        Need to change it? <a href="{% url 'users:profile' %}?tab=paypal" class="text-brand hover:underline">Update in your profile</a>.
+      </p>
+    </div>
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}
+    <div class="rounded px-4 py-2 text-sm
+      {% if message.tags == 'error' %}bg-red-900/30 text-red-300 border border-red-700
+      {% else %}bg-yellow-900/30 text-yellow-300 border border-yellow-700{% endif %}">
+      {{ message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Acceptance form -->
+  <form method="post" action="{% url 'tournaments:join' tournament.pk %}">
+    {% csrf_token %}
+
+    {% if tournament.join_password %}
+    <div class="rounded-lg border border-purple-700/50 bg-purple-900/20 p-4 mb-5">
+      <label for="join_password_input" class="block text-sm font-semibold text-purple-300 mb-2">
+        🔒 Tournament Password
+      </label>
+      <input
+        type="password"
+        id="join_password_input"
+        name="join_password"
+        required
+        autocomplete="off"
+        placeholder="Enter the tournament password"
+        class="w-full max-w-sm rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+      >
+      <p class="text-xs text-gray-500 mt-1.5">This tournament is invite-only. You must know the password to join.</p>
+    </div>
+    {% endif %}
+
+    <label class="flex items-start gap-3 cursor-pointer mb-6 group">
+      <input type="checkbox" name="terms_accepted" value="1"
+             class="mt-1 w-4 h-4 accent-brand shrink-0" required>
+      <span class="text-sm text-gray-300 group-hover:text-white transition">
+        I confirm that I am an Israeli resident, I have read and understood the terms above,
+        and I agree to be bound by them.
+      </span>
+    </label>
+
+    <div class="mb-6">
+      <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Time per move (AI thinking)</label>
+      <p class="text-xs text-gray-500 mt-2">Target pace for AI moves. Actual time depends on how the opponent's model is hosted — some models respond slower than others.</p>
+      <div class="flex flex-wrap gap-2 mt-2" data-thinking-group>
+        <button type="button" class="thinking-btn tc-btn" data-val="3">3s</button>
+        <button type="button" class="thinking-btn tc-btn active" data-val="5">5s</button>
+        <button type="button" class="thinking-btn tc-btn" data-val="8">8s</button>
+        <button type="button" class="thinking-btn tc-btn" data-val="12">12s</button>
+        <button type="button" class="thinking-btn tc-btn" data-val="15">15s</button>
+        <input type="hidden" name="ai_thinking_seconds" value="5" data-thinking-input>
+      </div>
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit"
+              class="btn-outline px-6 py-2 text-sm font-semibold">
+        Accept &amp; Join Tournament
+      </button>
+      <a href="{% url 'tournaments:detail' tournament.pk %}"
+         class="btn-outline px-6 py-2 text-sm font-semibold">
+        Cancel
+      </a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // Time-per-move (AI thinking) button group on the join form.
+  document.querySelectorAll('[data-thinking-group]').forEach(group => {
+    const input = group.querySelector('[data-thinking-input]');
+    const btns = group.querySelectorAll('.thinking-btn');
+    btns.forEach(b => b.addEventListener('click', () => {
+      btns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      input.value = b.dataset.val;
+    }));
+  });
+})();
+</script>
+{% endblock %}

@@ -23,8 +23,6 @@ from apps.games.breakthrough_engine import (
 
 log = logging.getLogger(__name__)
 
-_SPACE_TIMEOUT = 20  # seconds
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Public API
@@ -36,8 +34,8 @@ def get_move(
     hf_token: str | None = None,
     *,
     endpoint_url: str | None = None,
-) -> str:
-    """Return a UCI move string for the given Breakthrough position.
+) -> tuple[str, float]:
+    """Return ``(uci_move, latency_seconds)`` for the given Breakthrough position.
 
     Calls the HF Gradio Space for ``hf_repo_id`` via the two-step
     Gradio 4 API (same pattern as predict_chess).  Falls back to a
@@ -61,7 +59,7 @@ def get_move(
     all_legal = legal_moves(fen)
     if not all_legal:
         log.error("No legal moves available -- position: %s", fen)
-        return "0000"
+        return "0000", _time.monotonic() - _t0
 
     log.info("[BT] get_move: fen=%.60s player=%s repo=%s", fen, player, hf_repo_id)
 
@@ -70,19 +68,21 @@ def get_move(
         base_url = endpoint_url or _space_base_url(hf_repo_id)
         move = _try_space_api(base_url, fen, player, all_legal, token=hf_token)
         if move:
+            latency = _time.monotonic() - _t0
             log.info(
                 "[BT] Space move: %s (%.2fs) repo=%s",
-                move, _time.monotonic() - _t0, hf_repo_id,
+                move, latency, hf_repo_id,
             )
-            return move
+            return move, latency
 
     # -- Priority 2: random legal move --
     move = _random_legal_move(all_legal)
+    latency = _time.monotonic() - _t0
     log.warning(
         "[BT] Random fallback move: %s (%.2fs) repo=%s",
-        move, _time.monotonic() - _t0, hf_repo_id,
+        move, latency, hf_repo_id,
     )
-    return move
+    return move, latency
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -115,8 +115,13 @@ def _space_base_url(hf_repo_id: str) -> str:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Gradio RPC call  (POST /run/predict — same pattern as predict_chess)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-_SPACE_TIMEOUT = 20  # seconds
+_SUBMIT_TIMEOUT = 5    # the submit step should be near-instant if the Space is awake
+_STREAM_TIMEOUT = 20   # actual inference can legitimately take longer
 _GRADIO_FN = "get_move"   # matches api_name="get_move" in space_app.py
+
+# Reused across calls so repeat requests to the same Space keep the
+# underlying TCP/TLS connection alive instead of re-handshaking every move.
+_session = requests.Session()
 
 
 def _try_space_api(
@@ -140,21 +145,28 @@ def _try_space_api(
         headers["Authorization"] = f"Bearer {token}"
 
     try:
-        resp = requests.post(
+        _t_submit0 = _time.monotonic()
+        resp = _session.post(
             submit_url,
             json={"data": [fen, player]},  # match your Space's inputs
             headers=headers,
-            timeout=_SPACE_TIMEOUT,
+            timeout=_SUBMIT_TIMEOUT,
         )
         resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            log.warning("[BT] Space appears asleep/booting (non-JSON response, url=%s)", submit_url)
+            return None
         event_id = resp.json().get("event_id")
+        _t_submit = _time.monotonic() - _t_submit0
         if not event_id:
             log.warning("[BT] Space submit returned no event_id (url=%s)", submit_url)
             return None
 
         result_url = f"{base}/gradio_api/call/{_GRADIO_FN}/{event_id}"
         log.info("[BT] Calling: %s", submit_url)
-        stream = requests.get(result_url, stream=True, timeout=_SPACE_TIMEOUT)
+        _t_stream0 = _time.monotonic()
+        stream = _session.get(result_url, stream=True, timeout=_STREAM_TIMEOUT)
         stream.raise_for_status()
 
         move_str: str | None = None
@@ -185,6 +197,9 @@ def _try_space_api(
                 fen, base_url,
             )
             return None
+
+        _t_stream = _time.monotonic() - _t_stream0
+        log.info("[BT][timing] submit=%.2fs stream=%.2fs url=%s", _t_submit, _t_stream, base_url)
 
         if is_legal_move(fen, move_str):
             return move_str

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 
 import requests
 from django.conf import settings
@@ -34,6 +35,11 @@ log = logging.getLogger(__name__)
 _HF_API_TIMEOUT = int(os.environ.get("HF_API_TIMEOUT", "30"))
 
 _SERVERLESS_BASE = "https://api-inference.huggingface.co/models"
+
+# Reused across calls so repeat requests to the same host keep the
+# underlying TCP/TLS connection alive instead of re-handshaking every move.
+_session = requests.Session()
+_session.headers.update({"Content-Type": "application/json"})
 
 
 def _platform_token() -> str | None:
@@ -75,7 +81,7 @@ def get_move_api(
     headers["Content-Type"] = "application/json"
 
     try:
-        resp = requests.post(
+        resp = _session.post(
             url,
             json={"inputs": fen},
             headers=headers,
@@ -96,6 +102,28 @@ def get_move_api(
         text = resp.text.strip()
         log.debug("HF API plain-text response for repo=%s: %r", repo_id, text)
         return text or None
+
+    # HF serverless "cold start": the model is still loading and returned
+    # HTTP 200 with {"error": ..., "estimated_time": ...} instead of a move.
+    # Wait the reported time (capped) and retry exactly once so a genuinely
+    # broken endpoint still fails fast rather than hanging indefinitely.
+    if isinstance(data, dict) and "error" in data and "estimated_time" in data:
+        wait = min(float(data["estimated_time"]), 10.0)
+        log.info("HF model cold-starting for repo=%s, waiting %.1fs then retrying", repo_id, wait)
+        time.sleep(wait)
+        try:
+            resp = _session.post(url, json={"inputs": fen}, headers=headers, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.exceptions.Timeout:
+            log.warning("HF API timeout on cold-start retry for repo=%s url=%s", repo_id, url)
+            return None
+        except requests.exceptions.RequestException as exc:
+            log.warning("HF API request failed on cold-start retry for repo=%s: %s", repo_id, exc)
+            return None
+        except Exception:
+            log.warning("HF API cold-start retry returned non-JSON for repo=%s", repo_id)
+            return None
 
     # Parse structured response — accept several common layouts
     move = _extract_move(data)

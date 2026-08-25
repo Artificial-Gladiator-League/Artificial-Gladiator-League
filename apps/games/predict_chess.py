@@ -23,8 +23,13 @@ log = logging.getLogger(__name__)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Space URL resolution
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-_SPACE_TIMEOUT = 20  # seconds (Gradio SSE stream)
+_SUBMIT_TIMEOUT = 5    # the submit step should be near-instant if the Space is awake
+_STREAM_TIMEOUT = 20   # actual inference can legitimately take longer
 _GRADIO_FN = "get_move"      # Gradio named endpoint exposed by the Space
+
+# Reused across calls so repeat requests to the same Space keep the
+# underlying TCP/TLS connection alive instead of re-handshaking every move.
+_session = requests.Session()
 
 # Fallback map for known repos whose Space URL can't be derived automatically.
 # The Space owner/name on HF need not match the model repo owner/name.
@@ -169,14 +174,20 @@ def _try_space_api(
 
     try:
         # Step 1 — submit
-        resp = requests.post(
+        _t_submit0 = _time.monotonic()
+        resp = _session.post(
             submit_url,
             json={"data": [fen]},
             headers=headers,
-            timeout=_SPACE_TIMEOUT,
+            timeout=_SUBMIT_TIMEOUT,
         )
         resp.raise_for_status()
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            log.warning("Space appears asleep/booting (non-JSON response, url=%s)", submit_url)
+            return None
         event_id = resp.json().get("event_id")
+        _t_submit = _time.monotonic() - _t_submit0
         if not event_id:
             log.warning("Space submit returned no event_id (url=%s)", submit_url)
             return None
@@ -184,7 +195,8 @@ def _try_space_api(
         # Step 2 — stream result
         result_url = f"{base}/gradio_api/call/{_GRADIO_FN}/{event_id}"
         log.info("Calling: %s", submit_url)
-        stream = requests.get(result_url, stream=True, timeout=_SPACE_TIMEOUT)
+        _t_stream0 = _time.monotonic()
+        stream = _session.get(result_url, stream=True, timeout=_STREAM_TIMEOUT)
         stream.raise_for_status()
 
         move_str: str | None = None
@@ -209,6 +221,9 @@ def _try_space_api(
                 # data line follows its event line — stop after reading it
                 if complete_seen or error_seen:
                     break
+
+        _t_stream = _time.monotonic() - _t_stream0
+        log.info("[timing] submit=%.2fs stream=%.2fs url=%s", _t_submit, _t_stream, base_url)
 
         if not move_str:
             log.warning("Space SSE returned no move for FEN=%s url=%s", fen, base_url)

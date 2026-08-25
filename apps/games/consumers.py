@@ -697,7 +697,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Play moves in a loop until the game ends
         while True:
             # Small delay so the UI can render each move
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.15)
 
             result = await self._bot_make_move(white_bot, black_bot)
 
@@ -710,6 +710,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                         "data": forfeit["game_over"],
                     })
                 break
+
+            # Await the thinking delay on the event loop so concurrent games don't serialize
+            thinking_delay = result.get("thinking_delay", 0.0)
+            if thinking_delay > 0:
+                log.debug("[thinking-time] game=%s sleeping %.3fs before broadcast", self.game_id, thinking_delay)
+                await asyncio.sleep(thinking_delay)
 
             # Broadcast the new state
             if result.get("state"):
@@ -736,7 +742,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         """Get the current side's bot to produce a move and process it."""
         from django.utils import timezone
         from .models import Game
-        from .bot_runner import get_bot_move
+        from .bot_runner import get_bot_move, compute_thinking_delay
         from .chess_engine import (
             make_move, apply_increment, apply_time_spent,
             create_armageddon, resolve_armageddon_draw,
@@ -808,7 +814,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 }
 
         # Ask the bot for a move
-        uci = get_bot_move(bot, game.current_fen, time_left=bot_time, opponent_time=opp_time)
+        uci, bot_elapsed = get_bot_move(bot, game.current_fen, time_left=bot_time, opponent_time=opp_time)
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
 
@@ -846,6 +852,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                 }
         else:
             game.save()
+
+        target_secs = game.white_thinking_seconds if moving_color == chess.WHITE else game.black_thinking_seconds
+        result["thinking_delay"] = compute_thinking_delay(bot_elapsed, target_secs, repo=getattr(bot, 'hf_repo_id', None))
 
         return result
 
@@ -1025,7 +1034,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _run_bt_bot_loop(self):
         """Run the AI-vs-AI loop for Breakthrough using random legal moves."""
         while True:
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.15)
             result = await self._bt_bot_make_move()
 
             if result.get("error"):
@@ -1036,6 +1045,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                         "data": forfeit["game_over"],
                     })
                 break
+
+            # Await the thinking delay on the event loop so concurrent games don't serialize
+            thinking_delay = result.get("thinking_delay", 0.0)
+            if thinking_delay > 0:
+                log.debug("[thinking-time] game=%s sleeping %.3fs before broadcast", self.game_id, thinking_delay)
+                await asyncio.sleep(thinking_delay)
 
             if result.get("state"):
                 await self.channel_layer.group_send(self.group_name, {
@@ -1056,7 +1071,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         from django.utils import timezone
         from .models import Game
         from . import breakthrough_engine as bt
-        from .bot_runner import _get_bot_move, _get_repo_for_user
+        from .bot_runner import _get_bot_move, _get_repo_for_user, compute_thinking_delay
 
         try:
             game = Game.objects.select_related("white", "black").get(pk=self.game_id)
@@ -1112,7 +1127,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 }
 
         repo = _get_repo_for_user(current_user, "breakthrough") or ""
-        uci = _get_bot_move("breakthrough", game.current_fen, turn, repo)
+        uci, bt_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo)
 
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
@@ -1134,6 +1149,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             result["game_over"] = self._build_game_over(game)
         else:
             game.save()
+
+        target_secs = game.white_thinking_seconds if turn == bt.WHITE else game.black_thinking_seconds
+        result["thinking_delay"] = compute_thinking_delay(bt_elapsed, target_secs, repo=repo or None)
 
         return result
 

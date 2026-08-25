@@ -52,10 +52,29 @@
           </form>
         {% else %}
           {% if can_join %}
-            <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline">
+            {% if tournament.is_money_tournament %}
+              <a href="{% url 'tournaments:money_terms' tournament.pk %}"
+                 class="btn-brand text-xs py-1.5 px-4 inline-block">
+                Register
+              </a>
+            {% else %}
+            <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline-flex flex-col items-start gap-0.5">
               {% csrf_token %}
-              <button type="submit" class="btn-brand text-xs py-1.5 px-4">Join — Free</button>
+              <div class="flex items-center gap-2">
+                <span class="thinking-picker inline-flex flex-wrap items-center gap-1" data-thinking-group>
+                  <span class="text-[10px] uppercase text-gray-500 mr-1">Think</span>
+                  <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="3">3s</button>
+                  <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1 active" data-val="5">5s</button>
+                  <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="8">8s</button>
+                  <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="12">12s</button>
+                  <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="15">15s</button>
+                  <input type="hidden" name="ai_thinking_seconds" value="5" data-thinking-input>
+                </span>
+                <button type="submit" class="btn-brand text-xs py-1.5 px-4">Join — Free</button>
+              </div>
+              <p class="text-xs text-gray-500">Target pace for your AI’s moves. Actual time depends on how your model is hosted — Spaces on free tier can be slower.</p>
             </form>
+            {% endif %}
           {% elif games_remaining > 0 %}
             {# New/cooldown users: no button at all, just the games-to-go hint #}
             <span class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-700/50">
@@ -94,10 +113,16 @@
       {% endif %}
     {% elif tournament.status == 'ongoing' %}
       <span class="status-live">Live — Round {{ tournament.current_round }}</span>
+      {% if my_live_match %}
+        <a href="{% url 'tournaments:live_match' tournament.pk my_live_match.pk %}"
+           class="btn-brand text-sm py-1.5 px-5">
+          ▶️ Resume Your Match — Round {{ my_live_match.round_num }} →
+        </a>
+      {% endif %}
     {% elif tournament.status == 'completed' %}
       <span class="status-completed">Completed</span>
       {% if tournament.champion %}
-        <span class="text-brand font-semibold text-sm">🏆 Champion: {{ tournament.champion.country_flag|safe }} {% fide_badge tournament.champion %} {{ tournament.champion.username }}</span>
+        <span class="text-brand font-semibold text-sm">Champion: {{ tournament.champion.country_flag|safe }} {% fide_badge tournament.champion %} {{ tournament.champion.username }}</span>
       {% endif %}
     {% endif %}
 
@@ -150,13 +175,30 @@
     {% if user.is_authenticated %}
       {% if not is_participant and tournament.status == 'open' %}
         {% if can_join %}
-          <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline-block w-full sm:w-auto">
+          {% if tournament.is_money_tournament %}
+            <a href="{% url 'tournaments:money_terms' tournament.pk %}"
+               class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
+              Register
+            </a>
+          {% else %}
+          <form method="post" action="{% url 'tournaments:join' tournament.pk %}" class="inline-block w-full sm:w-auto space-y-2">
             {% csrf_token %}
+            <span class="thinking-picker flex flex-wrap items-center justify-center gap-1" data-thinking-group>
+              <span class="text-[10px] uppercase text-gray-500 mr-1">Think</span>
+              <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="3">3s</button>
+              <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1 active" data-val="5">5s</button>
+              <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="8">8s</button>
+              <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="12">12s</button>
+              <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="15">15s</button>
+              <input type="hidden" name="ai_thinking_seconds" value="5" data-thinking-input>
+            </span>
+            <p class="text-xs text-gray-500">Target pace for your AI’s moves. Actual time depends on how your model is hosted — Spaces on free tier can be slower.</p>
             <button type="submit"
                     class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
               ♟ Register
             </button>
           </form>
+          {% endif %}
         {% elif games_remaining == 0 %}
           {# Only show the disabled Register button for non-games-remaining blocks (e.g. unverified) #}
           <button type="button" disabled
@@ -197,30 +239,12 @@
           </div>
           {% endif %}
         {% endif %}
-      {% elif is_participant and tournament.status == 'full' and not user_ready %}
-        <div class="flex flex-wrap items-center gap-3">
-          <form method="post" action="{% url 'tournaments:ready' tournament.pk %}" class="inline" id="readyForm">
-            {% csrf_token %}
-            <button type="submit" class="btn-brand text-sm py-2.5 px-8" id="readyBtn">
-              ✓ Ready
-            </button>
-          </form>
-          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
-            {% csrf_token %}
-            <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
-          </form>
-        </div>
-        <p class="text-xs text-gray-500 mt-2">Press Ready when you want to start. Game begins when both players are ready.</p>
-      {% elif is_participant and tournament.status == 'full' and user_ready %}
+      {% elif is_participant and tournament.status == 'full' %}
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-3 text-sm text-green-400">
             <span class="spinner"></span>
-            <span>You are ready — waiting for opponent…</span>
+            <span>Tournament starting…</span>
           </div>
-          <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
-            {% csrf_token %}
-            <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
-          </form>
         </div>
       {% elif is_participant and tournament.status == 'open' %}
         <div class="flex flex-wrap items-center gap-3">
@@ -231,7 +255,7 @@
           </form>
         </div>
       {% elif not is_participant and tournament.status == 'full' %}
-        <p class="text-sm text-gray-500">This tournament is full. Waiting for players to ready up.</p>
+        <p class="text-sm text-gray-500">This tournament is full and starting.</p>
       {% endif %}
     {% else %}
       <p class="text-sm text-gray-500">Log in to join this tournament.</p>
@@ -276,7 +300,7 @@
               {{ qa_match.player2.country_flag|safe }} {% fide_badge qa_match.player2 %} {{ qa_match.player2.username }}
             </span>
             {% if qa_match.winner %}
-              <span class="text-brand text-xs font-semibold">🏆 {% fide_badge qa_match.winner %} {{ qa_match.winner.username }} wins</span>
+              <span class="text-brand text-xs font-semibold"> {% fide_badge qa_match.winner %} {{ qa_match.winner.username }} wins</span>
             {% endif %}
           </div>
           <a href="{% url 'tournaments:live_match' tournament.pk qa_match.pk %}"
@@ -376,7 +400,55 @@
   <!-- ═══════════════════════════════════════════
        Tournament Rules / Info
        ═══════════════════════════════════════════ -->
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+
+  {% if tournament.is_money_tournament or tournament.join_password or tournament.category %}
+  <div class="mt-6 rounded-lg border border-gray-700 bg-gray-800/60 p-4 space-y-2">
+    <h3 class="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">Eligibility &amp; Access</h3>
+    <div class="flex flex-wrap gap-3 text-sm">
+
+      {% if tournament.join_password %}
+      <div class="flex items-center gap-2 rounded-lg border border-purple-700/50 bg-purple-900/20 px-3 py-2">
+        <span class="text-purple-300"></span>
+        <div>
+          <p class="text-purple-300 font-semibold text-xs">Password Protected</p>
+          <p class="text-gray-400 text-xs">Invite-only — you must know the tournament password to join.</p>
+        </div>
+      </div>
+      {% else %}
+      <div class="flex items-center gap-2 rounded-lg border border-green-700/40 bg-green-900/15 px-3 py-2">
+        <span class="text-green-400"></span>
+        <div>
+          <p class="text-green-300 font-semibold text-xs">Open to All</p>
+          <p class="text-gray-400 text-xs">No password required — any eligible player may join.</p>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if tournament.is_money_tournament %}
+      <div class="flex items-center gap-2 rounded-lg border border-blue-700/40 bg-blue-900/20 px-3 py-2">
+        <span class="text-blue-300"></span>
+        <div>
+          <p class="text-blue-300 font-semibold text-xs">Israeli Residents Only</p>
+          <p class="text-gray-400 text-xs">Entry restricted by IP geolocation. Winners must verify residency before payout.</p>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if tournament.category %}
+      <div class="flex items-center gap-2 rounded-lg border border-yellow-700/40 bg-yellow-900/15 px-3 py-2">
+        <span class="text-yellow-300"></span>
+        <div>
+          <p class="text-yellow-300 font-semibold text-xs">{{ tournament.get_category_display }}</p>
+          <p class="text-gray-400 text-xs">ELO range restriction applies. Check your profile to verify eligibility.</p>
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 sm:grid-cols-5 gap-4 mt-6">
     <div class="card text-center">
       <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Format</p>
       <p class="font-medium">Single Elimination</p>
@@ -397,6 +469,34 @@
       <p class="font-medium text-green-400">Free</p>
       <p class="text-xs text-gray-400 mt-0.5">No entry fee</p>
     </div>
+    {% if tournament.is_money_tournament and tournament.prize_amount %}
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Prize Pool</p>
+      <p class="font-medium text-yellow-300"> {{ tournament.prize_amount }} {{ tournament.prize_currency }}</p>
+      {% if tournament.prize_structure %}
+      <div class="mt-2 space-y-1">
+        {% for tier in tournament.prize_structure %}
+        <div class="flex items-center justify-between text-xs px-1">
+          <span class="text-gray-400">{{ tier.label }}</span>
+          <span class="font-semibold text-yellow-200">{{ tier.amount }} {{ tournament.prize_currency }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-xs text-gray-400 mt-0.5">Cash prize for champion</p>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="card text-center">
+      <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Access</p>
+      {% if tournament.join_password %}
+        <p class="font-medium text-purple-300"> Private</p>
+        <p class="text-xs text-gray-400 mt-0.5">Password required</p>
+      {% else %}
+        <p class="font-medium text-green-400">Public</p>
+        <p class="text-xs text-gray-400 mt-0.5">Open registration</p>
+      {% endif %}
+    </div>
   </div>
 
 </div>
@@ -405,6 +505,19 @@
 
 {% block extra_js %}
 <script>
+(function () {
+  // Time-per-move (AI thinking) button groups on the join forms.
+  document.querySelectorAll('[data-thinking-group]').forEach(group => {
+    const input = group.querySelector('[data-thinking-input]');
+    const btns = group.querySelectorAll('.thinking-btn');
+    btns.forEach(b => b.addEventListener('click', () => {
+      btns.forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      input.value = b.dataset.val;
+    }));
+  });
+})();
+
 (function () {
   const wsDot   = document.getElementById('wsDot');
   const wsLabel  = document.getElementById('wsLabel');

@@ -26,7 +26,7 @@ from django.conf import settings
 log = logging.getLogger(__name__)
 
 # Delay between moves so WS spectators can follow along (seconds).
-MOVE_DELAY = 0.8
+MOVE_DELAY = 0.15
 
 _MOVE_TIMER = time.monotonic  # alias for timing
 
@@ -53,6 +53,30 @@ def _get_repo_for_user(user, game_type: str) -> str | None:
     return repo
 
 
+def _prewarm_spaces(game_type: str, white_repo: str | None, black_repo: str | None) -> None:
+    """Fire-and-forget GET to each side's Space to kick off wake-up early.
+
+    Called right before the move loop starts so a sleeping HF Space has a
+    head start booting before the first real move is requested. Any
+    failure here is swallowed — this is purely a latency optimization.
+    """
+    import requests
+
+    if game_type == "breakthrough":
+        from apps.games.predict_breakthrough import _space_base_url as _resolve_url
+    else:
+        from apps.games.predict_chess import _space_url_for as _resolve_url
+
+    for repo in (white_repo, black_repo):
+        if not repo:
+            continue
+        try:
+            base_url = _resolve_url(repo)
+            requests.get(base_url, timeout=3)
+        except Exception:
+            log.debug("Pre-warm ping failed for repo=%s", repo, exc_info=True)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Move dispatch — routes to the correct predict_*
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -61,31 +85,29 @@ def _get_bot_move(
     fen: str,
     player: str,
     hf_repo_id: str,
-) -> str | None:
+) -> tuple[str | None, float]:
     """Ask the appropriate predict module for a move.
 
     *game_type* — ``'chess'`` or ``'breakthrough'``
-    Returns a UCI string, or ``None`` on failure.
+    Returns ``(uci_string, elapsed_seconds)``, or ``(None, 0.0)`` on failure.
     """
     try:
         if game_type == "breakthrough":
             from apps.games.predict_breakthrough import get_move as bt_get_move
             log.info("[bot] Requesting %s move - repo='%s' fen=%.60s",
                      game_type, hf_repo_id, fen)
-            _t0 = _MOVE_TIMER()
-            move = bt_get_move(fen, player, hf_repo_id)
-            _elapsed = _MOVE_TIMER() - _t0
+            move, elapsed = bt_get_move(fen, player, hf_repo_id)
             log.info("[bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
-                     move, _elapsed, game_type, hf_repo_id)
-            return move
+                     move, elapsed, game_type, hf_repo_id)
+            return move, elapsed
         else:
             from apps.games.predict_chess import get_move as chess_get_move
             log.info("[bot] Requesting %s move - repo='%s' fen=%.60s",
                      game_type, hf_repo_id, fen)
-            move, _elapsed = chess_get_move(fen, player, hf_repo_id)
+            move, elapsed = chess_get_move(fen, player, hf_repo_id)
             log.info("[bot] Move received: %s (%.2fs) game_type=%s repo='%s'",
-                     move, _elapsed, game_type, hf_repo_id)
-            return move
+                     move, elapsed, game_type, hf_repo_id)
+            return move, elapsed
     except Exception as exc:
         # Propagate pre-cache errors so callers fail loudly; otherwise
         # log and return None for unexpected exceptions.
@@ -98,7 +120,7 @@ def _get_bot_move(
         log.exception(
             "[FAIL] _get_bot_move failed - game_type=%s repo=%s", game_type, hf_repo_id
         )
-        return None
+        return None, 0.0
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -113,7 +135,7 @@ class _BotHandle:
         self.hf_token = hf_token
         self.game_type = game_type
 
-    def get_move(self, fen: str, *, time_left=None, opponent_time=None) -> str | None:
+    def get_move(self, fen: str, *, time_left=None, opponent_time=None) -> tuple[str | None, float]:
         if self.game_type == "breakthrough":
             parts = fen.strip().split()
             player = parts[1] if len(parts) >= 2 else "w"
@@ -132,20 +154,55 @@ def load_bot(hf_repo_id: str, hf_token: str | None = None,
 
 
 def get_bot_move(bot, fen: str, time_left: float = None,
-                 opponent_time: float = None) -> str | None:
-    """Call the bot handle's get_move and return a UCI string, or None."""
+                 opponent_time: float = None) -> tuple[str | None, float]:
+    """Call the bot handle's get_move and return ``(uci, elapsed)``, or ``(None, 0.0)``."""
     if bot is None:
-        return None
+        return None, 0.0
     try:
-        move = bot.get_move(fen, time_left=time_left, opponent_time=opponent_time)
-        return move if isinstance(move, str) else None
+        move, elapsed = bot.get_move(fen, time_left=time_left, opponent_time=opponent_time)
+        return (move if isinstance(move, str) else None), elapsed
     except Exception:
         log.exception("[FAIL] Bot raised an exception during get_move()")
-        return None
+        return None, 0.0
+
+
+def compute_thinking_delay(
+    elapsed: float,
+    target_seconds: float,
+    *,
+    max_overrun: float = 5.0,
+    repo: str | None = None,
+) -> float:
+    """Return seconds to sleep to reach target_seconds (0.0 if already met).
+    Logs a warning when the model overran. Does NOT sleep — caller decides how."""
+    remaining = target_seconds - elapsed
+    if remaining > 0:
+        return remaining
+    if elapsed > target_seconds + max_overrun:
+        log.warning(
+            "[thinking-time] repo=%s target=%.2fs actual=%.2fs (severe overrun)",
+            repo, target_seconds, elapsed,
+        )
+    elif elapsed > target_seconds:
+        log.warning(
+            "[thinking-time] repo=%s target=%.2fs actual=%.2fs (overrun)",
+            repo, target_seconds, elapsed,
+        )
+    return 0.0
+
+
+def enforce_thinking_time(
+    elapsed: float,
+    target_seconds: float,
+    *,
+    max_overrun: float = 5.0,
+    repo: str | None = None,
+) -> None:
+    """Blocking wrapper for sync tournament loops (run in dedicated threads, not the Channels pool)."""
+    time.sleep(compute_thinking_delay(elapsed, target_seconds, max_overrun=max_overrun, repo=repo))
 
 
 def preload_models(repo_ids: list[str]) -> None:
-    """No-op — models run in Docker sandbox on demand."""
     log.info("preload_models() is a no-op: models run in Docker sandbox.")
 
 
@@ -228,9 +285,9 @@ def _run_chess_game(game) -> None:
         _forfeit_game(game, "white" if not white_repo else "black")
         return
 
-    while not game.is_finished:
-        time.sleep(MOVE_DELAY)
+    _prewarm_spaces("chess", white_repo, black_repo)
 
+    while not game.is_finished:
         try:
             game.refresh_from_db()
         except Game.DoesNotExist:
@@ -289,7 +346,7 @@ def _run_chess_game(game) -> None:
                 break
 
         # Chess AI logic is in predict_chess.py (runs in Docker sandbox)
-        uci = _get_bot_move("chess", game.current_fen, player, repo)
+        uci, move_elapsed = _get_bot_move("chess", game.current_fen, player, repo)
         if not uci:
             log.warning("[FAIL] Bot (%s) failed to produce a move in game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
@@ -321,6 +378,8 @@ def _run_chess_game(game) -> None:
             _broadcast_game_over(group_name, game)
         else:
             game.save()
+            target_secs = game.white_thinking_seconds if moving_color == chess.WHITE else game.black_thinking_seconds
+            enforce_thinking_time(move_elapsed, max(target_secs, MOVE_DELAY), repo=repo)
             _broadcast_state(group_name, game)
 
     log.info("[game %s] ===== CHESS GAME END - result=%s reason=%s =====",
@@ -367,9 +426,9 @@ def _run_breakthrough_game(game) -> None:
         _forfeit_game(game, "white")
         return
 
-    while not game.is_finished:
-        time.sleep(MOVE_DELAY)
+    _prewarm_spaces("breakthrough", white_repo, black_repo)
 
+    while not game.is_finished:
         try:
             game.refresh_from_db()
         except Game.DoesNotExist:
@@ -415,7 +474,7 @@ def _run_breakthrough_game(game) -> None:
                 break
 
         # Breakthrough AI logic is in predict_breakthrough.py (runs in Docker sandbox)
-        uci = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
+        uci, move_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
         if not uci:
             log.warning("[FAIL] Bot (%s) failed to produce a move in Breakthrough game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
@@ -446,6 +505,8 @@ def _run_breakthrough_game(game) -> None:
             _broadcast_game_over(group_name, game)
         else:
             game.save()
+            target_secs = game.white_thinking_seconds if turn == bt.WHITE else game.black_thinking_seconds
+            enforce_thinking_time(move_elapsed, max(target_secs, MOVE_DELAY), repo=repo)
             _broadcast_state(group_name, game)
 
     log.info("[game %s] ===== BREAKTHROUGH GAME END - result=%s reason=%s =====",

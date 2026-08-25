@@ -155,28 +155,6 @@
     </form>
   </div>
   {% endfor %}
-  <script>
-  (function () {
-    ['breakthrough','chess'].forEach(function(t){
-      const modelInput = document.getElementById('id_repo_' + t);
-      const dataInput = document.getElementById('id_data_repo_' + t);
-      if (!modelInput || !dataInput) return;
-      let autoFilled = !dataInput.value;
-      dataInput.addEventListener('input', function () { autoFilled = false; });
-      modelInput.addEventListener('input', function () {
-        if (!autoFilled) return;
-        const val = modelInput.value;
-        const slash = val.indexOf('/');
-        if (slash > 0) {
-          dataInput.value = val.substring(0, slash) + '/' + t + '-data';
-        } else {
-          dataInput.value = '';
-        }
-      });
-    });
-  })();
-  </script>
-
   <div class="text-center mt-4">
     <a href="{% url 'users:profile' %}" class="text-brand hover:underline text-sm">&larr; Back to Profile</a>
   </div>

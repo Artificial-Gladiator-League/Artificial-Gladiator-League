@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
@@ -21,11 +22,40 @@ from django.views.generic import UpdateView
 from .tokens import account_activation_token
 
 from .forms import GDPRRequestForm, ProfileForm, RegistrationForm, StyledLoginForm
-from .models import CustomUser, GDPRRequest, UserGameModel
+from .models import CustomUser, GDPRRequest, UserGameModel, validate_hf_repo_id
 from apps.games.models import Game
 from apps.tournaments.models import Match
 
 log = logging.getLogger(__name__)
+
+# ── Hugging Face Hub — optional; graceful fallback if not installed ──────────
+try:
+    from huggingface_hub import HfApi, hf_hub_download
+    from huggingface_hub.utils import (
+        EntryNotFoundError,
+        GatedRepoError,
+        HfHubHTTPError,
+        LocalEntryNotFoundError,
+        RepositoryNotFoundError,
+    )
+    _HF_AVAILABLE = True
+except ImportError:
+    _HF_AVAILABLE = False
+    # Sentinel classes keep except-clauses valid even when the library is absent.
+    class _MissingHfImport(Exception):
+        pass
+    HfApi = None  # type: ignore[assignment,misc]
+    hf_hub_download = None  # type: ignore[assignment]
+    GatedRepoError = _MissingHfImport  # type: ignore[assignment,misc]
+    HfHubHTTPError = _MissingHfImport  # type: ignore[assignment,misc]
+    EntryNotFoundError = _MissingHfImport  # type: ignore[assignment,misc]
+    LocalEntryNotFoundError = _MissingHfImport  # type: ignore[assignment,misc]
+    RepositoryNotFoundError = _MissingHfImport  # type: ignore[assignment,misc]
+    log.warning(
+        "huggingface_hub is not installed — HF model validation and file-status "
+        "endpoints will be unavailable. Install it with: "
+        "pip install 'huggingface-hub>=0.20,<1.0'"
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -276,12 +306,86 @@ def _check_duplicate_ip(ip: str, new_user):
 #  AI Models (per-game configuration)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _check_repo_id_shape(repo_id: str):
+    """Return an error string if *repo_id* isn't a valid 'owner/repo' shape. None on success.
+
+    Delegates to the shared ``validate_hf_repo_id`` so pasted Space URLs get
+    the specific "not the Space URL" message instead of a generic format error.
+    """
+    try:
+        validate_hf_repo_id(repo_id)
+        return None
+    except ValidationError as exc:
+        return exc.messages[0]
+
+
+def validate_hf_repo(repo_id: str, repo_type: str = "model") -> None:
+    """Validate that *repo_id* exists on Hugging Face and meets its type's rule.
+
+    - repo_type="model": must exist and be GATED (access-requests enabled).
+    - repo_type="dataset": must exist and be PUBLIC (readable anonymously).
+    - repo_type="space": only existence is checked (Spaces are public by default).
+
+    Raises ``django.core.exceptions.ValidationError`` with a single clean,
+    user-facing message on failure. Returns ``None`` on success.
+    """
+    if not _HF_AVAILABLE:
+        log.warning("huggingface_hub not installed — skipping HF validation for %s", repo_id)
+        return
+
+    if repo_type == "space":
+        not_found_hint = "make sure the Space exists"
+    elif repo_type == "dataset":
+        not_found_hint = "make sure it is public"
+    else:
+        not_found_hint = "make sure it is gated"
+
+    api = HfApi()
+    try:
+        if repo_type in ("model", "dataset"):
+            info = api.repo_info(repo_id, repo_type=repo_type, expand=["gated"], token=False)
+        else:
+            # Spaces have no gating concept — expand=["gated"] causes HF's API
+            # to error out, so only existence is checked here.
+            info = api.repo_info(repo_id, repo_type=repo_type, token=False)
+    except RepositoryNotFoundError:
+        raise ValidationError(
+            f"Repository '{repo_id}' was not found on Hugging Face. "
+            f"Check the repo ID and {not_found_hint}."
+        )
+    except GatedRepoError:
+        if repo_type == "dataset":
+            raise ValidationError(
+                f"Repository '{repo_id}' is gated. Your data repo must be set to "
+                "public on Hugging Face so it can be read anonymously."
+            )
+        return  # model/space: anonymous call blocked → gated, as required
+    except HfHubHTTPError as exc:
+        response = getattr(exc, "response", None)
+        log.warning(
+            "HF API error validating %s repo %s: status=%s body=%s error=%s",
+            repo_type, repo_id,
+            getattr(response, "status_code", "?"),
+            getattr(response, "text", "?"),
+            exc,
+        )
+        raise ValidationError(
+            "Could not reach Hugging Face to verify the repository. Please try again in a moment."
+        )
+
+    # Anonymous call succeeded (repo is publicly readable) — enforce per-type rule.
+    if repo_type == "model" and not getattr(info, "gated", None):
+        raise ValidationError(
+            f"Repository '{repo_id}' is public — please set it to GATED "
+            "(enable 'Access Requests' in repo Settings) before connecting it."
+        )
+
+
 def _check_repo_is_gated(repo_id: str):
     """Return an error string if *repo_id* fails either gating or platform-access checks.
 
     Two checks are performed in order:
-      1. The repo must be gated (access-request enabled).  An anonymous
-         model_info call that raises GatedRepoError confirms this.
+      1. The repo must exist and be gated — see ``validate_hf_repo``.
       2. The platform account (ArtificialGladiatorLeague) must have been
          granted access.  We verify by retrying model_info with the platform
          token; a second GatedRepoError means the user hasn't approved us yet.
@@ -289,31 +393,18 @@ def _check_repo_is_gated(repo_id: str):
     Returns None when both checks pass.
     """
     try:
-        from huggingface_hub import HfApi
-        from huggingface_hub.utils import GatedRepoError, RepositoryNotFoundError, HfHubHTTPError
+        if not _HF_AVAILABLE:
+            log.warning("huggingface_hub not installed — skipping gated-repo check for %s", repo_id)
+            return None
+
+        try:
+            validate_hf_repo(repo_id, repo_type="model")
+        except ValidationError as exc:
+            return exc.messages[0]
 
         api = HfApi()
 
-        # ── 1. Confirm the repo is gated ─────────────────────
-        try:
-            info = api.model_info(repo_id, token=False)
-            # Anonymous call succeeded — check the gated flag explicitly
-            if not getattr(info, "gated", None):
-                return (
-                    "Only gated repositories (with access requests enabled) are accepted. "
-                    "Go to your repo Settings on Hugging Face and enable 'Access Requests', "
-                    "then try again."
-                )
-            # gated flag present — fall through to platform-access check
-        except GatedRepoError:
-            pass  # anonymous blocked → repo is gated, as required
-        except RepositoryNotFoundError:
-            return f"Repository '{repo_id}' was not found on Hugging Face. Check the repo ID and make sure it is public."
-        except HfHubHTTPError as exc:
-            log.warning("HF API error checking gated status for %s: %s", repo_id, exc)
-            return "Could not reach Hugging Face to verify the repository. Please try again in a moment."
-
-        # ── 2. Confirm platform account has approved access ───
+        # ── Confirm platform account has approved access ───
         _NOT_APPROVED = (
             "Required: Grant Access to Our Platform Account — "
             "your repo must be Gated and you must approve 'ArtificialGladiatorLeague' "
@@ -347,6 +438,62 @@ def _check_repo_is_gated(repo_id: str):
 
     except Exception as exc:
         log.warning("Unexpected error in _check_repo_is_gated for %s: %s", repo_id, exc)
+        return None  # fail open so a transient error doesn't permanently block submission
+
+
+def _check_data_repo(data_repo_id: str):
+    """Return an error string if *data_repo_id* doesn't exist or isn't public. None on success."""
+    if not data_repo_id or not _HF_AVAILABLE:
+        return None
+    try:
+        validate_hf_repo(data_repo_id, repo_type="dataset")
+        return None
+    except ValidationError as exc:
+        return exc.messages[0]
+    except Exception as exc:
+        log.warning("Unexpected error validating data repo %s: %s", data_repo_id, exc)
+        return None  # fail open so a transient error doesn't permanently block submission
+
+
+_SPACE_PAGE_URL_RE = r'^https://huggingface\.co/spaces/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)/?$'
+
+
+def _parse_space_page_url(raw: str) -> "tuple[str, str] | None":
+    """Parse the HF Space page URL into (owner, space_name).
+
+    Only accepts the form https://huggingface.co/spaces/{owner}/{space-name}
+    (the canonical HF page URL for a Space). Returns None if *raw* doesn't
+    match this shape.
+    """
+    import re
+
+    m = re.match(_SPACE_PAGE_URL_RE, raw.strip())
+    if not m:
+        return None
+    return m.group(1), m.group(2)
+
+
+def _derive_space_runtime_url(owner: str, space_name: str) -> str:
+    """Build the public runtime (Gradio) URL used to actually probe a Space.
+
+    HF subdomains are ``{owner}-{space_name}`` lowercased, with underscores
+    replaced by hyphens.
+    """
+    subdomain = f"{owner}-{space_name}".lower().replace('_', '-')
+    return f"https://{subdomain}.hf.space"
+
+
+def _check_space_exists(owner: str, space_name: str):
+    """Return an error string if the HF Space {owner}/{space_name} cannot be found. None on success."""
+    if not _HF_AVAILABLE:
+        return None
+    try:
+        validate_hf_repo(f"{owner}/{space_name}", repo_type="space")
+        return None
+    except ValidationError as exc:
+        return exc.messages[0]
+    except Exception as exc:
+        log.warning("Unexpected error validating Space %s/%s: %s", owner, space_name, exc)
         return None  # fail open so a transient error doesn't permanently block submission
 
 
@@ -403,12 +550,14 @@ def ai_models(request):
         # ── Connect / update a repo ───────────────────────────
         if not repo_id:
             messages.error(request, "Please enter a Hugging Face repo ID.")
-        elif not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
-            messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
+        elif (_shape_err := _check_repo_id_shape(repo_id)) is not None:
+            messages.error(request, _shape_err)
         elif data_repo_id and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data').")
         elif (_gated_err := _check_repo_is_gated(repo_id)) is not None:
             messages.error(request, _gated_err)
+        elif data_repo_id and (_data_err := _check_data_repo(data_repo_id)) is not None:
+            messages.error(request, _data_err)
         else:
             # Check for duplicate repo across other users
             dup = UserGameModel.objects.filter(
@@ -591,6 +740,16 @@ def _build_breakthrough_file_status(user, gm):
     import json as _json
     from apps.users.hf_oauth import get_user_hf_token
 
+    if not _HF_AVAILABLE:
+        log.warning("huggingface_hub not installed — file status unavailable for user=%s", user.username)
+        return {
+            "model_files": [],
+            "data_files": [],
+            "model_error": "huggingface_hub is not installed on this server.",
+            "data_error": "",
+            "revision_used": "N/A",
+        }
+
     model_files = []
     data_files = []
     model_error = ""
@@ -609,15 +768,6 @@ def _build_breakthrough_file_status(user, gm):
 
     # Model repo (gated — needs token)
     try:
-        from huggingface_hub import HfApi, hf_hub_download
-        from huggingface_hub.utils import (
-            EntryNotFoundError,
-            GatedRepoError,
-            HfHubHTTPError,
-            RepositoryNotFoundError,
-            LocalEntryNotFoundError,
-        )
-
         api = HfApi()
         # Use only the platform token (read-only) for profile checks.
         tokens_to_try = [platform_token] if platform_token else [None]
@@ -757,13 +907,6 @@ def _build_breakthrough_file_status(user, gm):
 
     # Data repo (public — no token needed, always uses main)
     try:
-        from huggingface_hub import HfApi, hf_hub_download
-        from huggingface_hub.utils import (
-            EntryNotFoundError,
-            HfHubHTTPError,
-            RepositoryNotFoundError,
-        )
-
         # Download the data config and then verify each listed file exists
         # in the public dataset repo.
         config_path = hf_hub_download(
@@ -827,6 +970,66 @@ def _build_breakthrough_file_status(user, gm):
         "data_error": data_error,
         "revision_used": revision,
     }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PayPal email (profile-level payout address)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@login_required
+def save_paypal_email(request):
+    """POST: validate and save the user's payout email to their profile.
+
+    Accepts an optional hidden ``next`` field in the POST body; if present and
+    safe (local path only), redirects there after saving — used to send the
+    user straight back to the tournament terms page they came from.
+    """
+    if request.method != "POST":
+        return redirect("users:profile")
+
+    from django.core.exceptions import ValidationError as DjangoValidationError
+    from django.core.validators import validate_email as _validate_email
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    raw = request.POST.get("paypal_email", "").strip()
+    next_url = request.POST.get("next", "").strip()
+    # Only allow safe local redirects.
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        next_url = ""
+
+    profile_url = reverse_lazy("users:profile")
+
+    if not raw:
+        messages.error(request, "Please enter a payout email address.")
+        return redirect(str(profile_url) + "?tab=paypal")
+
+    try:
+        _validate_email(raw)
+    except DjangoValidationError:
+        messages.error(request, "Enter a valid email address.")
+        return redirect(str(profile_url) + "?tab=paypal")
+
+    request.user.paypal_email = raw
+    request.user.save(update_fields=["paypal_email"])
+    messages.success(request, "Payout email saved.")
+    log.info("User %s updated paypal_email", request.user.username)
+
+    if next_url:
+        return redirect(next_url)
+    return redirect(str(profile_url) + "?tab=paypal")
+
+
+@login_required
+def delete_paypal_email(request):
+    """POST: clear the user's PayPal payout email."""
+    if request.method != "POST":
+        return redirect("users:profile")
+
+    request.user.paypal_email = ""
+    request.user.save(update_fields=["paypal_email"])
+    messages.success(request, "PayPal email removed.")
+    log.info("User %s removed paypal_email", request.user.username)
+    return redirect("users:profile")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1192,14 +1395,22 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         # ── Connect / update a repo ────────────────────────────
         if not repo_id:
             messages.error(request, "Please enter a Hugging Face repo ID.")
-        elif not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', repo_id):
-            messages.error(request, "Invalid repo ID format (e.g. 'YourName/MyModel').")
+        elif (_shape_err := _check_repo_id_shape(repo_id)) is not None:
+            messages.error(request, _shape_err)
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
-        elif hf_space_url and not _re.match(r'^(?:https?://)?[a-zA-Z0-9._-]+\.hf\.space$', hf_space_url):
-            messages.error(request, "HF Space URL must end in .hf.space (e.g. owner-myspace.hf.space).")
+        elif hf_space_url and (_space_parts := _parse_space_page_url(hf_space_url)) is None:
+            messages.error(
+                request,
+                f"Invalid Space URL '{hf_space_url}'. Expected format: "
+                "https://huggingface.co/spaces/{owner}/{space-name}",
+            )
         elif (_gated_err := _check_repo_is_gated(repo_id)) is not None:
             messages.error(request, _gated_err)
+        elif data_repo_id and (_data_err := _check_data_repo(data_repo_id)) is not None:
+            messages.error(request, _data_err)
+        elif hf_space_url and (_space_err := _check_space_exists(*_space_parts)) is not None:
+            messages.error(request, _space_err)
         else:
             dup = UserGameModel.objects.filter(
                 hf_model_repo_id=repo_id,
@@ -1225,11 +1436,9 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         "is_verified", "verification_code",
                     ])
 
-                # ── HF Space URL: save with pending status ─────────────
+                # ── HF Space URL: derive the runtime probe URL and save with pending status ──
                 if hf_space_url:
-                    # Normalise: ensure the stored value always has https://
-                    if not hf_space_url.startswith(('http://', 'https://')):
-                        hf_space_url = 'https://' + hf_space_url
+                    hf_space_url = _derive_space_runtime_url(*_space_parts)
                     UserGameModel.objects.filter(pk=gm.pk).update(
                         hf_inference_endpoint_url=hf_space_url,
                         hf_inference_endpoint_status="pending",

@@ -187,6 +187,26 @@ def disqualify_for_repo_change(
         participant.user.username, tournament.pk, is_qa, reason,
     )
 
+    # ── Notify the user's live match page via WebSocket ────────────
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f"user_{participant.user_id}",
+                {
+                    "type": "user.disqualified",
+                    "tournament_name": tournament.name,
+                    "reason": "Your repository SHA changed during a live tournament.",
+                },
+            )
+    except Exception:
+        log.debug(
+            "disqualify_for_repo_change: WS push failed for user=%s",
+            participant.user.username, exc_info=True,
+        )
+
     # ── Forfeit live game (outside the atomic block so the
     #     long-running side effects don't hold the row lock) ────
     if forfeit_live_match:

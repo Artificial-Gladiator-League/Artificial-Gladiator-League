@@ -38,6 +38,9 @@ class NotificationConsumer(AsyncWebsocketConsumer):
 
     async def send_notification(self, event):
         """Handle group_send messages and forward them to the browser."""
+        # DQ events are handled by LiveMatchConsumer; suppress here to avoid a racing toast+redirect.
+        if event.get("verb") == "tournament_disqualified":
+            return
         await self.send(text_data=json.dumps({
             "type": "new_notification",
             "verb": event.get("verb", ""),

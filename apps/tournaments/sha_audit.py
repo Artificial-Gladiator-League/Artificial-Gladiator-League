@@ -48,6 +48,7 @@ MAX_CHECKS_PER_PASS = 10
 # tournament has at least one randomised check.
 ROUND_CHECK_DELAY_MIN_SEC = 30
 ROUND_CHECK_DELAY_MAX_SEC = 180
+IMMEDIATE_START_CHECK_DELAY_SEC = 1
 
 
 # ──────────────────────────────────────────────
@@ -888,6 +889,55 @@ def schedule_round_integrity_check(tournament, round_num: int) -> float:
             tournament.pk, round_num,
         )
     return delay
+
+
+def schedule_immediate_start_check(tournament, round_num: int) -> None:
+    """Dispatch a SHA check per participant IMMEDIATE_START_CHECK_DELAY_SEC after start.
+
+    Fires once when a tournament first transitions to ONGOING, additive to the
+    per-round randomised audit. Uses apply_async with countdown; falls back to
+    inline perform_sha_check when Celery is unavailable.
+    """
+    candidates = list(
+        tournament.participants
+        .filter(eliminated=False, disqualified_for_sha_mismatch=False)
+        .select_related("user", "tournament")
+    )
+
+    apply_async_fn = None
+    try:
+        from apps.tournaments.tasks import run_sha_check_for_participant
+        apply_async_fn = getattr(run_sha_check_for_participant, "apply_async", None)
+    except Exception:
+        apply_async_fn = None
+
+    dispatched = 0
+    checked = 0
+    for p in candidates:
+        if apply_async_fn is not None:
+            try:
+                apply_async_fn(
+                    args=[p.pk],
+                    countdown=IMMEDIATE_START_CHECK_DELAY_SEC,
+                )
+                dispatched += 1
+                continue
+            except Exception:
+                log.exception(
+                    "schedule_immediate_start_check: failed to enqueue "
+                    "participant=%s — running inline",
+                    p.pk,
+                )
+        # Inline fallback.
+        row = perform_sha_check(p, context="random_audit", round_num=round_num)
+        if row is not None:
+            checked += 1
+
+    log.info(
+        "schedule_immediate_start_check: tournament=%s round=%d "
+        "dispatched=%d checked=%d",
+        tournament.pk, round_num, dispatched, checked,
+    )
 
 
 def run_round_integrity_pass(tournament_id: int, round_num: int) -> dict:

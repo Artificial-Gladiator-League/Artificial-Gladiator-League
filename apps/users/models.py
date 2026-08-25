@@ -5,9 +5,27 @@ from django.db import models
 
 
 def validate_hf_repo_id(value):
-    """Basic validation for a Hugging Face repo ID (e.g. 'austindavis/ChessGPT_d12')."""
+    """Basic validation for a Hugging Face repo ID (e.g. 'austindavis/ChessGPT_d12').
+
+    Rejects Space runtime URLs (e.g. 'https://user-space.hf.space') with a
+    specific, actionable message instead of the generic format error, since
+    that is the most common mistake users make when pasting this field.
+    """
     import re
-    if value and not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', value):
+    if not value:
+        return
+
+    lowered = value.strip().lower()
+    if "hf.space" in lowered or lowered.startswith(("http://", "https://")):
+        suggestion = ""
+        m = re.match(r'^https?://([\w-]+)-([\w-]+)\.hf\.space/?$', value.strip(), re.IGNORECASE)
+        if m:
+            suggestion = f" Did you mean '{m.group(1)}/{m.group(2)}'?"
+        raise ValidationError(
+            "Enter your repo ID as 'username/repo-name', not the Space URL." + suggestion
+        )
+
+    if not re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', value):
         raise ValidationError(
             "Enter a valid Hugging Face repo ID (e.g. 'austindavis/ChessGPT_d12')."
         )
@@ -165,6 +183,17 @@ class CustomUser(AbstractUser):
     model_integrity_ok = models.BooleanField(
         default=True,
         help_text="False = model changed or needs re-validation. Blocks rated/tournament play.",
+    )
+
+    # ── PayPal payout email ──────────────────────
+    paypal_email = models.EmailField(
+        max_length=254,
+        blank=True,
+        default="",
+        help_text=(
+            "PayPal email address for cash-tournament prize payouts. "
+            "Set by the user in their profile. Never used as a login credential."
+        ),
     )
 
     class Meta:

@@ -80,6 +80,9 @@
         </div>
       </div>
 
+      <!-- Turn indicator (AI thinking) -->
+      <div id="turnBanner" class="hidden w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg transition-all"></div>
+
       <!-- Bottom player bar (current user for participants, white for spectators) -->
       <div class="w-full max-w-[560px] flex items-center justify-between">
         {% if is_black %}
@@ -231,6 +234,7 @@ window.addEventListener('cg-ready', function () {
   const resultDetail = document.getElementById('resultDetail');
   const wsDot       = document.getElementById('wsDot');
   const wsLabel     = document.getElementById('wsLabel');
+  const turnBanner  = document.getElementById('turnBanner');
 
   const matchId     = {{ match.pk }};
   const baseSec     = {{ base_seconds }};
@@ -315,8 +319,10 @@ window.addEventListener('cg-ready', function () {
   let blackTime = baseSec;
   let activeSide = null;
   let clockInterval = null;
+  let thinkingInterval = null, thinkingStart = null;
   let moveNum = 0;
   let moves = [];
+  let boardFrozen = false;
 
   function formatClock(sec) {
     if (sec < 0) sec = 0;
@@ -390,6 +396,8 @@ window.addEventListener('cg-ready', function () {
   /* ── Game over ───────────────────────────────── */
   function showGameOver(result, winner) {
     stopClock();
+    if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+    if (turnBanner) turnBanner.classList.add('hidden');
     overlayEl.classList.remove('hidden');
     /* Hide resign button if present */
     const resignBtn = document.getElementById('resignBtn');
@@ -478,6 +486,22 @@ window.addEventListener('cg-ready', function () {
         }
         renderClocks();
         if (!clockInterval) startClock();
+        /* Update turn banner — activeSide is the side now waiting to move */
+        if (turnBanner && activeSide) {
+          if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+          const bannerSide = activeSide === 'white' ? 'White' : 'Black';
+          const bannerPrefix = '\u265f ' + bannerSide + '\u2019s AI is thinking\u2026';
+          turnBanner.className = activeSide === 'white'
+            ? 'w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg bg-green-900/40 text-green-300 border border-green-700'
+            : 'w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg bg-gray-800/60 text-gray-400 border border-gray-700';
+          turnBanner.textContent = bannerPrefix;
+          turnBanner.classList.remove('hidden');
+          thinkingStart = Date.now();
+          thinkingInterval = setInterval(() => {
+            const elapsed = ((Date.now() - thinkingStart) / 1000).toFixed(1);
+            turnBanner.textContent = bannerPrefix + ' (' + elapsed + 's)';
+          }, 100);
+        }
         break;
 
       case 'clock':
@@ -492,6 +516,10 @@ window.addEventListener('cg-ready', function () {
         showGameOver(data.result || '', data.winner || '');
         break;
 
+      case 'disqualified':
+        window.location.href = '/tournaments/disqualified/';
+        break;
+
       case 'armageddon':
         /* Reset board for Armageddon tiebreak */
         if (gameType === 'breakthrough') {
@@ -504,8 +532,8 @@ window.addEventListener('cg-ready', function () {
         activeSide = null;
         moveNum = 0;
         moves = [];
-        moveListEl.innerHTML = '<div class="text-center text-xs text-red-400 py-3 font-semibold">⚡ Armageddon Tiebreak — Black has draw odds</div>';
-        renderClocks();
+        moveListEl.innerHTML = '<div class="text-center text-xs text-red-400 py-3 font-semibold">⚡ Armageddon Tiebreak — Black has draw odds</div>';        if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+        if (turnBanner) turnBanner.classList.add('hidden');        renderClocks();
         break;
     }
   }

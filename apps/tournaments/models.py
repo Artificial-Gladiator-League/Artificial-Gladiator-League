@@ -1,3 +1,5 @@
+import secrets
+
 from django.conf import settings
 from django.db import models
 
@@ -126,6 +128,64 @@ class Tournament(models.Model):
     announcement = models.TextField(
         blank=True,
         help_text="Auto-generated announcement text after completion.",
+    )
+
+    # ── Money / prize fields ────────────────────
+    is_money_tournament = models.BooleanField(
+        default=False,
+        help_text="Whether this tournament has a cash prize. Restricts entry to eligible regions.",
+    )
+    prize_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Prize amount in prize_currency. Leave blank for non-money tournaments.",
+    )
+    prize_currency = models.CharField(
+        max_length=3,
+        default="ILS",
+        blank=True,
+        help_text="ISO 4217 currency code for the prize (e.g. ILS, USD).",
+    )
+    prize_structure = models.JSONField(
+        blank=True,
+        null=True,
+        help_text=(
+            'Prize breakdown as a JSON list, e.g. '
+            '[{"place": 1, "label": "1st", "amount": 60}, '
+            '{"place": 2, "label": "2nd", "amount": 30}, '
+            '{"place": 3, "label": "3rd", "amount": 10}]'
+        ),
+    )
+
+    class PayoutStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        PROCESSING = "processing", "Processing"
+        PAID = "paid", "Paid"
+        CANCELLED = "cancelled", "Cancelled"
+
+    payout_status = models.CharField(
+        max_length=20,
+        choices=PayoutStatus.choices,
+        default=PayoutStatus.PENDING,
+        blank=True,
+        help_text="Payout status — only relevant for money tournaments.",
+    )
+    terms_text = models.TextField(
+        blank=True,
+        help_text="Legal terms text participants must accept before joining a money tournament.",
+    )
+    terms_version = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Version string for terms (e.g. '1.0'). Increment to require re-acceptance.",
+    )
+    join_password = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Leave empty for public tournaments. Set to require a password to join.",
     )
 
     class Meta:
@@ -282,6 +342,57 @@ class TournamentParticipant(models.Model):
     disqualified_reason = models.TextField(
         blank=True, default="",
         help_text="Free-form reason recorded when this participant was disqualified.",
+    )
+
+    # ── Money tournament audit fields ────────────
+    join_ip = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="Client IP address recorded at registration time (money tournaments only).",
+    )
+    join_country_code = models.CharField(
+        max_length=2,
+        blank=True,
+        help_text="ISO 3166-1 alpha-2 country code resolved from join_ip.",
+    )
+    geo_eligible = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True = eligible country, False = ineligible, None = geo check not run.",
+    )
+    terms_accepted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when the participant accepted the tournament terms.",
+    )
+    terms_version_accepted = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Version of tournament terms the participant accepted.",
+    )
+    paypal_email = models.EmailField(
+        max_length=254,
+        blank=True,
+        default="",
+        help_text=(
+            "PayPal email address for prize payout. Collected at registration "
+            "for cash tournaments. Auto-cleared for non-winners at tournament end. "
+            "Admin must manually clear this for the winner after payout confirmation."
+        ),
+    )
+
+    THINKING_TIME_CHOICES = [
+        (3.0, "3s"),
+        (5.0, "5s"),
+        (8.0, "8s"),
+        (12.0, "12s"),
+        (15.0, "15s"),
+    ]
+
+    ai_thinking_seconds = models.FloatField(
+        choices=THINKING_TIME_CHOICES,
+        default=5.0,
+        help_text="Max seconds this participant's AI gets to think per move, chosen at registration.",
     )
 
     class Meta:
@@ -560,3 +671,56 @@ class TournamentShaCheck(models.Model):
             f"[{self.checked_at:%Y-%m-%d %H:%M:%S}] "
             f"R{self.round_num} {self.user_id} {self.repo_id} → {self.result}"
         )
+
+
+class PrizeClaim(models.Model):
+    """Auditable prize claim created when a money tournament completes."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"    # created, winner hasn't submitted yet
+        CLAIMED = "claimed", "Claimed"    # winner submitted code, awaiting admin
+        PAID = "paid", "Paid"
+        EXPIRED = "expired", "Expired"
+
+    tournament = models.OneToOneField(
+        Tournament,
+        on_delete=models.CASCADE,
+        related_name="prize_claim",
+    )
+    winner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="prize_claims",
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    paypal_email = models.EmailField(
+        help_text=(
+            "Snapshotted from TournamentParticipant.paypal_email at claim-creation "
+            "time — do NOT live-reference the participant row, so later profile edits "
+            "can't silently change payout destination."
+        )
+    )
+    claim_code = models.CharField(max_length=48, unique=True, db_index=True)
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(help_text="created_at + 30 days")
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_by_admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    admin_notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Prize Claim"
+        verbose_name_plural = "Prize Claims"
+
+    def __str__(self):
+        return f"PrizeClaim({self.tournament}, {self.winner}, {self.status})"

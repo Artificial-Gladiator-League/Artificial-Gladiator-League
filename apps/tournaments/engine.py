@@ -137,6 +137,10 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
         # Create the linked Game with full board state
         gt = tournament.game_type
         starting_fen = BT_STARTING_FEN if gt == "breakthrough" else chess.STARTING_FEN
+        white_participant = TournamentParticipant.objects.filter(tournament=tournament, user=white).first()
+        black_participant = TournamentParticipant.objects.filter(tournament=tournament, user=black).first()
+        white_thinking = white_participant.ai_thinking_seconds if white_participant else 1.0
+        black_thinking = black_participant.ai_thinking_seconds if black_participant else 1.0
         game = Game.objects.create(
             white=white,
             black=black,
@@ -149,7 +153,8 @@ def generate_pairings(tournament: Tournament, round_num: int) -> list[Match]:
             tournament_match=match,
             game_type=gt,
             current_fen=starting_fen,
-            ai_thinking_seconds=1.0,
+            white_thinking_seconds=white_thinking,
+            black_thinking_seconds=black_thinking,
         )
 
         # Launch the AI bot game in a background thread
@@ -441,6 +446,73 @@ def handle_game_result(game: Game) -> None:
                 generate_pairings(tournament, round_num + 1)
 
 
+def _create_prize_claim(tournament: Tournament, champion) -> None:
+    """Create a PrizeClaim row and email the winner their claim code."""
+    import secrets
+    from datetime import timedelta
+    from django.core.mail import send_mail
+    from django.utils import timezone
+
+    from apps.tournaments.models import PrizeClaim
+
+    now = timezone.now()
+    try:
+        participant = tournament.participants.filter(user=champion).first()
+        paypal_email = (participant.paypal_email or "") if participant else ""
+
+        claim, created = PrizeClaim.objects.get_or_create(
+            tournament=tournament,
+            defaults=dict(
+                winner=champion,
+                amount=tournament.prize_amount,
+                currency=tournament.prize_currency or "ILS",
+                paypal_email=paypal_email,
+                claim_code=secrets.token_urlsafe(24),
+                expires_at=now + timedelta(days=30),
+            ),
+        )
+        if not created:
+            log.info(
+                "PrizeClaim already exists for tournament %s (pk=%s) — skipping duplicate",
+                tournament.name, tournament.pk,
+            )
+            return
+        tournament.payout_status = Tournament.PayoutStatus.PROCESSING
+        tournament.save(update_fields=["payout_status"])
+
+        if champion.email:
+            try:
+                from django.conf import settings as _cfg
+                claim_url = f"{_cfg.SITE_URL}/tournaments/{tournament.pk}/claim/"
+                send_mail(
+                    subject=f"\U0001f3c6 You won {tournament.name} \u2014 claim your prize",
+                    message=(
+                        f"Congratulations {champion.username},\n\n"
+                        f"You are the champion of {tournament.name}!\n\n"
+                        f"Your prize of {claim.amount} {claim.currency} is waiting for you.\n"
+                        f"Click the link below to submit your payout details:\n\n"
+                        f"{claim_url}\n\n"
+                        f"This link expires on {claim.expires_at.strftime('%B %d, %Y')}.\n\n"
+                        f"\u2014 Artificial Gladiator League"
+                    ),
+                    from_email=_cfg.DEFAULT_FROM_EMAIL,
+                    recipient_list=[champion.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                log.error("Failed to send prize claim email to %s: %s", champion.email, e)
+
+        log.info(
+            "PrizeClaim created for tournament %s (pk=%s), winner=%s, expires=%s",
+            tournament.name, tournament.pk, champion.username, claim.expires_at,
+        )
+    except Exception:
+        log.exception(
+            "Failed to create PrizeClaim for tournament %s (pk=%s)",
+            tournament.name, tournament.pk,
+        )
+
+
 @transaction.atomic
 def _complete_tournament(tournament: Tournament) -> None:
     """Mark the tournament as completed, set the champion, and distribute prizes.
@@ -476,6 +548,54 @@ def _complete_tournament(tournament: Tournament) -> None:
         log.exception(
             "Failed to clear integrity fields for tournament %s", tournament.pk
         )
+
+    # ── PayPal email cleanup (cash tournaments only) ──────────────
+    # Non-winners' PayPal emails are auto-cleared here.
+    # The champion's PayPal email is retained for admin payout confirmation;
+    # an admin must manually clear it after the payout has been processed.
+    if tournament.is_money_tournament:
+        try:
+            if champion:
+                cleared = tournament.participants.exclude(user=champion).update(
+                    paypal_email=""
+                )
+            else:
+                cleared = tournament.participants.update(paypal_email="")
+            log.info(
+                "Cleared paypal_email for %d non-winner participant(s) "
+                "of tournament %s (pk=%s)",
+                cleared, tournament.name, tournament.pk,
+            )
+        except Exception:
+            log.exception(
+                "Failed to clear paypal_email for tournament %s", tournament.pk
+            )
+
+    # ── Prize claim ───────────────────────────────────────────────────────────
+    if tournament.is_money_tournament and champion:
+        if tournament.prize_amount:
+            _create_prize_claim(tournament, champion)
+        else:
+            log.error(
+                "Money tournament %s (pk=%s) completed with champion=%s but prize_amount=%r "
+                "\u2014 no PrizeClaim created.",
+                tournament.name, tournament.pk, champion.username, tournament.prize_amount,
+            )
+            try:
+                from django.core.mail import mail_admins
+                mail_admins(
+                    subject=f"[AGL] Money tournament missing prize_amount \u2014 {tournament.name}",
+                    message=(
+                        f"Tournament: {tournament.name} (pk={tournament.pk})\n"
+                        f"Champion: {champion.username}\n\n"
+                        f"is_money_tournament=True but prize_amount={tournament.prize_amount!r}.\n"
+                        f"No PrizeClaim was created. Fix the tournament configuration and run:\n"
+                        f"  python manage.py backfill_prize_claim {tournament.pk}"
+                    ),
+                    fail_silently=True,
+                )
+            except Exception:
+                log.debug("mail_admins failed for missing prize_amount alert", exc_info=True)
 
     log.info(
         "Tournament %s completed — Champion: %s",

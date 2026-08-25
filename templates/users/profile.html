@@ -158,7 +158,7 @@
 
       <!-- Full stats table -->
       <div class="card">
-        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Statistics</h2>
+        <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-3">Statistics</h2>
         <table class="stats-table text-sm">
           <tbody>
             <tr>
@@ -187,7 +187,7 @@
 
       <!-- Tournament Readiness card -->
       <div class="card">
-        <h2 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Tournament Readiness</h2>
+        <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-3">Tournament Readiness</h2>
         {% for tr in tournament_readiness %}
         <div class="mb-4 last:mb-0">
           <div class="flex items-center justify-between mb-1.5">
@@ -263,6 +263,7 @@
         <button class="profile-tab active" data-tab="edit">Profile</button>
         <button class="profile-tab" data-tab="ai-models">AG Champions</button>
         <button class="profile-tab" data-tab="stats">Stats &amp; History</button>
+        <button class="profile-tab" data-tab="paypal">💳 PayPal</button>
         {% else %}
         <button class="profile-tab active" data-tab="stats">Stats &amp; History</button>
         {% endif %}
@@ -319,6 +320,63 @@
         </div>
 
       </div>{# /tab-edit #}
+
+      <!-- ═══════════════════════════════════════
+           TAB: PayPal Payout Email (own profile)
+           ═══════════════════════════════════════ -->
+      <div id="tab-paypal" class="tab-panel hidden space-y-6">
+        <div class="card">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Payout Email</h2>
+          <p class="text-xs text-gray-400 mb-4">
+            The email address used to receive cash tournament prize payouts. Any valid email is accepted.
+            You can update or remove it at any time.
+          </p>
+
+          {% if user_profile.paypal_email %}
+            <!-- Current email display -->
+            <div class="rounded-lg border border-green-700 bg-green-900/20 px-4 py-3 mb-4 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-sm">
+                <svg class="w-4 h-4 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-green-300 font-medium">{{ user_profile.paypal_email }}</span>
+              </div>
+              <form method="post" action="{% url 'users:delete_paypal_email' %}" onsubmit="return confirm('Remove your PayPal email?');">
+                {% csrf_token %}
+                <button type="submit" class="text-xs text-red-400 hover:text-red-300 font-semibold whitespace-nowrap">Remove</button>
+              </form>
+            </div>
+          {% else %}
+            <div class="rounded-lg border border-yellow-700 bg-yellow-900/15 px-4 py-2.5 mb-4 text-sm text-yellow-300 flex items-center gap-2">
+              <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+              </svg>
+              No payout email set. You will need one to join cash tournaments.
+            </div>
+          {% endif %}
+
+          <!-- Save / update form -->
+          <form method="post" action="{% url 'users:save_paypal_email' %}" novalidate>
+            {% csrf_token %}
+            {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
+            <div class="form-group">
+              <label for="paypal_email_input" class="block text-sm font-medium text-gray-300 mb-1">
+                {% if user_profile.paypal_email %}Update payout email{% else %}Add payout email{% endif %}
+              </label>
+              <input
+                type="email"
+                id="paypal_email_input"
+                name="paypal_email"
+                value=""
+                placeholder="your-email@example.com"
+                autocomplete="off"
+                class="form-input w-full max-w-sm rounded-lg text-black placeholder-gray-500"
+              >
+            </div>
+            <button type="submit" class="btn-gold btn-sm text-sm">Save payout email</button>
+          </form>
+        </div>
+      </div>{# /tab-paypal #}
 
       <!-- ═══════════════════════════════════════
            TAB: AI Models (own profile only)
@@ -527,16 +585,15 @@
                 <input type="text"
                        id="id_space_url_{{ game.type }}"
                        name="hf_space_url"
-                       value="{{ game.model.hf_inference_endpoint_url|default:'' }}"
-                       placeholder="owner-myspace.hf.space"
+                       placeholder="https://huggingface.co/spaces/owner/space-name"
                        autocomplete="off"
                        required
                        class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition pr-10">
                 <span id="id_space_preview_{{ game.type }}" class="absolute right-3 top-1/2 -translate-y-1/2 text-sm hidden"></span>
               </div>
               <span class="text-xs text-gray-500 mt-1 block">
-                The subdomain of your Hugging Face Gradio Space (e.g.
-                <code>john-breakthrough-space.hf.space</code>).
+                Paste the URL of your HF Space's page, e.g.
+                <code>https://huggingface.co/spaces/john/breakthrough-space</code>.
                 Must belong to your HF account — verified against your token on save.
                 On save, we'll probe the Space and mark it Live or Unreachable.
               </span>
@@ -651,23 +708,7 @@
         <script>
         (function () {
           ['breakthrough','chess'].forEach(function(t) {
-            // ── Repo → data repo auto-fill ──────────────────────────────
             const modelInput = document.getElementById('id_repo_' + t);
-            const dataInput = document.getElementById('id_data_repo_' + t);
-            if (modelInput && dataInput) {
-              let autoFilled = !dataInput.value;
-              dataInput.addEventListener('input', function () { autoFilled = false; });
-              modelInput.addEventListener('input', function () {
-                if (!autoFilled) return;
-                const val = modelInput.value;
-                const slash = val.indexOf('/');
-                if (slash > 0) {
-                  dataInput.value = val.substring(0, slash) + '/' + t + '-data';
-                } else {
-                  dataInput.value = '';
-                }
-              });
-            }
 
             // ── Access Settings link: update URL as user types repo ID ──
             const accessLink = document.getElementById('id_access_link_' + t);
@@ -694,7 +735,7 @@
                 spaceInput.classList.remove('border-red-500', 'border-green-500');
                 return;
               }
-              const valid = /^https:\/\/[a-zA-Z0-9._-]+\.hf\.space$/.test(val);
+              const valid = /^https:\/\/huggingface\.co\/spaces\/[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+\/?$/.test(val);
               spaceInput.classList.toggle('border-red-500', !valid);
               spaceInput.classList.toggle('border-green-500', valid);
               if (valid) {
@@ -937,21 +978,28 @@
   // Social features removed: friend/unfriend UI disabled.
 
   /* ── Tab switching ───────────────────────── */
+  function openTab(tabName) {
+    const btn = document.querySelector(`.profile-tab[data-tab="${tabName}"]`);
+    if (!btn) return;
+    document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    btn.classList.add('active');
+    const panel = document.getElementById('tab-' + tabName);
+    if (panel) panel.classList.remove('hidden');
+    if (tabName === 'stats') loadHeatmapForType('chess');
+    if (tabName === 'ai-models' && !_fileStatusLoaded) {
+      _fileStatusLoaded = true;
+      loadAllFileStatuses();
+    }
+  }
+
   document.querySelectorAll('.profile-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
-      btn.classList.add('active');
-      const panel = document.getElementById('tab-' + btn.dataset.tab);
-      if (panel) panel.classList.remove('hidden');
-      /* Lazy-load chess heatmap when Stats tab first opened */
-      if (btn.dataset.tab === 'stats') loadHeatmapForType('chess');
-      if (btn.dataset.tab === 'ai-models' && !_fileStatusLoaded) {
-        _fileStatusLoaded = true;
-        loadAllFileStatuses();
-      }
-    });
+    btn.addEventListener('click', () => openTab(btn.dataset.tab));
   });
+
+  /* ── Auto-open tab from ?tab= URL param ─── */
+  const _urlTab = new URLSearchParams(window.location.search).get('tab');
+  if (_urlTab) openTab(_urlTab);
 
   /* ── Lazy file-status loading (AI Models tab) ──────────── */
   let _fileStatusLoaded = false;

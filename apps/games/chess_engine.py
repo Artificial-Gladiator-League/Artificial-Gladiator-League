@@ -178,6 +178,17 @@ def create_armageddon(drawn_game: Game) -> Game:
     random.shuffle(players)
     arm_white, arm_black = players
 
+    # Preserve each player's own thinking-time budget regardless of
+    # which color they were reassigned in the Armageddon shuffle.
+    white_thinking = (
+        drawn_game.white_thinking_seconds if arm_white == drawn_game.white
+        else drawn_game.black_thinking_seconds
+    )
+    black_thinking = (
+        drawn_game.black_thinking_seconds if arm_black == drawn_game.black
+        else drawn_game.white_thinking_seconds
+    )
+
     arm = GameModel(
         white=arm_white,
         black=arm_black,
@@ -189,6 +200,8 @@ def create_armageddon(drawn_game: Game) -> Game:
         is_tournament_game=drawn_game.is_tournament_game,
         tournament_match=drawn_game.tournament_match,
         armageddon_of=drawn_game,
+        white_thinking_seconds=white_thinking,
+        black_thinking_seconds=black_thinking,
     )
     return arm
 

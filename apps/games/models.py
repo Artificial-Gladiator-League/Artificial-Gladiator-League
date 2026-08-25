@@ -93,10 +93,20 @@ class Game(models.Model):
     )
 
     # Maximum time (seconds) allotted for an AI to think per move.
+    # Kept for backward compatibility — new code should read the
+    # per-color fields below instead.
     ai_thinking_seconds = models.FloatField(
         default=0.0,
         db_default=1.0,
-        help_text="Maximum seconds allowed for AI to think per move.",
+        help_text="Deprecated — use white_thinking_seconds / black_thinking_seconds. Kept for backward compatibility.",
+    )
+    white_thinking_seconds = models.FloatField(
+        default=5.0,
+        help_text="Target pace, in seconds, for White's AI moves. Actual move time may exceed this depending on how the opponent's model is hosted.",
+    )
+    black_thinking_seconds = models.FloatField(
+        default=5.0,
+        help_text="Target pace, in seconds, for Black's AI moves. Actual move time may exceed this depending on how the opponent's model is hosted.",
     )
 
     # ── Status / result ─────────────────────────

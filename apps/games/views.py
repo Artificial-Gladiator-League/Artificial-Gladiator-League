@@ -13,6 +13,8 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from .models import Comment, Game
+
+from apps.core.utils import parse_thinking_seconds as _parse_thinking_seconds
 from apps.tournaments.models import Tournament
 
 log = logging.getLogger(__name__)
@@ -340,6 +342,29 @@ def _build_waiting_games():
     return items
 
 
+def _build_my_active_games(user):
+    """Return the logged-in user's own ongoing casual games for the lobby."""
+    from django.db.models import Q as _Q
+    games = (
+        Game.objects
+        .filter(_Q(white=user) | _Q(black=user), status=Game.Status.ONGOING)
+        .select_related("white", "black")
+        .order_by("-last_move_at", "-timestamp")
+    )
+    items = []
+    for g in games:
+        opponent = g.black if g.white_id == user.pk else g.white
+        items.append({
+            "pk": g.pk,
+            "opponent": opponent.username if opponent else "?",
+            "game_type": g.game_type,
+            "time_control": g.time_control,
+            "variant": _classify_time_control(g.time_control).capitalize(),
+            "url": reverse("games:game_detail", args=[g.pk]),
+        })
+    return items
+
+
 def _build_ongoing_games():
     ongoing_games = (
         Game.objects.filter(
@@ -382,6 +407,7 @@ def lobby(request):
     display_games = _build_display_games()
     waiting_games = _build_waiting_games()
     ongoing_games_list = _build_ongoing_games()
+    my_active_games = _build_my_active_games(user)
     fide = user.get_fide_title()
 
     ongoing_count = Game.objects.filter(status=Game.Status.ONGOING).count()
@@ -397,6 +423,7 @@ def lobby(request):
         "fide_title": fide,
         "waiting_games": waiting_games,
         "ongoing_games": ongoing_games_list,
+        "my_active_games": my_active_games,
         "display_games": display_games,
         "has_live_display_games": any(g["is_live"] for g in display_games),
         "live_gladiators_count": live_gladiators_count,
@@ -445,6 +472,7 @@ def create_lobby_game(request):
     inc = max(0, min(inc, 60))
     tc = f"{base_min}+{inc}"
     base_sec = base_min * 60
+    thinking_seconds = _parse_thinking_seconds(request)
     from . import breakthrough_engine as bt
     starting_fen = bt.STARTING_FEN if game_type == Game.GameType.BREAKTHROUGH else chess.STARTING_FEN
     # Determine color assignment
@@ -473,7 +501,8 @@ def create_lobby_game(request):
         increment=inc,
         game_type=game_type,
         current_fen=starting_fen,
-        ai_thinking_seconds=1.0,
+        white_thinking_seconds=thinking_seconds,
+        black_thinking_seconds=thinking_seconds,
     )
     _broadcast_lobby_update("new_waiting_game", game)
     dest = reverse("games:game_detail", args=[game.pk])
@@ -513,6 +542,7 @@ def create_game(request):
     parts = tc.split("+")
     base_sec = int(parts[0]) * 60 if parts else 180
     inc = int(parts[1]) if len(parts) > 1 else 0
+    thinking_seconds = _parse_thinking_seconds(request)
     from . import breakthrough_engine as bt
     starting_fen = bt.STARTING_FEN if game_type == Game.GameType.BREAKTHROUGH else chess.STARTING_FEN
     game = Game.objects.create(
@@ -523,7 +553,8 @@ def create_game(request):
         increment=inc,
         game_type=game_type,
         current_fen=starting_fen,
-        ai_thinking_seconds=1.0,
+        white_thinking_seconds=thinking_seconds,
+        black_thinking_seconds=thinking_seconds,
     )
     _broadcast_lobby_update("new_waiting_game", game)
     dest = reverse("games:game_detail", args=[game.pk])
@@ -569,7 +600,8 @@ def join_game(request, game_id):
         return redirect("games:lobby")
     if game.black is None:
         game.black = request.user
-        game.save(update_fields=["black"])
+        game.black_thinking_seconds = _parse_thinking_seconds(request)
+        game.save(update_fields=["black", "black_thinking_seconds"])
         log.info(
             "[GAME START] %s vs %s | game_id=%s | type=%s | tc=%s",
             game.white.username, game.black.username,
@@ -577,7 +609,8 @@ def join_game(request, game_id):
         )
     elif game.white is None:
         game.white = request.user
-        game.save(update_fields=["white"])
+        game.white_thinking_seconds = _parse_thinking_seconds(request)
+        game.save(update_fields=["white", "white_thinking_seconds"])
         log.info(
             "[GAME START] %s vs %s | game_id=%s | type=%s | tc=%s",
             game.white.username, game.black.username,
@@ -679,7 +712,7 @@ def game_detail(request, game_id):
     def _ai_name(user):
         if not user:
             return ""
-        return user.ai_name or ""
+        return user.ai_name or user.username
 
     return render(request, "games/game_view.html", {
         "game": game,

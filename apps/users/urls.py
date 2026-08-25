@@ -28,4 +28,7 @@ urlpatterns = [
     path("gdpr/", views.gdpr_portal, name="gdpr"),
     path("gdpr/export/", views.gdpr_export, name="gdpr_export"),
     path("gdpr/delete/", views.gdpr_delete, name="gdpr_delete"),
+    # PayPal payout email
+    path("profile/paypal-email/save/", views.save_paypal_email, name="save_paypal_email"),
+    path("profile/paypal-email/delete/", views.delete_paypal_email, name="delete_paypal_email"),
 ]
