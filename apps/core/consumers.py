@@ -1,6 +1,7 @@
 import json
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.layers import get_channel_layer
 
 
 # ── Notification helpers ───────────────────────────────────────────────────────
@@ -112,6 +113,21 @@ _online_connections: dict[str, int] = {}   # channel_name → user_id
 _online_users: set[int] = set()            # unique user IDs currently connected
 
 
+async def remove_user_presence(user_id: int) -> None:
+    """Remove all connections for user_id, update the online set, and broadcast."""
+    stale = [ch for ch, uid in _online_connections.items() if uid == user_id]
+    for ch in stale:
+        _online_connections.pop(ch, None)
+    if user_id not in _online_connections.values():
+        _online_users.discard(user_id)
+    channel_layer = get_channel_layer()
+    if channel_layer is not None:
+        await channel_layer.group_send("presence", {
+            "type": "presence_update",
+            "data": {"type": "online_count", "count": len(_online_users)},
+        })
+
+
 class PresenceConsumer(AsyncWebsocketConsumer):
     """
     Tracks how many authenticated users are connected and broadcasts
@@ -135,11 +151,9 @@ class PresenceConsumer(AsyncWebsocketConsumer):
     async def disconnect(self, close_code):
         if self.channel_name in _online_connections:
             uid = _online_connections.pop(self.channel_name)
-            # Only remove user from online set if no other connections remain
-            if uid not in _online_connections.values():
-                _online_users.discard(uid)
-
-        await self._broadcast_count()
+            await remove_user_presence(uid)
+        else:
+            await self._broadcast_count()
         await self.channel_layer.group_discard(self.GROUP, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):

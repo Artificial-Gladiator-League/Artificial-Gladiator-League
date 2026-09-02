@@ -17,7 +17,7 @@ from apps.games.models import Game
 
 from apps.core.utils import parse_thinking_seconds
 
-from .models import Match, PrizeClaim, Tournament, TournamentParticipant, TournamentChatMessage
+from .models import Match, PayoutConfirmation, PrizeClaim, Tournament, TournamentParticipant, TournamentChatMessage
 
 log = logging.getLogger(__name__)
 
@@ -149,6 +149,31 @@ def tournament_list(request):
 
 def tournament_detail(request, pk):
     tournament = get_object_or_404(Tournament, pk=pk)
+
+    # ── Fallback registration-period SHA audit (no Celery Beat) ───
+    # Runs the pre-start anti-cheat sweep on page load for OPEN/FULL
+    # tournaments, throttled to once per 15s per tournament via the
+    # cache so refreshes don't hammer the HF Hub API.
+    if tournament.status in (Tournament.Status.OPEN, Tournament.Status.FULL):
+        from django.core.cache import cache
+        _audit_key = f"regperiod_sha_audit:{tournament.pk}"
+        if cache.add(_audit_key, 1, timeout=15):
+            try:
+                from apps.tournaments.tasks import run_registration_period_sha_audit
+                run_registration_period_sha_audit()
+            except Exception:
+                log.exception(
+                    "tournament_detail: registration-period SHA audit failed "
+                    "for tournament=%s", tournament.pk,
+                )
+        # If the sweep just disqualified the requesting user, redirect now
+        # so the offender is bounced on the very same request.
+        if request.user.is_authenticated and tournament.participants.filter(
+            user=request.user, disqualified_for_sha_mismatch=True,
+        ).exists():
+            request.session["dq_tournament_id"] = tournament.pk
+            request.session["dq_tournament_name"] = tournament.name
+            return redirect("tournaments:disqualified")
 
     # ── Auto-recover stuck tournaments ────────────────────────────
     # If a tournament is ongoing/full but has zero participants
@@ -398,18 +423,26 @@ def live_match(request, pk, match_id):
     is_black = request.user.is_authenticated and request.user == match.player2
     is_match_participant = is_white or is_black
 
+    # Final clock times for completed matches (so the page shows remaining time, not baseSec)
+    final_game = match.games.order_by("-timestamp").first()
+    base_sec = base_min * 60
+    final_white_time = round(final_game.white_time, 1) if final_game else base_sec
+    final_black_time = round(final_game.black_time, 1) if final_game else base_sec
+
     return render(
         request,
         "tournaments/game_view.html",
         {
             "tournament": tournament,
             "match": match,
-            "base_seconds": base_min * 60,
+            "base_seconds": base_sec,
             "increment": increment,
             "is_white": is_white,
             "is_black": is_black,
             "is_match_participant": is_match_participant,
             "game_type": tournament.game_type,
+            "final_white_time": final_white_time,
+            "final_black_time": final_black_time,
         },
     )
 
@@ -732,7 +765,9 @@ def join_tournament(request, pk):
             _terms_ok = request.POST.get("terms_accepted") == "1"
         else:
             _terms_ok = True
-        if not _paypal_ok or not _terms_ok:
+        _age_ok = request.POST.get("confirmed_age_18_plus") == "1"
+        _residency_ok = request.POST.get("confirmed_israeli_resident") == "1"
+        if not _paypal_ok or not _terms_ok or not _age_ok or not _residency_ok:
             log.info(
                 "join_tournament PAYPAL/TERMS: user=%s t=%s — redirecting to terms page",
                 request.user.username, tournament.pk,
@@ -772,6 +807,46 @@ def join_tournament(request, pk):
             tournament=tournament, user=request.user,
         ).update(ai_thinking_seconds=participant_thinking)
 
+        # ── Pin registration-time SHA baseline for anti-cheat ────────────
+        # Capture the participant's current repo SHA immediately at registration
+        # so any change between registration and tournament start is auditable.
+        try:
+            from apps.tournaments.sha_audit import capture_round_baseline
+            _new_participant = TournamentParticipant.objects.filter(
+                tournament=tournament, user=request.user,
+            ).first()
+            if _new_participant:
+                capture_round_baseline(tournament, round_num=0)
+        except Exception:
+            log.exception(
+                "join_tournament: failed to capture registration-time SHA baseline "
+                "for user=%s tournament=%s", request.user.username, tournament.pk,
+            )
+
+        # ── Continuous registration-period SHA poll (inline; no Beat required) ──
+        # Sweeps every pre-start participant so cheating between registration
+        # and tournament start is caught even without Celery Beat.
+        try:
+            from apps.tournaments.tasks import run_registration_period_sha_audit
+            run_registration_period_sha_audit()
+        except Exception:
+            log.exception(
+                "join_tournament: inline registration-period SHA audit failed "
+                "for user=%s tournament=%s", request.user.username, tournament.pk,
+            )
+
+        # ── Send T&C confirmation email (every registration) ───────────────
+        # Run inline: .delay() would queue to the Redis broker, but no Celery
+        # worker consumes it in this deployment, so the email would never send.
+        try:
+            from apps.tournaments.tasks import send_registration_confirmation
+            send_registration_confirmation(tournament.pk, request.user.pk)
+        except Exception:
+            log.exception(
+                "join_tournament: T&C email failed entirely for "
+                "user=%s tournament=%s", request.user.username, tournament.pk,
+            )
+
         # ── Store money-tournament audit fields ─────────────────────
         if tournament.is_money_tournament:
             _paypal_email = request.user.paypal_email
@@ -784,6 +859,9 @@ def join_tournament(request, pk):
                 terms_accepted_at=timezone.now(),
                 terms_version_accepted=tournament.terms_version,
                 paypal_email=_paypal_email,
+                confirmed_age_18_plus=_age_ok,
+                confirmed_israeli_resident=_residency_ok,
+                eligibility_confirmed_at=timezone.now(),
             )
 
         # Auto‑close registration and start when full
@@ -1270,6 +1348,37 @@ def disqualified(request):
     """
     from .disqualification import find_active_dq_participant
 
+    # ── "Return to Lobby" button ─────────────────────────────────
+    # Acknowledging the disqualification unregisters the player from any
+    # pre-start (OPEN/FULL) tournament they were disqualified from, freeing
+    # the slot. ONGOING tournaments are left intact (bracket integrity).
+    if request.method == "POST":
+        if request.user.is_authenticated:
+            dq_parts = list(
+                TournamentParticipant.objects.filter(
+                    user=request.user,
+                    disqualified_for_sha_mismatch=True,
+                    tournament__status__in=[
+                        Tournament.Status.OPEN, Tournament.Status.FULL,
+                    ],
+                ).select_related("tournament")
+            )
+            for part in dq_parts:
+                _t = part.tournament
+                _was_full = _t.status == Tournament.Status.FULL
+                part.delete()
+                if _was_full:
+                    _t.status = Tournament.Status.OPEN
+                    _t.save(update_fields=["status"])
+                log.warning(
+                    "disqualified: unregistered user=%s from tournament=%s "
+                    "after acknowledging disqualification",
+                    request.user.username, _t.pk,
+                )
+        for _k in ("dq_participant_id", "dq_tournament_id", "dq_tournament_name"):
+            request.session.pop(_k, None)
+        return redirect("/games/lobby/")
+
     tournament_name = request.session.get("dq_tournament_name") or ""
     round_num = None
 
@@ -1381,6 +1490,61 @@ def prize_claim(request, pk):
     return render(request, "tournaments/prize_claim.html", {
         "tournament": tournament,
         "claim": claim,
+    })
+
+
+@login_required
+def payout_confirm(request, pk):
+    """Winner confirms their PayPal address before a prize can be paid out.
+
+    A PayoutConfirmation row is created/updated with a snapshot of the
+    user's current PayPal email and confirmed_by_user=True.  The admin
+    mark_as_paid action is blocked unless this confirmation exists.
+    """
+    tournament = get_object_or_404(Tournament, pk=pk)
+    if tournament.champion_id != request.user.pk:
+        raise PermissionDenied
+
+    entry = get_object_or_404(TournamentParticipant, tournament=tournament, user=request.user)
+
+    try:
+        confirmation = entry.payout_confirmation
+    except PayoutConfirmation.DoesNotExist:
+        confirmation = None
+
+    if request.method == "POST":
+        paypal_email = request.user.paypal_email
+        if not paypal_email:
+            messages.error(
+                request,
+                "You have no PayPal email on file. Please add one before confirming.",
+            )
+            from django.urls import reverse
+            from urllib.parse import quote
+            next_path = request.path
+            return redirect(
+                reverse("users:profile") + "?tab=paypal&next=" + quote(next_path, safe="/")
+            )
+
+        if confirmation is None:
+            confirmation = PayoutConfirmation(tournament_entry=entry)
+
+        confirmation.paypal_email_snapshot = paypal_email
+        confirmation.confirmed_at = timezone.now()
+        confirmation.confirmed_by_user = True
+        confirmation.save()
+
+        log.info(
+            "payout_confirm: user=%s confirmed payout email for tournament=%s",
+            request.user.username, tournament.pk,
+        )
+        messages.success(request, "Payout address confirmed.")
+        return redirect("tournaments:prize_claim", pk=pk)
+
+    return render(request, "tournaments/payout_confirm.html", {
+        "tournament": tournament,
+        "entry": entry,
+        "confirmation": confirmation,
     })
 
 

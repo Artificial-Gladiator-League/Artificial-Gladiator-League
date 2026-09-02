@@ -53,6 +53,13 @@ class CustomUser(AbstractUser):
     discarded — they are never persisted.
     """
 
+    # ── Pending email change ─────────────────────
+    pending_email = models.EmailField(
+        blank=True,
+        null=True,
+        help_text="Unconfirmed new email awaiting confirmation from the user.",
+    )
+
     # ── AI Bot ──────────────────────────────────
     ai_name = models.CharField(
         max_length=120,
@@ -401,6 +408,12 @@ class UserGameModel(models.Model):
         help_text="Rated games played since the last integrity re-validation. "
                   "Must reach 30 before tournament entry after a revision change.",
     )
+    # True only for the user who changed their repo; cleared by the cooldown logic.
+    # Avoids global side-effects: only the offender is flagged, not all participants.
+    repo_changed = models.BooleanField(
+        default=False,
+        help_text="Set when this user changes their HF repo. Requires 30 rated games to clear.",
+    )
     locked_at = models.DateTimeField(
         null=True,
         blank=True,
@@ -559,11 +572,12 @@ class UserGameModel(models.Model):
                 if repo_changed:
                     self.rated_games_since_revalidation = 0
                     self.model_integrity_ok = False
+                    self.repo_changed = True
                     # When the caller uses update_fields, ensure our reset
                     # fields are included so they are actually written to DB.
                     update_fields = kwargs.get("update_fields")
                     if update_fields is not None:
-                        extra = {"rated_games_since_revalidation", "model_integrity_ok"}
+                        extra = {"rated_games_since_revalidation", "model_integrity_ok", "repo_changed"}
                         kwargs["update_fields"] = list(set(update_fields) | extra)
         super().save(*args, **kwargs)
 

@@ -330,7 +330,9 @@ html, body, .animate-fade-in {
   }
 
   // ── Clock state ────────────────────────────
-  var whiteTime = baseSec, blackTime = baseSec;
+  var TERMINAL_STATUSES = {white_wins:1, black_wins:1, draw:1, timeout_white:1, timeout_black:1, aborted:1};
+  // Init from DB values so finished-game pages display final remaining time.
+  var whiteTime = {{ game.white_time }}, blackTime = {{ game.black_time }};
   var activeSide = null, clockInterval = null;
   var thinkingInterval = null, thinkingStart = null;
   var moveNum = 0, moves = [];
@@ -633,9 +635,24 @@ html, body, .animate-fade-in {
       var data = JSON.parse(e.data);
 
       if (data.type === 'game_state') {
-        // Sync clocks from authoritative server state
-        whiteTime = data.white_time;
-        blackTime = data.black_time;
+        if (isFinished) return; // discard any game_state that arrives after game_over
+        // Smooth clock sync — avoid upward jumps from server/client timing skew.
+        var prevSide = activeSide;
+        if (prevSide !== null && prevSide !== data.turn) {
+          // Turn just switched: the moving side gets local-ticked + increment,
+          // capped at the server value; the other side was idle so takes server directly.
+          if (prevSide === 'white') {
+            whiteTime = Math.min(whiteTime + increment, data.white_time);
+            blackTime = data.black_time;
+          } else {
+            blackTime = Math.min(blackTime + increment, data.black_time);
+            whiteTime = data.white_time;
+          }
+        } else {
+          // Same side still thinking (or first state): never jump the active clock up.
+          whiteTime = (prevSide === 'white') ? Math.min(whiteTime, data.white_time) : data.white_time;
+          blackTime = (prevSide === 'black') ? Math.min(blackTime, data.black_time) : data.black_time;
+        }
         activeSide = data.turn;
         renderClocks();
 
@@ -650,7 +667,15 @@ html, body, .animate-fade-in {
           addMoveFromUCI(serverMoves[idx], moveTurn);
         }
 
-        // Handle waiting → ongoing transition
+        // Freeze clock and return early for terminal game states.
+        if (TERMINAL_STATUSES[data.status]) {
+          activeSide = null;
+          stopClock();
+          renderClocks();
+          return;
+        }
+
+    // Handle waiting → ongoing transition
         if (data.status === 'waiting') {
           isWaiting = true;
           var hasOpponent = data.black && data.black !== '?';
@@ -708,6 +733,8 @@ html, body, .animate-fade-in {
           if (turnBanner) turnBanner.classList.add('hidden');
           if (resignWrap) resignWrap.classList.add('hidden');
         } else if (data.status === 'ongoing') {
+          // A late/duplicate game_state must never resume UI for a finished game.
+          if (isFinished) { stopClock(); return; }
           if (isWaiting) {
             // Game just transitioned from waiting to ongoing
             isWaiting = false;
@@ -722,8 +749,8 @@ html, body, .animate-fade-in {
             resignWrap.classList.remove('hidden');
           }
 
-          // Start client-side clock ticking once the first move is made
-          if (serverMoves.length > 0) {
+          // Start ticking once moves exist; don't restart if already running.
+          if (serverMoves.length > 0 && !isFinished && !clockInterval) {
             startClock();
           }
 

@@ -381,6 +381,21 @@ class TournamentParticipant(models.Model):
         ),
     )
 
+    # ── Self-declared eligibility (Israeli 18+, captured at join) ────
+    confirmed_age_18_plus = models.BooleanField(
+        default=False,
+        help_text="Participant self-declared they are 18 or older at the time of joining.",
+    )
+    confirmed_israeli_resident = models.BooleanField(
+        default=False,
+        help_text="Participant self-declared Israeli residency at the time of joining.",
+    )
+    eligibility_confirmed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp when the participant submitted the eligibility self-declarations.",
+    )
+
     THINKING_TIME_CHOICES = [
         (3.0, "3s"),
         (5.0, "5s"),
@@ -402,6 +417,91 @@ class TournamentParticipant(models.Model):
     def __str__(self):
         status = "eliminated" if self.eliminated else "active"
         return f"{self.user.username} in {self.tournament.name} ({status})"
+
+
+class EligibilityVerification(models.Model):
+    """Manual eligibility check record for money-tournament winners.
+
+    Created automatically when a winner is crowned.  A staff member
+    updates status/method/notes after performing the out-of-band check.
+    No documents or files are stored here.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        VERIFIED = "verified", "Verified"
+        REJECTED = "rejected", "Rejected"
+
+    tournament_entry = models.OneToOneField(
+        TournamentParticipant,
+        on_delete=models.CASCADE,
+        related_name="eligibility_verification",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True,
+    )
+    verification_method = models.CharField(
+        max_length=200,
+        blank=True,
+        help_text=(
+            "How the check was performed, e.g. 'video call' or "
+            "'live ID review, not retained'. No file upload."
+        ),
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        limit_choices_to={"is_staff": True},
+    )
+    notes = models.TextField(blank=True, default="")
+
+    class Meta:
+        verbose_name = "Eligibility Verification"
+        verbose_name_plural = "Eligibility Verifications"
+        indexes = [
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"EligibilityVerification({self.tournament_entry}, {self.status})"
+        )
+
+
+class PayoutConfirmation(models.Model):
+    """Winner's explicit confirmation of the PayPal address for prize payout.
+
+    The winner must confirm before a prize can be marked as paid.
+    paypal_email_snapshot is a point-in-time copy so later profile
+    changes cannot silently alter the payout destination.
+    """
+
+    tournament_entry = models.OneToOneField(
+        TournamentParticipant,
+        on_delete=models.CASCADE,
+        related_name="payout_confirmation",
+    )
+    paypal_email_snapshot = models.EmailField(
+        help_text="Copy of the user's PayPal email at the moment they confirmed.",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    confirmed_by_user = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Payout Confirmation"
+        verbose_name_plural = "Payout Confirmations"
+        indexes = [
+            models.Index(fields=["confirmed_by_user"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"PayoutConfirmation({self.tournament_entry}, confirmed={self.confirmed_by_user})"
+        )
 
 
 class Match(models.Model):

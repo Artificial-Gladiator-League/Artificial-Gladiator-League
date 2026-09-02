@@ -1,0 +1,17 @@
+Artificial Gladiator League - Confirm your new email address
+=============================================================
+
+Hi {{ user.username }},
+
+You requested to change the email address on your Artificial Gladiator League
+account to {{ new_email }}.
+
+Click the link below to confirm this change (valid for 24 hours):
+
+  {{ confirm_url }}
+
+If you did not request this change, you can safely ignore this email.
+Your current email will remain unchanged.
+
+-- The Artificial Gladiator League Team
+{{ site_url }}

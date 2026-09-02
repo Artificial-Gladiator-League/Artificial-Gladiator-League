@@ -207,6 +207,16 @@ def update_stats_after_game(sender, instance, **kwargs):
             user__in=[white, black], game_type=game_type,
         ).update(rated_games_since_revalidation=F("rated_games_since_revalidation") + 1)
 
+        # Clear the repo_changed flag once the cooldown is served so the
+        # clock stops instead of persisting in the DB indefinitely.
+        from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES
+        UserGameModel.objects.filter(
+            user__in=[white, black],
+            game_type=game_type,
+            repo_changed=True,
+            rated_games_since_revalidation__gte=TOURNAMENT_MIN_RATED_GAMES,
+        ).update(repo_changed=False)
+
     _broadcast_leaderboard_refresh(white, black)
 
     # If this is a tournament game, trigger bracket advancement
@@ -491,6 +501,18 @@ def preload_breakthrough_on_login(sender, request, user, **kwargs):
 # ── Logout handler (no-op — zero persistent storage) ──
 
 @receiver(user_logged_out)
+def on_user_logged_out_presence(sender, request, user, **kwargs):
+    """Deterministically remove the user from the online counter on logout."""
+    if user is None or not user.pk:
+        return
+    try:
+        from apps.core.consumers import remove_user_presence
+        async_to_sync(remove_user_presence)(user.pk)
+    except Exception:
+        log.exception("[presence] Failed to remove presence for user %s on logout", user.pk)
+
+
+@receiver(user_logged_out)
 def clear_breakthrough_on_logout(sender, request, user, **kwargs):
     """Clean up cached model files on logout.
 
@@ -591,15 +613,17 @@ def populate_hf_space_url(sender, instance, **kwargs):
                 headers={"Content-Type": "application/json"},
                 timeout=15,
             )
-            new_status = "ready" if resp.status_code < 500 else "failed"
+            # Only mark failed on server error; "ready" is reserved for ownership verification.
+            reachable = resp.status_code < 500
         except Exception as exc:
             log.warning("Space probe failed for UGM %s url=%s: %s", ugm_pk, url, exc)
-            new_status = "failed"
+            reachable = False
 
-        UserGameModel.objects.filter(pk=ugm_pk).update(
-            hf_inference_endpoint_status=new_status,
-        )
-        log.info("Space probe result for UGM %s: status=%s", ugm_pk, new_status)
+        if not reachable:
+            UserGameModel.objects.filter(pk=ugm_pk).update(
+                hf_inference_endpoint_status="failed",
+            )
+        log.info("Space probe result for UGM %s: reachable=%s", ugm_pk, reachable)
 
     t = threading.Thread(
         target=_probe,

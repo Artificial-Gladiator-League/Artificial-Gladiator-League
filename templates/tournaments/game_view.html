@@ -315,14 +315,15 @@ window.addEventListener('cg-ready', function () {
   }
 
   /* ── Clock state ─────────────────────────────── */
-  let whiteTime = baseSec;
-  let blackTime = baseSec;
+  // Init from DB final values for completed matches, baseSec for live ones.
+  let whiteTime = isCompleted ? {{ final_white_time }} : baseSec;
+  let blackTime = isCompleted ? {{ final_black_time }} : baseSec;
   let activeSide = null;
   let clockInterval = null;
   let thinkingInterval = null, thinkingStart = null;
   let moveNum = 0;
   let moves = [];
-  let boardFrozen = false;
+  let isGameOver = isCompleted;
 
   function formatClock(sec) {
     if (sec < 0) sec = 0;
@@ -464,6 +465,7 @@ window.addEventListener('cg-ready', function () {
         break;
 
       case 'move':
+        if (isGameOver) break;
         /* data: {fen, lastMove:[from,to], san, color:'white'|'black', last_move} */
         if (gameType === 'breakthrough') {
           renderBtBoard(data.fen, data.last_move || (data.lastMove ? data.lastMove.join('') : null));
@@ -505,14 +507,16 @@ window.addEventListener('cg-ready', function () {
         break;
 
       case 'clock':
+        if (isGameOver) break;
         /* data: {white: seconds, black: seconds, active:'white'|'black'} */
-        if (data.white !== undefined) whiteTime = data.white;
-        if (data.black !== undefined) blackTime = data.black;
+        if (data.white !== undefined) whiteTime = Math.min(whiteTime, data.white);
+        if (data.black !== undefined) blackTime = Math.min(blackTime, data.black);
         if (data.active) activeSide = data.active;
         renderClocks();
         break;
 
       case 'game_over':
+        isGameOver = true;
         showGameOver(data.result || '', data.winner || '');
         break;
 

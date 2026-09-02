@@ -488,6 +488,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.tournaments.tasks.run_global_sha_audit",
         "schedule": 30.0,  # same 30-second cadence; sharding bounds HF call rate
     },
+    "registration-period-sha-audit": {
+        "task": "apps.tournaments.tasks.run_registration_period_sha_audit",
+        "schedule": 30,  # every 30 seconds
+    },
 
     "cleanup-orphaned-dirs": {
         "task": "apps.users.model_lifecycle.cleanup_orphaned_dirs",

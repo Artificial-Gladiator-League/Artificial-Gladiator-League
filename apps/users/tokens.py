@@ -13,3 +13,13 @@ class AccountActivationTokenGenerator(PasswordResetTokenGenerator):
 
 
 account_activation_token = AccountActivationTokenGenerator()
+
+
+class EmailChangeTokenGenerator(PasswordResetTokenGenerator):
+    """HMAC token tied to pending_email; invalidates once that field changes or is cleared."""
+
+    def _make_hash_value(self, user, timestamp):
+        return f"{user.pk}{timestamp}{user.pending_email}"
+
+
+email_change_token = EmailChangeTokenGenerator()

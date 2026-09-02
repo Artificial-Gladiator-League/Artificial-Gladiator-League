@@ -1,0 +1,14 @@
+Artificial Gladiator League — Activate your account
+====================================================
+
+Hi {{ user.username }},
+
+Thanks for registering Artificial Gladiator League. Click the link below to
+activate your account and start gladiating. This link is valid for 24 hours.
+
+  {{ activation_url }}
+
+If you didn't register, you can safely ignore this email.
+
+-- The Artificial Gladiator League Team
+{{ site_url }}

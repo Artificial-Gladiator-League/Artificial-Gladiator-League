@@ -319,6 +319,93 @@
           </p>
         </div>
 
+        <!-- ── Email ─────────────────────────────────── -->
+        <div class="card">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Email</h2>
+          <p class="text-xs text-gray-400 mb-4">Your account email, used for activation and password reset.</p>
+
+          <div class="rounded-lg border border-green-700 bg-green-900/20 px-4 py-3 mb-4 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-sm">
+              <svg class="w-4 h-4 text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+              </svg>
+              <span class="text-green-300 font-medium">{{ user_profile.email }}</span>
+              <span class="text-xs text-green-500 font-semibold uppercase tracking-wide">Verified</span>
+            </div>
+            <button type="button" onclick="document.getElementById('emailChangeModal').classList.remove('hidden')"
+                    class="btn-gold btn-sm text-sm">Update email</button>
+          </div>
+
+          {% if user_profile.pending_email %}
+          <div class="rounded-lg border border-yellow-700 bg-yellow-900/15 px-4 py-2.5 text-sm text-yellow-300 flex items-center gap-2">
+            <svg class="w-4 h-4 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+            Pending confirmation for <span class="font-medium ml-1">{{ user_profile.pending_email }}</span>
+          </div>
+          {% endif %}
+        </div>
+
+        <!-- ── Change Password ───────────────────────── -->
+        <div class="card">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Change Password</h2>
+          <p class="text-xs text-gray-400 mb-4">Set a new password for your account.</p>
+
+          <form method="post" action="{% url 'users:change_password' %}" novalidate>
+            {% csrf_token %}
+            <div class="form-group mb-3">
+              <label for="id_new_password1" class="block text-sm font-medium text-gray-300 mb-1">New password</label>
+              <input type="password" id="id_new_password1" name="new_password1" required autocomplete="new-password"
+                     class="form-input w-full max-w-sm rounded-lg text-black placeholder-gray-500"
+                     placeholder="New password">
+              {% if password_change_form.new_password1.errors %}
+                <ul class="errorlist mt-1">{% for e in password_change_form.new_password1.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+              {% endif %}
+            </div>
+            <div class="form-group mb-4">
+              <label for="id_new_password2" class="block text-sm font-medium text-gray-300 mb-1">Confirm your new password</label>
+              <input type="password" id="id_new_password2" name="new_password2" required autocomplete="new-password"
+                     class="form-input w-full max-w-sm rounded-lg text-black placeholder-gray-500"
+                     placeholder="Confirm new password">
+              {% if password_change_form.new_password2.errors %}
+                <ul class="errorlist mt-1">{% for e in password_change_form.new_password2.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+              {% endif %}
+            </div>
+            <button type="submit" class="btn-brand btn-sm text-sm">Update password</button>
+          </form>
+        </div>
+
+        <!-- ── Update Email Modal ────────────────────── -->
+        <div id="emailChangeModal" class="fixed inset-0 z-[100] hidden">
+          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="emailChangeOverlay"></div>
+          <div class="relative flex items-center justify-center min-h-full p-4">
+            <div class="relative w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-6 space-y-5 animate-fade-in">
+              <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold">Update email address</h3>
+                <button type="button" id="closeEmailModal"
+                        class="text-gray-500 hover:text-gray-300 transition text-xl leading-none cursor-pointer">&times;</button>
+              </div>
+              <p class="text-sm text-gray-400">Enter your new email. A confirmation link will be sent there before the change takes effect.</p>
+              <form method="post" action="{% url 'users:request_email_change' %}" novalidate class="space-y-4">
+                {% csrf_token %}
+                <div class="form-group">
+                  <label for="id_new_email" class="block text-sm font-medium text-gray-300 mb-1">New email</label>
+                  <input type="email" id="id_new_email" name="new_email" required autocomplete="email"
+                         class="form-input w-full rounded-lg text-black placeholder-gray-500"
+                         placeholder="New email address">
+                </div>
+                <div class="form-group">
+                  <label for="id_confirm_new_email" class="block text-sm font-medium text-gray-300 mb-1">Confirm new email</label>
+                  <input type="email" id="id_confirm_new_email" name="confirm_new_email" required autocomplete="email"
+                         class="form-input w-full rounded-lg text-black placeholder-gray-500"
+                         placeholder="Confirm new email">
+                </div>
+                <button type="submit" class="btn-brand w-full py-2.5">Send confirmation email</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
       </div>{# /tab-edit #}
 
       <!-- ═══════════════════════════════════════
@@ -976,6 +1063,18 @@
 <script>
 (function () {
   // Social features removed: friend/unfriend UI disabled.
+
+  /* ── Email change modal ──────────────────── */
+  (function () {
+    var modal   = document.getElementById('emailChangeModal');
+    var overlay = document.getElementById('emailChangeOverlay');
+    var closeBtn = document.getElementById('closeEmailModal');
+    if (!modal) return;
+    function close() { modal.classList.add('hidden'); }
+    if (overlay) overlay.addEventListener('click', close);
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+  })();
 
   /* ── Tab switching ───────────────────────── */
   function openTab(tabName) {

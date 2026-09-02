@@ -54,6 +54,13 @@ class Game(models.Model):
         null=True, blank=True,
         related_name="won_games",
     )
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="hosted_games",
+        help_text="The player who created this lobby table.",
+    )
 
     # ── Game type ───────────────────────────────
     game_type = models.CharField(

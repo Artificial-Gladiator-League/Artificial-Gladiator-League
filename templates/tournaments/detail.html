@@ -556,6 +556,23 @@
   }
   connectWS();
 
+  {% if is_participant and tournament.status == "open" or is_participant and tournament.status == "full" %}
+  /* ── Registration-period anti-cheat poll ──────────────────────
+     While waiting for the tournament to start, periodically ping the
+     server so the SHA/repo audit runs even without page reloads. If
+     the audit disqualifies this user, the server redirects to the
+     disqualified page and we follow it. */
+  setInterval(() => {
+    fetch(window.location.pathname, { redirect: 'follow', headers: { 'X-Sha-Poll': '1' } })
+      .then((r) => {
+        if (r.redirected && r.url.indexOf('/disqualified/') !== -1) {
+          window.location.href = r.url;
+        }
+      })
+      .catch(() => {});
+  }, 16000);
+  {% endif %}
+
   function handleMessage(data) {
     switch (data.type) {
       case 'bracket_state':

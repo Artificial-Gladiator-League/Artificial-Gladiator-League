@@ -1,7 +1,8 @@
 from django.contrib import admin, messages
 from django.utils import timezone
 from .models import (
-    Badge, GauntletStanding, Match, PrizeClaim, Tournament, TournamentChatMessage,
+    Badge, EligibilityVerification, GauntletStanding, Match, PayoutConfirmation,
+    PrizeClaim, Tournament, TournamentChatMessage,
     TournamentParticipant, TournamentShaCheck,
 )
 
@@ -220,21 +221,30 @@ class PrizeClaimAdmin(admin.ModelAdmin):
     @admin.action(description="Mark selected as Paid")
     def mark_as_paid(self, request, queryset):
         now = timezone.now()
-        paid = skipped = 0
+        paid = skipped = blocked = 0
         for claim in queryset:
-            if claim.status == PrizeClaim.Status.CLAIMED:
-                claim.status = PrizeClaim.Status.PAID
-                claim.paid_at = now
-                claim.paid_by_admin = request.user
-                claim.save(update_fields=["status", "paid_at", "paid_by_admin"])
-                try:
-                    claim.tournament.payout_status = Tournament.PayoutStatus.PAID
-                    claim.tournament.save(update_fields=["payout_status"])
-                except Exception:
-                    pass
-                paid += 1
-            else:
+            if claim.status != PrizeClaim.Status.CLAIMED:
                 skipped += 1
+                continue
+            # Require winner's payout confirmation before marking paid.
+            has_confirmation = PayoutConfirmation.objects.filter(
+                tournament_entry__tournament=claim.tournament,
+                tournament_entry__user=claim.winner,
+                confirmed_by_user=True,
+            ).exists()
+            if not has_confirmation:
+                blocked += 1
+                continue
+            claim.status = PrizeClaim.Status.PAID
+            claim.paid_at = now
+            claim.paid_by_admin = request.user
+            claim.save(update_fields=["status", "paid_at", "paid_by_admin"])
+            try:
+                claim.tournament.payout_status = Tournament.PayoutStatus.PAID
+                claim.tournament.save(update_fields=["payout_status"])
+            except Exception:
+                pass
+            paid += 1
         if paid:
             self.message_user(request, f"Marked {paid} claim(s) as paid.", level=messages.SUCCESS)
         if skipped:
@@ -243,10 +253,78 @@ class PrizeClaimAdmin(admin.ModelAdmin):
                 f"{skipped} claim(s) skipped — only CLAIMED items can be marked as paid.",
                 level=messages.WARNING,
             )
+        if blocked:
+            self.message_user(
+                request,
+                f"{blocked} claim(s) blocked — winner has not confirmed their payout address yet.",
+                level=messages.ERROR,
+            )
 
     @admin.display(description="Current")
     def current_short(self, obj):
         return (obj.current_sha[:12] + "...") if obj.current_sha else "—"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EligibilityVerification)
+class EligibilityVerificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "tournament_entry", "status", "verification_method",
+        "verified_at", "verified_by",
+    )
+    list_filter = ("status",)
+    search_fields = (
+        "tournament_entry__user__username",
+        "tournament_entry__tournament__name",
+    )
+    ordering = ("-tournament_entry__joined_at",)
+    readonly_fields = ("tournament_entry",)
+    # No FileField or file upload widget anywhere in this admin.
+    fields = (
+        "tournament_entry",
+        "status",
+        "verification_method",
+        "verified_at",
+        "verified_by",
+        "notes",
+    )
+
+    def save_model(self, request, obj, form, change):
+        if obj.status in (
+            EligibilityVerification.Status.VERIFIED,
+            EligibilityVerification.Status.REJECTED,
+        ) and not obj.verified_by:
+            obj.verified_by = request.user
+        if obj.status in (
+            EligibilityVerification.Status.VERIFIED,
+            EligibilityVerification.Status.REJECTED,
+        ) and not obj.verified_at:
+            obj.verified_at = timezone.now()
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(PayoutConfirmation)
+class PayoutConfirmationAdmin(admin.ModelAdmin):
+    list_display = (
+        "tournament_entry", "paypal_email_snapshot",
+        "confirmed_by_user", "confirmed_at",
+    )
+    list_filter = ("confirmed_by_user",)
+    search_fields = (
+        "tournament_entry__user__username",
+        "tournament_entry__tournament__name",
+        "paypal_email_snapshot",
+    )
+    ordering = ("-confirmed_at",)
+    readonly_fields = (
+        "tournament_entry", "paypal_email_snapshot",
+        "confirmed_by_user", "confirmed_at",
+    )
 
     def has_add_permission(self, request):
         return False

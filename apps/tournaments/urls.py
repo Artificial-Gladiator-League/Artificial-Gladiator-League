@@ -18,6 +18,7 @@ urlpatterns = [
     path("<int:pk>/match/<int:match_id>/", views.live_match, name="live_match"),
     path("<int:pk>/match/<int:match_id>/resign/", views.resign_match, name="resign"),
     path("<int:pk>/claim/", views.prize_claim, name="prize_claim"),
+    path("<int:pk>/payout-confirm/", views.payout_confirm, name="payout_confirm"),
 
     # Live Chat — REMOVED
     # path("<int:pk>/chat/messages/", views.chat_messages, name="chat_messages"),

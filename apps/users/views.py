@@ -5,23 +5,32 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import login
+from django.contrib.auth import login, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.core.exceptions import ValidationError
+from django.core.mail import EmailMultiAlternatives
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from django.urls import reverse_lazy
+from django.template.loader import render_to_string
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.generic import UpdateView
 
-from .tokens import account_activation_token
+from .tokens import account_activation_token, email_change_token
 
-from .forms import GDPRRequestForm, ProfileForm, RegistrationForm, StyledLoginForm
+from .forms import (
+    EmailChangeRequestForm,
+    GDPRRequestForm,
+    ProfileForm,
+    RegistrationForm,
+    SetNewPasswordForm,
+    StyledLoginForm,
+)
 from .models import CustomUser, GDPRRequest, UserGameModel, validate_hf_repo_id
 from apps.games.models import Game
 from apps.tournaments.models import Match
@@ -209,13 +218,44 @@ def register(request):
         elif form.is_valid():
             username = form.cleaned_data["username"]
             password = form.cleaned_data["password"]
+            email = form.cleaned_data["email"]
             ai_name = form.cleaned_data["ai_name"]
-            user = CustomUser(username=username, ai_name=ai_name, is_active=True)
+            user = CustomUser(username=username, email=email, ai_name=ai_name, is_active=False)
             user.password = make_password(password)
             user.save()
-            log.info("New user registered: %s (AI: %s, IP: %s)", username, ai_name, ip)
-            login(request, user)
-            return redirect("users:profile")
+            log.info("New user registered (pending activation): %s (AI: %s, IP: %s)", username, ai_name, ip)
+
+            uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+            token = account_activation_token.make_token(user)
+            activation_url = "{}{}".format(
+                settings.SITE_URL,
+                reverse("users:activate", args=[uidb64, token]),
+            )
+            ctx = {"user": user, "activation_url": activation_url, "site_url": settings.SITE_URL}
+            text_body = render_to_string("users/activation_email.txt", ctx)
+            html_body = render_to_string("users/activation_email.html", ctx)
+            try:
+                msg = EmailMultiAlternatives(
+                    subject="Activate your Artificial Gladiator League account",
+                    body=text_body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[email],
+                )
+                msg.attach_alternative(html_body, "text/html")
+                msg.send()
+            except Exception:
+                log.exception(
+                    "Activation email failed for user %s — rolling back registration",
+                    username,
+                )
+                user.delete()
+                form.add_error(None, "We couldn't send your activation email. Please try again.")
+                return render(request, "users/register.html", {
+                    "form": form,
+                    "recaptcha_site_key": settings.RECAPTCHA_PUBLIC_KEY,
+                })
+
+            return redirect("users:activation_sent")
         else:
             # Log form errors to aid debugging (e.g. empty RECAPTCHA_PUBLIC_KEY)
             log.debug(
@@ -1033,6 +1073,106 @@ def delete_paypal_email(request):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Email change
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@login_required
+def request_email_change(request):
+    profile_url = reverse("users:profile") + "?tab=edit"
+    if request.method != "POST":
+        return redirect(profile_url)
+
+    form = EmailChangeRequestForm(request.POST)
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                messages.error(request, error)
+        return redirect(profile_url)
+
+    new_email = form.cleaned_data["new_email"]
+    user = request.user
+    user.pending_email = new_email
+    user.save(update_fields=["pending_email"])
+
+    uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
+    token = email_change_token.make_token(user)
+    confirm_url = "{}{}".format(
+        settings.SITE_URL,
+        reverse("users:confirm_email_change", args=[uidb64, token]),
+    )
+    ctx = {
+        "user": user,
+        "confirm_url": confirm_url,
+        "site_url": settings.SITE_URL,
+        "new_email": new_email,
+    }
+    text_body = render_to_string("users/email_change_confirmation.txt", ctx)
+    html_body = render_to_string("users/email_change_confirmation.html", ctx)
+    try:
+        msg = EmailMultiAlternatives(
+            subject="Confirm your new email for Artificial Gladiator League",
+            body=text_body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[new_email],
+        )
+        msg.attach_alternative(html_body, "text/html")
+        msg.send()
+    except Exception:
+        log.exception("Email change confirmation send failed for user %s", user.username)
+        user.pending_email = None
+        user.save(update_fields=["pending_email"])
+        messages.error(request, "Failed to send confirmation email. Please try again.")
+        return redirect(profile_url)
+
+    messages.success(
+        request,
+        f"Confirmation email sent to {new_email}. Click the link there to finish updating your email.",
+    )
+    return redirect(profile_url)
+
+
+def confirm_email_change(request, uidb64, token):
+    """GET: apply the new email once the user clicks the confirmation link."""
+    try:
+        uid = urlsafe_base64_decode(uidb64).decode()
+        user = CustomUser.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+        user = None
+
+    if user is not None and email_change_token.check_token(user, token) and user.pending_email:
+        user.email = user.pending_email
+        user.pending_email = None
+        user.save(update_fields=["email", "pending_email"])
+        messages.success(request, "Your email has been updated.")
+        log.info("User %s confirmed email change.", user.username)
+    else:
+        messages.error(request, "This confirmation link is invalid or has already been used.")
+
+    return redirect("users:profile")
+
+
+@login_required
+def change_password(request):
+    """POST: set a new password and keep the session alive."""
+    profile_url = reverse("users:profile") + "?tab=edit"
+    if request.method != "POST":
+        return redirect(profile_url)
+
+    form = SetNewPasswordForm(request.POST)
+    if not form.is_valid():
+        for field_errors in form.errors.values():
+            for error in field_errors:
+                messages.error(request, error)
+        return redirect(profile_url)
+
+    request.user.set_password(form.cleaned_data["new_password1"])
+    request.user.save()
+    update_session_auth_hash(request, request.user)
+    messages.success(request, "Your password has been updated.")
+    log.info("User %s changed their password.", request.user.username)
+    return redirect(profile_url)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Profile (UpdateView)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class ProfileView(LoginRequiredMixin, UpdateView):
@@ -1057,6 +1197,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         ctx["is_own_profile"] = True
         ctx["fields_locked"] = True
         ctx["friends_list"] = user.friends.only("pk", "username", "elo", "last_login")
+        ctx["email_change_form"] = EmailChangeRequestForm()
+        ctx["password_change_form"] = SetNewPasswordForm()
 
         # ── Tournament match history ───────────────────────
         matches_as_p1 = Match.objects.filter(
@@ -1269,16 +1411,6 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         from apps.tournaments.models import TournamentParticipant
         from django.db.models import Q
 
-        # Pre-fetch game types where this user has been DQ'd for repo
-        # change in any tournament. Stored as a set of game_type strings
-        # so the per-game-type loop below only does one query total.
-        dq_game_types = set(
-            TournamentParticipant.objects
-            .filter(user=user, disqualified_for_sha_mismatch=True)
-            .values_list("tournament__game_type", flat=True)
-            .distinct()
-        )
-
         tournament_readiness = []
         for g in GAME_TYPES:
             gtype = g["type"]
@@ -1299,27 +1431,13 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             games_since_change = gm.rated_games_since_revalidation if gm else 0
             games_needed_after_change = max(0, TOURNAMENT_MIN_RATED_GAMES - games_since_change)
 
-            # User changed repo (or was DQ'd from a tournament) and
-            # hasn't played 30 games since. Four signals for this:
-            # 1. Normal repo-change path: had 30+ total games, counter reset.
-            # 2. Integrity flag flipped to False by DQ / SHA change detection.
-            # 3. DQ history exists for this game type AND counter < 30
-            #    (covers the case where re-validation already cleared the
-            #    integrity flag back to True but cooldown hasn't been served).
-            # 4. User has more total rated games than games since last
-            #    revalidation — meaning the counter was reset at some point
-            #    (repo changed while user had < 30 total games).
+            # Use the explicit per-user flag instead of multi-signal heuristics.
+            # repo_changed is only set on the offending user's row, so innocent
+            # users (Shahar etc.) are never incorrectly shown the cooldown banner.
             repo_changed = (
                 gm is not None
-                and (
-                    (rated_count >= TOURNAMENT_MIN_RATED_GAMES
-                     and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
-                    or not gm.model_integrity_ok
-                    or (gtype in dq_game_types
-                        and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
-                    or (rated_count > games_since_change
-                        and games_since_change < TOURNAMENT_MIN_RATED_GAMES)
-                )
+                and gm.repo_changed
+                and games_since_change < TOURNAMENT_MIN_RATED_GAMES
             )
 
             tournament_readiness.append({

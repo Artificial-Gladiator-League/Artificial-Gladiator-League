@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm your new email for Artificial Gladiator League</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0b0e1a;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#0b0e1a;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="padding-bottom:24px;">
+              <span style="font-size:22px;font-weight:700;color:#48bb78;letter-spacing:-0.5px;">
+                Artificial Gladiator League
+              </span>
+            </td>
+          </tr>
+
+          <!-- Card -->
+          <tr>
+            <td style="background-color:#161b33;border:1px solid #2d3561;border-radius:12px;padding:36px 40px;">
+
+              <h1 style="margin:0 0 20px;font-size:22px;font-weight:700;color:#f1f5f9;">
+                Confirm your new email address
+              </h1>
+              <p style="margin:0 0 20px;font-size:15px;color:#94a3b8;line-height:1.6;">
+                Hi {{ user.username }},
+              </p>
+              <p style="margin:0 0 28px;font-size:15px;color:#94a3b8;line-height:1.6;">
+                You requested to change the email address on your Artificial Gladiator League account
+                to <strong style="color:#f1f5f9;">{{ new_email }}</strong>. Click the button below to
+                confirm this change. This link is valid for <strong style="color:#f1f5f9;">24 hours</strong>.
+              </p>
+
+              <!-- CTA button -->
+              <table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto 28px;">
+                <tr>
+                  <td align="center" style="background-color:#48bb78;border-radius:8px;">
+                    <a href="{{ confirm_url }}"
+                       style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#0b0e1a;text-decoration:none;letter-spacing:0.2px;">
+                      Confirm new email
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:0 0 6px;font-size:13px;color:#64748b;line-height:1.5;">
+                If the button doesn't work, copy and paste this URL into your browser:
+              </p>
+              <p style="margin:0 0 20px;font-size:12px;color:#48bb78;word-break:break-all;">
+                {{ confirm_url }}
+              </p>
+              <p style="margin:0;font-size:13px;color:#64748b;line-height:1.5;">
+                If you did not request this change, you can safely ignore this email.
+                Your current email will remain unchanged.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:24px;">
+              <p style="margin:0;font-size:12px;color:#475569;">
+                <a href="{{ site_url }}" style="color:#48bb78;text-decoration:none;">Artificial Gladiator League</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

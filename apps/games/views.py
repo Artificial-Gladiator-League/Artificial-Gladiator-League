@@ -52,6 +52,45 @@ def _classify_time_control(tc: str) -> str:
     return "classical"
 
 
+def _build_waiting_game_data(game, user=None) -> dict | None:
+    """Serialise a waiting game for lobby broadcasts (1- or 2-player state)."""
+    host = game.host or game.white or game.black
+    if not host:
+        return None
+    host_color = "white" if (game.white_id and host.pk == game.white_id) else "black"
+    table_full = game.white_id is not None and game.black_id is not None
+    joiner = None
+    if table_full:
+        joiner = game.black if host.pk == game.white_id else game.white
+    fide = host.get_fide_title()
+    data: dict = {
+        "pk": game.pk,
+        "host_color": host_color,
+        "white_name": host.ai_name or host.username,
+        "host_name": host.username,
+        "white_elo": host.elo,
+        "fide_abbr": fide["abbr"],
+        "fide_title": fide["title"],
+        "fide_css": fide["css"],
+        "time_control": game.time_control,
+        "variant": _classify_time_control(game.time_control).capitalize(),
+        "game_type": game.game_type,
+        "game_type_label": Game.GameType(game.game_type).label,
+        "table_full": table_full,
+        "is_host": user is not None and host.pk == user.pk,
+        "join_url": reverse("games:join_game", args=[game.pk]),
+        "game_url": reverse("games:game_detail", args=[game.pk]),
+    }
+    if joiner:
+        joiner_fide = joiner.get_fide_title()
+        data["joiner_name"] = joiner.ai_name or joiner.username
+        data["joiner_elo"] = joiner.elo
+        data["joiner_fide_abbr"] = joiner_fide["abbr"]
+        data["joiner_fide_title"] = joiner_fide["title"]
+        data["joiner_fide_css"] = joiner_fide["css"]
+    return data
+
+
 def _broadcast_lobby_update(action: str, game) -> None:
     """Broadcast a lobby update via the channel layer (best-effort)."""
     try:
@@ -63,25 +102,18 @@ def _broadcast_lobby_update(action: str, game) -> None:
             return
 
         if action == "new_waiting_game":
-            creator = game.white or game.black
-            if creator:
-                fide = creator.get_fide_title()
+            data = _build_waiting_game_data(game)
+            if data:
                 async_to_sync(channel_layer.group_send)("lobby", {
                     "type": "lobby_update",
-                    "data": {
-                        "type": "new_waiting_game",
-                        "game": {
-                            "pk": game.pk,
-                            "white_name": (creator.ai_name or creator.username),
-                            "white_elo": creator.elo,
-                            "fide_abbr": fide["abbr"],
-                            "fide_title": fide["title"],
-                            "fide_css": fide["css"],
-                            "time_control": game.time_control,
-                            "variant": _classify_time_control(game.time_control).capitalize(),
-                            "join_url": reverse("games:join_game", args=[game.pk]),
-                        },
-                    },
+                    "data": {"type": "new_waiting_game", "game": data},
+                })
+        elif action == "update_waiting_game":
+            data = _build_waiting_game_data(game)
+            if data:
+                async_to_sync(channel_layer.group_send)("lobby", {
+                    "type": "lobby_update",
+                    "data": {"type": "update_waiting_game", "game": data},
                 })
         elif action == "remove_waiting_game":
             async_to_sync(channel_layer.group_send)("lobby", {
@@ -310,7 +342,7 @@ def _build_display_games():
     return display_games[:3]
 
 
-def _build_waiting_games():
+def _build_waiting_games(user):
     waiting_games = (
         Game.objects.filter(
             status=Game.Status.WAITING,
@@ -318,45 +350,48 @@ def _build_waiting_games():
         .filter(
             Q(white__isnull=True, black__isnull=False)
             | Q(white__isnull=False, black__isnull=True)
+            | Q(white__isnull=False, black__isnull=False, host__isnull=False)
         )
-        .select_related("white", "black")
+        .exclude(Q(white=user) | Q(black=user) | Q(host=user))
+        .select_related("white", "black", "host")
         .order_by("-timestamp")[:20]
     )
     items = []
     for game in waiting_games:
-        creator = game.white or game.black
-        fide = creator.get_fide_title()
-        items.append({
-            "pk": game.pk,
-            "white_name": creator.ai_name or creator.username,
-            "white_elo": creator.elo,
-            "fide_abbr": fide["abbr"],
-            "fide_title": fide["title"],
-            "fide_css": fide["css"],
-            "time_control": game.time_control,
-            "variant": _classify_time_control(game.time_control).capitalize(),
-            "game_type": game.game_type,
-            "game_type_label": Game.GameType(game.game_type).label,
-            "join_url": reverse("games:join_game", args=[game.pk]),
-        })
+        data = _build_waiting_game_data(game, user=user)
+        if data:
+            items.append(data)
     return items
 
 
 def _build_my_active_games(user):
-    """Return the logged-in user's own ongoing casual games for the lobby."""
+    """Return the logged-in user's own ongoing/waiting casual games for the lobby."""
     from django.db.models import Q as _Q
     games = (
         Game.objects
-        .filter(_Q(white=user) | _Q(black=user), status=Game.Status.ONGOING)
+        .filter(
+            _Q(white=user) | _Q(black=user) | _Q(host=user),
+            status=Game.Status.WAITING,
+        )
         .select_related("white", "black")
         .order_by("-last_move_at", "-timestamp")
+        .distinct()
     )
     items = []
     for g in games:
-        opponent = g.black if g.white_id == user.pk else g.white
+        if g.white_id == user.pk:
+            opponent = g.black
+        elif g.black_id == user.pk:
+            opponent = g.white
+        else:
+            opponent = g.white or g.black
+        if g.status == Game.Status.WAITING and opponent is None:
+            opponent_display = "Waiting for opponent…"
+        else:
+            opponent_display = opponent.username if opponent else "?"
         items.append({
             "pk": g.pk,
-            "opponent": opponent.username if opponent else "?",
+            "opponent": opponent_display,
             "game_type": g.game_type,
             "time_control": g.time_control,
             "variant": _classify_time_control(g.time_control).capitalize(),
@@ -372,13 +407,19 @@ def _build_ongoing_games():
             white__isnull=False,
             black__isnull=False,
         )
-        .select_related("white", "black")
+        .select_related("white", "black", "host")
         .order_by("-last_move_at", "-timestamp")[:20]
     )
     items = []
     for game in ongoing_games:
         white_fide = game.white.get_fide_title()
         black_fide = game.black.get_fide_title()
+        host_color = None
+        if game.host_id:
+            if game.host_id == game.white_id:
+                host_color = "white"
+            elif game.host_id == game.black_id:
+                host_color = "black"
         items.append({
             "pk": game.pk,
             "white_name": game.white.ai_name or game.white.username,
@@ -391,6 +432,7 @@ def _build_ongoing_games():
             "black_fide_abbr": black_fide["abbr"],
             "black_fide_title": black_fide["title"],
             "black_fide_css": black_fide["css"],
+            "host_color": host_color,
             "time_control": game.time_control,
             "variant": _classify_time_control(game.time_control).capitalize(),
             "spectate_url": reverse("games:spectate", args=[game.pk]),
@@ -405,7 +447,7 @@ def lobby(request):
     user = request.user
     log.info("[LOBBY] User %s joined lobby", user.username)
     display_games = _build_display_games()
-    waiting_games = _build_waiting_games()
+    waiting_games = _build_waiting_games(user)
     ongoing_games_list = _build_ongoing_games()
     my_active_games = _build_my_active_games(user)
     fide = user.get_fide_title()
@@ -495,6 +537,7 @@ def create_lobby_game(request):
     game = Game.objects.create(
         white=white_player,
         black=black_player,
+        host=request.user,
         time_control=tc,
         white_time=float(base_sec),
         black_time=float(base_sec),
@@ -547,6 +590,7 @@ def create_game(request):
     starting_fen = bt.STARTING_FEN if game_type == Game.GameType.BREAKTHROUGH else chess.STARTING_FEN
     game = Game.objects.create(
         white=request.user,
+        host=request.user,
         time_control=tc,
         white_time=float(base_sec),
         black_time=float(base_sec),
@@ -621,7 +665,8 @@ def join_game(request, game_id):
             return JsonResponse({"error": "This game is already full."}, status=409)
         messages.error(request, "This game is already full.")
         return redirect("games:lobby")
-    _broadcast_lobby_update("remove_waiting_game", game)
+    # Keep the row in Open Tables — update it to show both players joined.
+    _broadcast_lobby_update("update_waiting_game", game)
     dest = reverse("games:game_detail", args=[game.pk])
     if ajax:
         return JsonResponse({"redirect": dest})
@@ -677,7 +722,8 @@ def leave_game(request, game_id):
         game.save(update_fields=["white"])
     else:
         return redirect("games:game_detail", game_id=game.pk)
-    _broadcast_lobby_update("new_waiting_game", game)
+    # Revert the Open Tables row to single-player open state.
+    _broadcast_lobby_update("update_waiting_game", game)
     return redirect("games:lobby")
 
 

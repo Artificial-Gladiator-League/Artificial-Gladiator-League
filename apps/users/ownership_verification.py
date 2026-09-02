@@ -486,6 +486,8 @@ def check_full_ownership(game_model: "UserGameModel") -> "tuple[bool, str]":
     if pending_failures:
         # Model repo is verified; space/data still need AGL_VERIFY.txt.
         # Do NOT mark status as "failed" — model ownership is confirmed.
+        # Reset to "pending" so the probe thread's "ready" status doesn't linger.
+        _update_space_status(game_model, "pending")
         log.info(
             "check_full_ownership: model repo PASSED but pending items for user=%s game=%s: %s",
             game_model.user_id, game_model.game_type, " | ".join(pending_failures),

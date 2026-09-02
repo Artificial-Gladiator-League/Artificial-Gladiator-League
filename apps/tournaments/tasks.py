@@ -138,7 +138,6 @@ def run_pre_tournament_integrity_checks(self, tournament_id: int) -> dict:
     from apps.tournaments.models import Tournament, TournamentParticipant
     from apps.users.models import UserGameModel
     from apps.users.ownership_verification import has_repo_changed_since_registration
-    from apps.users.integrity import live_sha_check
 
     try:
         tournament = Tournament.objects.get(pk=tournament_id)
@@ -173,9 +172,36 @@ def run_pre_tournament_integrity_checks(self, tournament_id: int) -> dict:
             p.delete()
             continue
 
-        # ── Live HF SHA re-check before round start ────────────
-        # Hits the HF Hub API and prints a standard log line.
-        sha_ok, db_sha, latest_sha = live_sha_check(gm, context="pre-round")
+        # ── Live HF SHA re-check before round start (read-only) ────────────
+        # Uses _resolve_ref_sha directly so model_integrity_ok is never
+        # poisoned by a pre-start removal — that flag is reserved for
+        # mid-game disqualifications only.
+        try:
+            from apps.users.integrity import _resolve_ref_sha, _get_stored_token
+            _token = _get_stored_token(p.user) or ""
+            _ref = (gm.submitted_ref or "main").strip() or "main"
+            _repo_type = (gm.submission_repo_type or "model").strip() or "model"
+            _db_sha = (
+                gm.approved_full_sha
+                or gm.original_model_commit_sha
+                or gm.last_known_commit_id
+                or ""
+            ).strip() or None
+            _live_sha = _resolve_ref_sha(
+                gm.hf_model_repo_id, _token, ref=_ref, repo_type=_repo_type,
+            )
+            sha_ok = (_live_sha is None) or (not _db_sha) or (_live_sha == _db_sha)
+            db_sha = _db_sha
+            latest_sha = _live_sha
+        except Exception:
+            log.exception(
+                "Pre-round SHA fetch failed for user=%s tournament=%s — skipping check",
+                p.user.username, tournament.name,
+            )
+            sha_ok = True  # fail open: don't remove on network error
+            db_sha = None
+            latest_sha = None
+
         if not sha_ok:
             failed.append({
                 "user_id": p.user_id,
@@ -213,6 +239,137 @@ def run_pre_tournament_integrity_checks(self, tournament_id: int) -> dict:
         )
 
     return {"tournament_id": tournament_id, "passed": passed, "failed": failed}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Pre-tournament (registration-period) SHA poll
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@shared_task(bind=True, max_retries=0)
+def run_registration_period_sha_audit(self) -> dict:
+    """Continuous SHA check for participants in OPEN/FULL (not yet started) tournaments.
+
+    Fires every 60s via Celery Beat. For every registered participant whose
+    tournament has not yet gone ONGOING, hit the HF Hub and compare the live
+    SHA against the approved baseline. A mismatch removes the participant from
+    the tournament before it starts.
+
+    Does not set disqualified_for_sha_mismatch — that flag is reserved for
+    mid-game DQs. Removal here is a silent eligibility withdrawal.
+
+    Add to CELERY_BEAT_SCHEDULE:
+        "registration-period-sha-audit": {
+            "task": "apps.tournaments.tasks.run_registration_period_sha_audit",
+            "schedule": 60,  # seconds
+        },
+    """
+    from django.utils import timezone
+
+    from apps.tournaments.models import Tournament, TournamentParticipant
+    from apps.users.integrity import live_sha_check
+    from apps.users.models import UserGameModel
+
+    summary = {"candidates": 0, "removed": 0, "errors": 0}
+
+    # Only tournaments that are open for registration but not yet running.
+    pre_start_statuses = [Tournament.Status.OPEN, Tournament.Status.FULL]
+    candidates = list(
+        TournamentParticipant.objects
+        .filter(
+            tournament__status__in=pre_start_statuses,
+        )
+        .select_related("user", "tournament")
+    )
+    summary["candidates"] = len(candidates)
+    if not candidates:
+        return summary
+
+    for p in candidates:
+        tournament = p.tournament
+        try:
+            gm = UserGameModel.objects.get(
+                user=p.user, game_type=tournament.game_type,
+            )
+        except UserGameModel.DoesNotExist:
+            # No model at all — remove immediately.
+            log.warning(
+                "run_registration_period_sha_audit: removing user=%s from "
+                "tournament=%s — no UserGameModel found",
+                p.user.username, tournament.pk,
+            )
+            p.delete()
+            if tournament.status == Tournament.Status.FULL:
+                tournament.status = Tournament.Status.OPEN
+                tournament.save(update_fields=["status"])
+            summary["removed"] += 1
+            continue
+
+        if not (gm.hf_model_repo_id or "").strip():
+            continue  # no repo to check
+
+        try:
+            from apps.users.integrity import _resolve_ref_sha, _get_stored_token
+            token = _get_stored_token(p.user) or ""
+            ref = (gm.submitted_ref or "main").strip() or "main"
+            repo_type = (gm.submission_repo_type or "model").strip() or "model"
+            # Compare against the REGISTRATION baseline (pinned by
+            # capture_round_baseline at join), so only repo changes made
+            # *after* registration are flagged. Falling back to the
+            # approved/known SHAs only when no registration baseline exists.
+            db_sha = (
+                (p.round_pinned_sha or "").strip()
+                or (getattr(p, "registered_sha", "") or "").strip()
+                or gm.approved_full_sha
+                or gm.original_model_commit_sha
+                or gm.last_known_commit_id
+                or ""
+            ).strip() or None
+            live_sha = _resolve_ref_sha(
+                gm.hf_model_repo_id, token, ref=ref, repo_type=repo_type,
+            )
+            sha_ok = (live_sha is None) or (not db_sha) or (live_sha == db_sha)
+        except Exception:
+            log.exception(
+                "run_registration_period_sha_audit: SHA fetch raised "
+                "for user=%s tournament=%s",
+                p.user.username, tournament.pk,
+            )
+            summary["errors"] += 1
+            continue
+
+        if not sha_ok:
+            log.warning(
+                "run_registration_period_sha_audit: SHA CHANGED during "
+                "registration period — disqualifying user=%s from tournament=%s "
+                "(db_sha=%s live_sha=%s)",
+                p.user.username, tournament.pk,
+                (db_sha or "")[:12], (live_sha or "")[:12],
+            )
+            # Disqualify (keep the participant row so the waiting page can
+            # redirect the offender to the disqualified screen). The actual
+            # unregistration happens when they click "Return to Lobby" there.
+            try:
+                from apps.tournaments.disqualification import disqualify_for_repo_change
+                disqualify_for_repo_change(
+                    p,
+                    reason=(
+                        f"Repo SHA changed during registration period "
+                        f"(approved={(db_sha or '')[:12]}, live={(live_sha or '')[:12]})"
+                    ),
+                    forfeit_live_match=False,  # tournament not started yet
+                )
+            except Exception:
+                log.exception(
+                    "run_registration_period_sha_audit: disqualify failed "
+                    "for user=%s tournament=%s", p.user.username, tournament.pk,
+                )
+            summary["removed"] += 1
+
+    log.info(
+        "run_registration_period_sha_audit: candidates=%d removed=%d errors=%d",
+        summary["candidates"], summary["removed"], summary["errors"],
+    )
+    return summary
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -809,4 +966,407 @@ def expire_stale_prize_claims() -> str:
 
     log.warning("Expired %d prize claim(s):\n%s", len(to_expire), lines)
     return f"Expired {len(to_expire)} claim(s)."
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Registration confirmation email with T&C PDF
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=30)
+def send_registration_confirmation(self, tournament_id: int, user_id: int) -> dict:
+    """Send a registration confirmation email with the T&C as a PDF attachment.
+
+    Called immediately after a user successfully joins a money tournament.
+    Retries up to 2 times on transient email failures (30s delay).
+
+    Returns a dict with keys: ok (bool), error (str or None).
+    """
+    import io
+    from django.contrib.auth import get_user_model
+    from django.core.mail import EmailMessage
+    from django.conf import settings as dj_settings
+    from apps.tournaments.models import Tournament
+
+    User = get_user_model()
+
+    try:
+        tournament = Tournament.objects.get(pk=tournament_id)
+        user = User.objects.get(pk=user_id)
+    except Exception as exc:
+        log.error(
+            "send_registration_confirmation: could not load tournament=%s user=%s: %s",
+            tournament_id, user_id, exc,
+        )
+        return {"ok": False, "error": str(exc)}
+
+    recipient = user.email
+    if not recipient:
+        log.warning(
+            "send_registration_confirmation: user=%s has no email — skipping",
+            user.username,
+        )
+        return {"ok": False, "error": "no email address"}
+
+    # ── Build PDF ──────────────────────────────────────────────────
+    try:
+        pdf_bytes = _build_tc_pdf(tournament, user)
+    except Exception:
+        log.exception(
+            "send_registration_confirmation: PDF generation failed for "
+            "tournament=%s user=%s", tournament_id, user_id,
+        )
+        raise
+
+    # ── Compose email ──────────────────────────────────────────────
+    subject = f"Registration confirmed — {tournament.name}"
+    body = (
+        f"Hi {user.username},\n\n"
+        f"You are now registered for {tournament.name}.\n\n"
+        f"Tournament details:\n"
+        f"  Name    : {tournament.name}\n"
+    )
+    if getattr(tournament, "start_time", None):
+        body += f"  Starts  : {tournament.start_time.strftime('%Y-%m-%d %H:%M UTC')}\n"
+    if getattr(tournament, "prize_amount", None):
+        body += (
+            f"  Prize   : {tournament.prize_amount} "
+            f"{getattr(tournament, 'prize_currency', 'NIS')}\n"
+        )
+    body += (
+        f"\n"
+        f"The full Terms & Conditions are attached as a PDF for your records.\n\n"
+        f"Good luck!\n"
+        f"— Artificial Gladiator League"
+    )
+
+    try:
+        email = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=dj_settings.DEFAULT_FROM_EMAIL,
+            to=[recipient],
+        )
+        email.attach(
+            filename=f"AGL_Terms_{tournament.pk}.pdf",
+            content=pdf_bytes,
+            mimetype="application/pdf",
+        )
+        email.send(fail_silently=False)
+        log.info(
+            "send_registration_confirmation: sent to user=%s tournament=%s",
+            user.username, tournament_id,
+        )
+        return {"ok": True, "error": None}
+    except Exception:
+        log.exception(
+            "send_registration_confirmation: email send failed for "
+            "user=%s tournament=%s", user.username, tournament_id,
+        )
+        raise
+
+
+def _build_tc_pdf(tournament, user) -> bytes:
+    """Generate a PDF of the T&C for *tournament* and return raw bytes.
+
+    Uses reportlab. The content mirrors the key points in money_terms.html.
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib import colors
+    import io
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+        title=f"AGL Terms & Conditions — {tournament.name}",
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "AglTitle",
+        parent=styles["Title"],
+        fontSize=16,
+        spaceAfter=12,
+    )
+    heading_style = ParagraphStyle(
+        "AglHeading",
+        parent=styles["Heading2"],
+        fontSize=12,
+        spaceBefore=10,
+        spaceAfter=4,
+    )
+    body_style = styles["BodyText"]
+    body_style.fontSize = 10
+    body_style.leading = 14
+
+    sub_style = ParagraphStyle(
+        "AglSub", parent=body_style, leftIndent=16,
+    )
+    small_style = ParagraphStyle(
+        "AglSmall", parent=body_style, fontSize=8, textColor=colors.grey,
+    )
+
+    story = []
+
+    story.append(Paragraph("The Gladiator Gauntlet &mdash; Terms &amp; Conditions", title_style))
+    story.append(Paragraph(f"Tournament: {tournament.name}", body_style))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 0.3 * cm))
+
+    if getattr(tournament, "prize_amount", None):
+        prize_line = (
+            f"<b>Prize:</b> {tournament.prize_amount} "
+            f"{getattr(tournament, 'prize_currency', 'NIS')} &mdash; "
+            "awarded to the tournament champion, subject to the terms below."
+        )
+        story.append(Paragraph(prize_line, body_style))
+        story.append(Spacer(1, 0.3 * cm))
+
+    story.append(Paragraph(
+        "AGL(TM), The Gladiator Gauntlet(TM), AG(TM), Gladiate(TM), Lets Gladiate(TM), "
+        "Artificial Gladiator(TM), and Artificial Gladiator League(TM) are trademarks of PTK Group.",
+        small_style,
+    ))
+    story.append(Spacer(1, 0.2 * cm))
+    story.append(Paragraph(
+        "<b>Organizer:</b> Artificial Gladiator League (AGL), Rishon LeZion, Israel",
+        body_style,
+    ))
+    story.append(Spacer(1, 0.2 * cm))
+
+    # Each block: ("h", heading) | ("p", body paragraph) | ("s", indented sub-clause)
+    blocks = [
+        ("h", "Key Points (Summary)"),
+        ("p", "&bull; The Gladiator Gauntlet is a <b>weekly, Swiss-format AG tournament</b> "
+              "(chess and/or breakthrough) &mdash; no elimination, everyone plays every round."),
+        ("p", "&bull; <b>Eligibility:</b> you must be at least <b>18 years old</b> and a "
+              "<b>resident of Israel</b> with a valid AGL account."),
+        ("p", "&bull; <b>Prizes:</b> 1st place 100 NIS, 2nd place 50 NIS, 3rd place 25 NIS, "
+              "paid in NIS, subject to tax and identity/payment information requirements."),
+        ("p", "&bull; <b>Zero tolerance for cheating</b> &mdash; including changing your model's "
+              "repository mid-tournament &mdash; results in immediate disqualification and "
+              "forfeiture of prizes."),
+        ("p", "&bull; AGL may cancel, postpone, or adjust the schedule with reasonable notice."),
+        ("p", "&bull; Disputes are governed by <b>Israeli law</b>, under the exclusive "
+              "jurisdiction of the <b>courts of Rishon LeZion</b>."),
+
+        ("h", "1. Definitions"),
+        ("p", "1.1 <b>\"AGL\" / \"we\"</b> means The Gladiator Gauntlet tournament operator, "
+              "based in Rishon LeZion, Israel."),
+        ("p", "1.2 <b>\"Participant\" / \"you\"</b> means any individual who registers for "
+              "and/or competes in The Gladiator Gauntlet."),
+        ("p", "1.3 <b>\"Tournament\"</b> means a single weekly instance of The Gladiator Gauntlet."),
+        ("p", "1.4 <b>\"AG Champion\"</b> means The Artificial Gladiator champion, and its "
+              "associated repository, that a participant submits to compete on their behalf."),
+        ("p", "1.5 <b>\"Swiss System\"</b> means a multi-round tournament format in which no "
+              "participant is eliminated; each round, participants are paired against others "
+              "with a similar running score, and final standings are determined by cumulative "
+              "score (and tiebreakers) after all rounds are complete."),
+        ("p", "1.6 <b>\"Platform\"</b> means the AGL website and associated services through "
+              "which the Tournament is operated."),
+
+        ("h", "2. Eligibility &amp; Registration"),
+        ("p", "2.1 To participate in The Gladiator Gauntlet, you must:"),
+        ("s", "a. Be at least <b>18 years of age</b> at the time of registration;"),
+        ("s", "b. Be a <b>resident of the State of Israel</b>;"),
+        ("s", "c. Hold a valid, active AGL account in good standing; and"),
+        ("s", "d. Agree to comply with these T&amp;C and all other applicable AGL platform "
+              "terms and policies."),
+        ("p", "2.2 AGL may request information reasonably necessary to verify your identity, "
+              "age, or residency eligibility, and may suspend or deny entry pending such verification."),
+        ("p", "2.3 AGL reserves the right, at its reasonable discretion, to refuse or revoke "
+              "registration for any Participant who does not meet the eligibility criteria in "
+              "this Section 2, or who has previously violated these T&amp;C."),
+        ("p", "2.4 Registration for a given weekly Tournament is subject to the entry window, "
+              "capacity limits, and any other requirements published on the Tournament page."),
+
+        ("h", "3. Tournament Format &amp; Rules"),
+        ("p", "3.1 <b>Format.</b> The Gladiator Gauntlet is run under the <b>Swiss system</b>. "
+              "Participants are not eliminated after a loss; instead, each round they are paired "
+              "against opponents with a comparable score, and final rankings are determined by "
+              "total score across all rounds, with tiebreakers applied as needed to resolve ties."),
+        ("p", "3.2 <b>Game type.</b> Matches are played by AG models submitted by Participants, "
+              "in chess and/or breakthrough, as specified on the Tournament page for that week."),
+        ("p", "3.3 <b>Time control.</b> Each match is played under the time control specified on "
+              "the Tournament page for that week's Tournament."),
+        ("p", "3.4 <b>Pairings and scoring.</b> Round pairings, scoring, and standings are "
+              "generated and maintained by AGL's tournament system. AGL's determination of "
+              "pairings, results, and final standings is final, save for manifest error or a "
+              "successful dispute under Section 8."),
+        ("p", "3.5 <b>Model conduct during matches.</b> Your AG Champion must compete as "
+              "submitted at the time your Tournament registration is finalized. See Section 7 "
+              "for restrictions on changes during an active Tournament."),
+        ("p", "3.6 <b>Time per move.</b> Before joining a Tournament, the Participant selects a "
+              "target \"time per move\" (AI thinking time) setting for their AG Champion, as "
+              "offered on the registration page. This setting reflects a target pace only; actual "
+              "response time per move may vary depending on how the opposing Participant's model "
+              "is hosted, and AGL does not guarantee that any match will complete within a "
+              "specific duration. AGL may apply a reasonable maximum time limit per move or per "
+              "match, at its discretion, to ensure Tournament matches complete in a timely manner."),
+
+        ("h", "4. Schedule &amp; Changes"),
+        ("p", "4.1 The Gladiator Gauntlet is held <b>once per week</b>."),
+        ("p", "4.2 AGL may adjust the day, time, or duration of a given week's Tournament, "
+              "provided that reasonable notice is given to registered Participants."),
+        ("p", "4.3 AGL reserves the right to cancel or postpone any Tournament due to technical "
+              "issues, an insufficient number of participants, or any other reasonable operational "
+              "cause. In such cases, AGL will make reasonable efforts to notify affected "
+              "Participants and, where applicable, reschedule the Tournament or address any prize "
+              "implications."),
+        ("p", "4.4 AGL reserves the right, at its sole discretion, to increase the prize amounts "
+              "specified in Section 5 for a given Tournament &mdash; for example, where the number "
+              "of registered Participants is lower than expected &mdash; without any obligation to "
+              "do so and without this establishing any expectation of increased prizes for future "
+              "Tournaments."),
+
+        ("h", "5. Prizes &amp; Payment"),
+        ("p", "5.1 <b>Prize amounts</b> for each weekly Gladiator Gauntlet Tournament are as "
+              "follows, unless otherwise stated on the Tournament page:"),
+        ("s", "&bull; <b>1st place:</b> 100 NIS"),
+        ("s", "&bull; <b>2nd place:</b> 50 NIS"),
+        ("s", "&bull; <b>3rd place:</b> 25 NIS"),
+        ("p", "5.2 Prizes are paid in New Israeli Shekels (NIS), via a payment method specified "
+              "by AGL (which may include, for example, bank transfer or PayPal)."),
+        ("p", "5.3 To receive a prize, a winning Participant may be required to provide additional "
+              "information and to complete any identity or eligibility verification requested by "
+              "AGL. This may include, without limitation, providing a PayPal email address, "
+              "participating in a verification call via phone or WhatsApp, and/or providing a copy "
+              "of the Participant's Israeli identity card (Teudat Zehut) together with its address "
+              "appendix (Sefach), to confirm identity, age, and Israeli residency."),
+        ("p", "5.4 Prizes are subject to any applicable taxes, withholdings, or other legal "
+              "requirements under Israeli law. Each Participant is solely responsible for any tax "
+              "obligations arising from a prize they receive."),
+        ("p", "5.5 A Participant who is disqualified under Section 8, or who is later found "
+              "ineligible under Section 2, forfeits any right to a prize for the relevant "
+              "Tournament, and AGL may reallocate or withhold the prize accordingly."),
+        ("p", "5.6 Unclaimed prizes may be forfeited if the winning Participant fails to provide "
+              "required payment or verification information within a reasonable period specified "
+              "by AGL."),
+
+        ("h", "6. Code of Conduct &amp; Fair Play"),
+        ("p", "6.1 All Participants must treat every other Participant, AGL staff, and any other "
+              "person with respect at all times."),
+        ("p", "6.2 Harassment, discrimination, hate speech, and abusive behavior of any kind are "
+              "strictly prohibited, whether directed at another Participant, AGL, or any third party."),
+        ("p", "6.3 There is no place on the Platform for violence, threats of violence, or "
+              "incitement to violence of any kind."),
+        ("p", "6.4 Cheating of any kind is strictly prohibited. Cheating includes, without "
+              "limitation, the conduct described in Section 7."),
+        ("p", "6.5 Violation of this Section 6 may result in disqualification, suspension, or "
+              "termination of a Participant's account, in accordance with Section 8."),
+
+        ("h", "7. Anti-Cheating &amp; Integrity"),
+        ("p", "7.1 <b>Repository changes during a Tournament.</b> Changing your AG Champion's "
+              "Model's repository, or the contents thereof, at any point during an active "
+              "Tournament is considered cheating and will result in <b>immediate "
+              "disqualification</b> from that Tournament."),
+        ("p", "7.2 Without limiting Section 7.1, AGL may also disqualify a Participant for:"),
+        ("s", "a. Manipulating a Model, its repository, or its inference endpoint during a Tournament;"),
+        ("s", "b. Exploiting bugs, defects, or vulnerabilities in the Platform to gain an unfair "
+              "advantage; or"),
+        ("s", "c. Any other violation of this Section 7, Section 6 (Code of Conduct), or these "
+              "T&amp;C generally."),
+        ("p", "7.3 AGL may use automated or manual integrity checks to monitor compliance with "
+              "this Section 7. Participants agree to cooperate with any reasonable request from "
+              "AGL related to such checks."),
+        ("p", "7.4 <b>Repository changes in proximity to a Tournament.</b> Changing, modifying, "
+              "or replacing the Model's repository, or any contents thereof, during the period "
+              "immediately preceding the scheduled start time of a Tournament for which the "
+              "Participant is registered, shall likewise be deemed cheating for purposes of this "
+              "Section 7, and shall result in the immediate disqualification of the Participant "
+              "from that Tournament, irrespective of whether such change is detected prior to, "
+              "during, or following the Tournament."),
+
+        ("h", "8. Disqualification &amp; Sanctions"),
+        ("p", "8.1 AGL may disqualify a Participant from a Tournament, at AGL's reasonable "
+              "discretion, for any violation of Section 6 (Code of Conduct) or Section 7 "
+              "(Anti-Cheating &amp; Integrity), or of these T&amp;C more generally."),
+        ("p", "8.2 A disqualified Participant forfeits all prize eligibility for the Tournament "
+              "in which the disqualification occurs."),
+        ("p", "8.3 AGL may, in addition to disqualification from a specific Tournament, suspend "
+              "or terminate a Participant's AGL account for repeated or serious violations."),
+        ("p", "8.4 A Participant who believes they were disqualified or sanctioned in error may "
+              "raise the matter with AGL through the contact channel in Section 13. AGL will "
+              "review such disputes in good faith, but its determination following review shall "
+              "be final."),
+
+        ("h", "9. Data Protection &amp; Email Usage"),
+        ("p", "9.1 AGL will collect and store your email address and will use it only for the "
+              "following purposes:"),
+        ("s", "a. Account registration and authentication on the AGL Platform;"),
+        ("s", "b. Password reset and account recovery;"),
+        ("s", "c. Communications related to your Tournament participation, including "
+              "notifications and results; and"),
+        ("s", "d. Processing and paying Tournament prizes."),
+        ("p", "9.2 AGL will not sell Participants' email addresses to third parties."),
+        ("p", "9.3 AGL may process other personal data reasonably necessary to operate the "
+              "Platform and to comply with applicable law, including data protection law "
+              "applicable in Israel."),
+        ("p", "9.4 Participants may contact AGL using the details in Section 13 with questions "
+              "or requests regarding their personal data."),
+
+        ("h", "10. Limitation of Liability"),
+        ("p", "10.1 The Platform and Tournament are provided on an \"as is\" and \"as available\" "
+              "basis. AGL does not guarantee uninterrupted or error-free operation of the "
+              "Platform or any Tournament."),
+        ("p", "10.2 To the maximum extent permitted by applicable Israeli law, AGL shall not be "
+              "liable for any indirect, incidental, or consequential damages arising from a "
+              "Participant's use of the Platform or participation in a Tournament, including "
+              "damages arising from technical failures, cancellations, or postponements under "
+              "Section 4."),
+        ("p", "10.3 Nothing in this Section 10 excludes or limits any liability that cannot "
+              "lawfully be excluded or limited under applicable Israeli law."),
+
+        ("h", "11. Modifications to These Terms"),
+        ("p", "11.1 AGL may update or amend these T&amp;C from time to time. Material changes "
+              "will be communicated to Participants by a reasonable method, such as posting an "
+              "updated version on the Platform or notifying registered Participants by email."),
+        ("p", "11.2 Continued participation in the Gladiator Gauntlet following the effective "
+              "date of any updated T&amp;C constitutes acceptance of the updated terms."),
+
+        ("h", "12. Governing Law &amp; Jurisdiction"),
+        ("p", "12.1 These T&amp;C, and any dispute arising out of or in connection with the "
+              "Gladiator Gauntlet or these T&amp;C, shall be governed by the laws of the State "
+              "of Israel, without regard to its conflict-of-laws principles."),
+        ("p", "12.2 The competent courts of Rishon LeZion, Israel, shall have exclusive "
+              "jurisdiction over any such dispute."),
+        ("p", "12.3 These T&amp;C are drafted in English. Should a Hebrew translation be "
+              "provided for convenience, the English version shall prevail in the event of any "
+              "conflict or inconsistency."),
+
+        ("h", "13. Contact Information"),
+        ("p", "For questions about these T&amp;C, the Gladiator Gauntlet, prizes, or a dispute "
+              "regarding disqualification, please contact AGLadiator through the contact details "
+              "published on the Platform."),
+    ]
+
+    for kind, text in blocks:
+        if kind == "h":
+            story.append(Paragraph(text, heading_style))
+        elif kind == "s":
+            story.append(Paragraph(text, sub_style))
+        else:
+            story.append(Paragraph(text, body_style))
+        story.append(Spacer(1, 0.12 * cm))
+
+    story.append(Spacer(1, 0.2 * cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(Paragraph(
+        f"Participant: {user.username} | Accepted at registration for {tournament.name}.",
+        body_style,
+    ))
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 

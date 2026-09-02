@@ -287,6 +287,14 @@ class RegistrationForm(forms.Form):
             "autocomplete": "new-password",
         }),
     )
+    email = forms.EmailField(
+        required=True,
+        widget=forms.EmailInput(attrs={
+            "class": "form-control",
+            "placeholder": "Email",
+            "autocomplete": "email",
+        }),
+    )
     ai_name = forms.CharField(
         max_length=120,
         required=True,
@@ -361,6 +369,12 @@ class RegistrationForm(forms.Form):
             raise forms.ValidationError("This username is already taken.")
         return username
 
+    def clean_email(self):
+        email = self.cleaned_data.get("email", "").strip().lower()
+        if CustomUser.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("An account with this email already exists.")
+        return email
+
     def clean_ai_name(self):
         ai_name = self.cleaned_data.get("ai_name", "").strip()
         if CustomUser.objects.filter(ai_name__iexact=ai_name).exists():
@@ -430,6 +444,86 @@ class ProfileForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        return cleaned
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Email change request
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_FORM_INPUT_CSS = "form-input w-full max-w-sm rounded-lg text-black placeholder-gray-500"
+
+
+class EmailChangeRequestForm(forms.Form):
+    new_email = forms.EmailField(
+        required=True,
+        widget=forms.EmailInput(attrs={
+            "class": _FORM_INPUT_CSS,
+            "placeholder": "New email address",
+            "autocomplete": "email",
+        }),
+    )
+    confirm_new_email = forms.EmailField(
+        required=True,
+        label="Confirm new email",
+        widget=forms.EmailInput(attrs={
+            "class": _FORM_INPUT_CSS,
+            "placeholder": "Confirm new email",
+            "autocomplete": "email",
+        }),
+    )
+
+    def clean_new_email(self):
+        email = self.cleaned_data.get("new_email", "").strip().lower()
+        if CustomUser.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("An account with this email already exists.")
+        return email
+
+    def clean(self):
+        cleaned = super().clean()
+        new_email = cleaned.get("new_email", "")
+        confirm = cleaned.get("confirm_new_email", "")
+        if new_email and confirm and new_email.lower() != confirm.lower():
+            self.add_error("confirm_new_email", "Email addresses do not match.")
+        return cleaned
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Password change (no current-password check)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+class SetNewPasswordForm(forms.Form):
+    # Intentionally no current_password field — any active session can change the password.
+    # Add a current_password field here to harden this if required later.
+    new_password1 = forms.CharField(
+        required=True,
+        label="New password",
+        widget=forms.PasswordInput(attrs={
+            "class": _FORM_INPUT_CSS,
+            "placeholder": "New password",
+            "autocomplete": "new-password",
+        }),
+    )
+    new_password2 = forms.CharField(
+        required=True,
+        label="Confirm your new password",
+        widget=forms.PasswordInput(attrs={
+            "class": _FORM_INPUT_CSS,
+            "placeholder": "Confirm new password",
+            "autocomplete": "new-password",
+        }),
+    )
+
+    def clean(self):
+        from django.contrib.auth.password_validation import validate_password
+        cleaned = super().clean()
+        p1 = cleaned.get("new_password1", "")
+        p2 = cleaned.get("new_password2", "")
+        if p1 and p2 and p1 != p2:
+            self.add_error("new_password2", "Passwords do not match.")
+        if p1:
+            try:
+                validate_password(p1)
+            except forms.ValidationError as exc:
+                self.add_error("new_password1", exc)
         return cleaned
 
 

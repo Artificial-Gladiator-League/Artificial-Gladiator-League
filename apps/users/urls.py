@@ -31,4 +31,9 @@ urlpatterns = [
     # PayPal payout email
     path("profile/paypal-email/save/", views.save_paypal_email, name="save_paypal_email"),
     path("profile/paypal-email/delete/", views.delete_paypal_email, name="delete_paypal_email"),
+    # Email change
+    path("profile/email/request-change/", views.request_email_change, name="request_email_change"),
+    path("profile/email/confirm/<uidb64>/<token>/", views.confirm_email_change, name="confirm_email_change"),
+    # Password change
+    path("profile/password/change/", views.change_password, name="change_password"),
 ]

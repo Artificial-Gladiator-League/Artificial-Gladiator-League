@@ -157,17 +157,18 @@ def _handle_space_update(space_repo_name: str):
                 headers={"Content-Type": "application/json"},
                 timeout=20,
             )
-            new_status = "ready" if resp.status_code < 500 else "failed"
+            # Only mark failed on server error; "ready" is reserved for ownership verification.
+            reachable = resp.status_code < 500
         except Exception as exc:
             log.warning("Space probe failed url=%s: %s", url, exc)
-            new_status = "failed"
+            reachable = False
 
         if pks:
-            UserGameModel.objects.filter(pk__in=pks).update(
-                hf_inference_endpoint_url=url,
-                hf_inference_endpoint_status=new_status,
-            )
-            log.info("Space probe: status=%s updated %d UGM record(s)", new_status, len(pks))
+            update_fields: dict = {"hf_inference_endpoint_url": url}
+            if not reachable:
+                update_fields["hf_inference_endpoint_status"] = "failed"
+            UserGameModel.objects.filter(pk__in=pks).update(**update_fields)
+            log.info("Space probe: reachable=%s updated %d UGM record(s)", reachable, len(pks))
 
     threading.Thread(
         target=_probe_and_update,

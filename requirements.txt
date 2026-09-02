@@ -55,3 +55,6 @@ whitenoise>=6.5,<7.0
 
 # Rate limiting for registration and other public endpoints
 django-ratelimit>=4.0,<5.0
+
+# PDF generation (T&C attachment on money-tournament registration email)
+reportlab>=4.0,<5.0

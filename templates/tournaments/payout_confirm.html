@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Confirm Payout Address — {{ tournament.name }}{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-2xl mx-auto">
+
+  <div class="mb-6">
+    <a href="{% url 'tournaments:prize_claim' tournament.pk %}"
+       class="text-xs text-gray-500 hover:text-brand transition">← Back to prize claim</a>
+    <h1 class="text-2xl font-bold mt-2">Confirm Payout Address</h1>
+    <p class="text-sm text-gray-400 mt-1">{{ tournament.name }}</p>
+  </div>
+
+  {% if messages %}
+  <div class="mb-4 space-y-2">
+    {% for message in messages %}
+    <div class="rounded px-4 py-2 text-sm
+      {% if message.tags == 'error' %}bg-red-900/30 text-red-300 border border-red-700
+      {% else %}bg-green-900/30 text-green-300 border border-green-700{% endif %}">
+      {{ message }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if confirmation and confirmation.confirmed_by_user %}
+  <div class="rounded-lg border border-green-700/40 bg-green-900/15 p-5 mb-6">
+    <p class="font-semibold text-green-300 mb-1">✓ Payout address already confirmed</p>
+    <p class="text-sm text-gray-300 mt-1">
+      Prize will be sent to: <strong class="text-white">{{ confirmation.paypal_email_snapshot }}</strong>
+    </p>
+    <p class="text-xs text-gray-500 mt-1">Confirmed on {{ confirmation.confirmed_at|date:"N j, Y, P" }}</p>
+  </div>
+  {% else %}
+
+  <div class="rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-5 mb-6">
+    <p class="text-sm font-semibold text-yellow-300 mb-2">Action required before payout</p>
+    <p class="text-sm text-gray-300">
+      Please confirm the PayPal address below. Once confirmed, this address will be
+      snapshotted and used for the payout. If you need to change it first, update
+      your profile and return here.
+    </p>
+  </div>
+
+  <div class="rounded-lg border border-gray-700 bg-gray-800 p-5 mb-6">
+    <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">
+      Current payout address on file
+    </p>
+    {% if request.user.paypal_email %}
+    <p class="text-lg font-mono text-white">{{ request.user.paypal_email }}</p>
+    <p class="text-xs text-gray-500 mt-1">
+      Need to change it?
+      <a href="{% url 'users:profile' %}?tab=paypal&next={% url 'tournaments:payout_confirm' tournament.pk %}"
+         class="text-brand hover:underline">Update in your profile</a>.
+    </p>
+    {% else %}
+    <p class="text-sm text-red-400">
+      No PayPal email on file.
+      <a href="{% url 'users:profile' %}?tab=paypal&next={% url 'tournaments:payout_confirm' tournament.pk %}"
+         class="text-brand hover:underline">Add one in your profile</a> before confirming.
+    </p>
+    {% endif %}
+  </div>
+
+  {% if request.user.paypal_email %}
+  <form method="post">
+    {% csrf_token %}
+    <p class="text-sm text-gray-300 mb-4">
+      By clicking <strong>Confirm</strong>, you agree that your prize of
+      <strong>{{ tournament.prize_amount }} {{ tournament.prize_currency }}</strong>
+      will be sent to the address above. This cannot be changed after confirmation.
+    </p>
+    <div class="flex gap-3">
+      <button type="submit"
+              class="btn-outline px-6 py-2 text-sm font-semibold">
+        Confirm — send prize to this address
+      </button>
+      <a href="{% url 'tournaments:prize_claim' tournament.pk %}"
+         class="btn-outline px-6 py-2 text-sm font-semibold">
+        Cancel
+      </a>
+    </div>
+  </form>
+  {% endif %}
+
+  {% endif %}
+
+</div>
+{% endblock %}

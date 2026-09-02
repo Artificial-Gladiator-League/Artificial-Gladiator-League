@@ -4,6 +4,8 @@ import logging
 import random
 import time
 
+from django.db import transaction
+
 import chess
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -418,6 +420,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             ready_set = _game_ready_players.get(game_id)
             if ready_set:
                 ready_set.discard(self.user.pk)
+            # If the game is still WAITING and this user was the joiner, revert their slot
+            await self._maybe_revert_joiner_slot()
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     @database_sync_to_async
@@ -453,6 +457,36 @@ class GameConsumer(AsyncWebsocketConsumer):
                     )
         except Exception:
             log.exception("[ERROR] _log_model_cache_status failed for user=%s", self.user.username)
+
+    @database_sync_to_async
+    def _maybe_revert_joiner_slot(self):
+        """Revert the joiner's DB slot if the game is still WAITING and they are not the host."""
+        from .models import Game
+        from .views import _broadcast_lobby_update
+        try:
+            game = Game.objects.select_related("white", "black", "host").get(pk=self.game_id)
+        except Game.DoesNotExist:
+            return
+        if game.status != Game.Status.WAITING:
+            return
+        if not game.host_id:
+            return
+        if game.host_id == self.user.pk:
+            return
+        update_fields = None
+        if game.white_id == self.user.pk:
+            game.white = None
+            update_fields = ["white"]
+        elif game.black_id == self.user.pk:
+            game.black = None
+            update_fields = ["black"]
+        if update_fields:
+            game.save(update_fields=update_fields)
+            log.info(
+                "[DISCONNECT] game=%s user=%s reverted joiner slot",
+                self.game_id, self.user.username,
+            )
+            _broadcast_lobby_update("update_waiting_game", game)
 
     async def receive(self, text_data=None, bytes_data=None):
         data = json.loads(text_data)
@@ -582,6 +616,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             "data": result["state"],
         })
         # Notify the lobby that a new live game has started.
+        # Notify the lobby to remove from Open Tables and add to Ongoing Games.
+        try:
+            await self.channel_layer.group_send("lobby", {
+                "type": "lobby_update",
+                "data": {
+                    "type": "remove_waiting_game",
+                    "game_pk": self.game_id,
+                },
+            })
+        except Exception as exc:
+            log.exception("[ERROR] [game %s] Failed to broadcast remove_waiting_game: %s", self.game_id, exc)
         try:
             game_data = await self._get_lobby_game_data()
             if game_data:
@@ -701,6 +746,9 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             result = await self._bot_make_move(white_bot, black_bot)
 
+            if result.get("already_finished"):
+                break
+
             if result.get("error"):
                 # Bot failed to produce a move — forfeit
                 forfeit = await self._bot_forfeit(result.get("forfeit_color"))
@@ -754,7 +802,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             return {"error": "Game not found."}
 
         if game.is_finished:
-            return {"error": "Game is already finished."}
+            return {"already_finished": True}
 
         board = game.board()
         moving_color = board.turn  # chess.WHITE or chess.BLACK
@@ -801,57 +849,70 @@ class GameConsumer(AsyncWebsocketConsumer):
                     "reason": "mid_game_repo_change",
                 }
 
-        # Apply elapsed time since last move
-        now = timezone.now()
-        if game.last_move_at:
-            elapsed = (now - game.last_move_at).total_seconds()
-            apply_time_spent(game, moving_color, elapsed)
-            if game.is_finished:
-                game.save()
-                return {
-                    "state": self._build_state(game),
-                    "game_over": self._build_game_over(game),
-                }
-
         # Ask the bot for a move
         uci, bot_elapsed = get_bot_move(bot, game.current_fen, time_left=bot_time, opponent_time=opp_time)
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
 
-        # Validate and apply
-        ok, err = make_move(game, uci)
-        if not ok:
-            return {"error": f"Bot ({forfeit_color}) made an illegal move: {uci}", "forfeit_color": forfeit_color}
+        # Capture time after the bot finishes thinking; opponent's clock starts from here.
+        move_completed_at = timezone.now()
 
-        apply_increment(game, moving_color)
-        game.last_move_at = now
+        # Lock the row for the entire check-apply-save; prevents a concurrent resign from being overwritten.
+        with transaction.atomic():
+            game = Game.objects.select_related("white", "black").select_for_update().get(pk=self.game_id)
+            if game.is_finished:
+                # Re-fetch sees a resignation (or other finish) that landed during inference.
+                log.info(
+                    "[BOT LOOP] game=%s late %s move discarded — game already finished",
+                    self.game_id, "white" if moving_color == chess.WHITE else "black",
+                )
+                return {"already_finished": True}
 
-        if not game.is_finished:
-            game.status = Game.Status.ONGOING
+            # Deduct the bot's actual thinking time from its clock (opponent-moved → bot-finished).
+            if game.last_move_at:
+                elapsed = (move_completed_at - game.last_move_at).total_seconds()
+                apply_time_spent(game, moving_color, elapsed)
+                if game.is_finished:
+                    game.save()
+                    return {
+                        "state": self._build_state(game),
+                        "game_over": self._build_game_over(game),
+                    }
 
-        result = {"state": self._build_state(game)}
+            # Validate and apply
+            ok, err = make_move(game, uci)
+            if not ok:
+                return {"error": f"Bot ({forfeit_color}) made an illegal move: {uci}", "forfeit_color": forfeit_color}
 
-        if game.is_finished:
-            if game.armageddon_of is not None and game.result == Game.Result.DRAW:
-                resolve_armageddon_draw(game)
-            game.save()
-            result["game_over"] = self._build_game_over(game)
-            if (game.result == Game.Result.DRAW
-                    and game.armageddon_of is None
-                    and game.is_tournament_game):
-                arm = create_armageddon(game)
-                arm.save()
-                result["armageddon"] = {
-                    "type": "armageddon",
-                    "game_id": arm.pk,
-                    "white": arm.white.username if arm.white else "?",
-                    "black": arm.black.username if arm.black else "?",
-                    "white_time": arm.white_time,
-                    "black_time": arm.black_time,
-                    "message": "Draw! Armageddon tiebreak starting.",
-                }
-        else:
-            game.save()
+            apply_increment(game, moving_color)
+            game.last_move_at = move_completed_at
+
+            if not game.is_finished:
+                game.status = Game.Status.ONGOING
+
+            result = {"state": self._build_state(game)}
+
+            if game.is_finished:
+                if game.armageddon_of is not None and game.result == Game.Result.DRAW:
+                    resolve_armageddon_draw(game)
+                game.save()
+                result["game_over"] = self._build_game_over(game)
+                if (game.result == Game.Result.DRAW
+                        and game.armageddon_of is None
+                        and game.is_tournament_game):
+                    arm = create_armageddon(game)
+                    arm.save()
+                    result["armageddon"] = {
+                        "type": "armageddon",
+                        "game_id": arm.pk,
+                        "white": arm.white.username if arm.white else "?",
+                        "black": arm.black.username if arm.black else "?",
+                        "white_time": arm.white_time,
+                        "black_time": arm.black_time,
+                        "message": "Draw! Armageddon tiebreak starting.",
+                    }
+            else:
+                game.save()
 
         target_secs = game.white_thinking_seconds if moving_color == chess.WHITE else game.black_thinking_seconds
         result["thinking_delay"] = compute_thinking_delay(bot_elapsed, target_secs, repo=getattr(bot, 'hf_repo_id', None))
@@ -864,25 +925,25 @@ class GameConsumer(AsyncWebsocketConsumer):
         from .models import Game
 
         try:
-            game = Game.objects.select_related("white", "black").get(pk=self.game_id)
+            with transaction.atomic():
+                game = Game.objects.select_related("white", "black").select_for_update().get(pk=self.game_id)
+                if game.is_finished:
+                    return {"error": "Game is already finished."}
+
+                if forfeit_color == "white":
+                    game.status = Game.Status.BLACK_WINS
+                    game.result = Game.Result.BLACK_WIN
+                    game.result_reason = "bot_error"
+                    game.winner = game.black
+                else:
+                    game.status = Game.Status.WHITE_WINS
+                    game.result = Game.Result.WHITE_WIN
+                    game.result_reason = "bot_error"
+                    game.winner = game.white
+
+                game.save()
         except Game.DoesNotExist:
             return {"error": "Game not found."}
-
-        if game.is_finished:
-            return {"error": "Game is already finished."}
-
-        if forfeit_color == "white":
-            game.status = Game.Status.BLACK_WINS
-            game.result = Game.Result.BLACK_WIN
-            game.result_reason = "bot_error"
-            game.winner = game.black
-        else:
-            game.status = Game.Status.WHITE_WINS
-            game.result = Game.Result.WHITE_WIN
-            game.result_reason = "bot_error"
-            game.winner = game.white
-
-        game.save()
 
         return {"game_over": self._build_game_over(game)}
 
@@ -1008,7 +1069,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         from .views import _serialize_display_game
 
         try:
-            game = Game.objects.select_related("white", "black").get(pk=self.game_id)
+            game = Game.objects.select_related("white", "black", "host").get(pk=self.game_id)
         except Game.DoesNotExist:
             log.warning("[WARN] [game %s] _get_lobby_game_data: game not found", self.game_id)
             return None
@@ -1027,7 +1088,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         # date_played is a datetime — convert to ISO string
         if d.get("date_played"):
             d["date_played"] = d["date_played"].strftime("%Y-%m-%d %H:%M:%S")
-        # move_count and variant are now included by _serialize_display_game
+        # Determine host_color from the host FK
+        host_color = None
+        if game.host_id:
+            if game.host_id == game.white_id:
+                host_color = "white"
+            elif game.host_id == game.black_id:
+                host_color = "black"
+        d["host_color"] = host_color
         log.info("[OK] [game %s] _get_lobby_game_data success: white=%s black=%s", self.game_id, d.get("white_name"), d.get("black_name"))
         return d
 
@@ -1037,8 +1105,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             await asyncio.sleep(0.15)
             result = await self._bt_bot_make_move()
 
+            if result.get("already_finished"):
+                break
+
             if result.get("error"):
-                forfeit = await self._bot_forfeit(result.get("forfeit_color", "white"))
+                forfeit = await self._bot_forfeit(result.get("forfeit_color"))
                 if forfeit.get("game_over"):
                     await self.channel_layer.group_send(self.group_name, {
                         "type": "broadcast_game_over",
@@ -1079,22 +1150,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             return {"error": "Game not found."}
 
         if game.is_finished:
-            return {"error": "Game is already finished."}
+            return {"already_finished": True}
 
         parts = game.current_fen.strip().split()
         turn = parts[1] if len(parts) >= 2 else bt.WHITE
         forfeit_color = "white" if turn == bt.WHITE else "black"
-
-        now = timezone.now()
-        if game.last_move_at:
-            elapsed = (now - game.last_move_at).total_seconds()
-            bt.apply_time_spent(game, turn, elapsed)
-            if game.is_finished:
-                game.save()
-                return {
-                    "state": self._build_state(game),
-                    "game_over": self._build_game_over(game),
-                }
 
         # Get the bot's move via Docker sandbox
         current_user = game.white if turn == bt.WHITE else game.black
@@ -1132,23 +1192,48 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
 
-        ok, err = bt.make_move(game, uci)
-        if not ok:
-            return {"error": f"Bot ({forfeit_color}) illegal move: {uci}", "forfeit_color": forfeit_color}
+        # Capture time after the bot finishes thinking; opponent's clock starts from here.
+        move_completed_at = timezone.now()
 
-        bt.apply_increment(game, turn)
-        game.last_move_at = now
+        # Lock the row for the entire check-apply-save; prevents a concurrent resign from being overwritten.
+        with transaction.atomic():
+            game = Game.objects.select_related("white", "black").select_for_update().get(pk=self.game_id)
+            if game.is_finished:
+                # Re-fetch sees a resignation (or other finish) that landed during inference.
+                log.info(
+                    "[BOT LOOP] game=%s late Breakthrough move discarded — game already finished",
+                    self.game_id,
+                )
+                return {"already_finished": True}
 
-        if not game.is_finished:
-            game.status = Game.Status.ONGOING
+            # Deduct the bot's actual thinking time from its clock (opponent-moved → bot-finished).
+            if game.last_move_at:
+                elapsed = (move_completed_at - game.last_move_at).total_seconds()
+                bt.apply_time_spent(game, turn, elapsed)
+                if game.is_finished:
+                    game.save()
+                    return {
+                        "state": self._build_state(game),
+                        "game_over": self._build_game_over(game),
+                    }
 
-        result = {"state": self._build_state(game)}
+            ok, err = bt.make_move(game, uci)
+            if not ok:
+                return {"error": f"Bot ({forfeit_color}) illegal move: {uci}", "forfeit_color": forfeit_color}
 
-        if game.is_finished:
-            game.save()
-            result["game_over"] = self._build_game_over(game)
-        else:
-            game.save()
+            bt.apply_increment(game, turn)
+            game.last_move_at = move_completed_at
+
+            if not game.is_finished:
+                game.status = Game.Status.ONGOING
+
+            result = {"state": self._build_state(game)}
+
+            if game.is_finished:
+                game.save()
+                result["game_over"] = self._build_game_over(game)
+            else:
+                game.save()
 
         target_secs = game.white_thinking_seconds if turn == bt.WHITE else game.black_thinking_seconds
         result["thinking_delay"] = compute_thinking_delay(bt_elapsed, target_secs, repo=repo or None)
@@ -1296,31 +1381,31 @@ class GameConsumer(AsyncWebsocketConsumer):
     def _process_resign(self) -> dict:
         from .models import Game
 
-        try:
-            game = Game.objects.select_related("white", "black").get(pk=self.game_id)
-        except Game.DoesNotExist:
-            return {"error": "Game not found."}
-
-        if game.is_finished:
-            return {"error": "Game is already finished."}
-
         if not self.user or self.user.is_anonymous:
             return {"error": "Authentication required."}
 
-        if self.user.pk == getattr(game.white, "pk", None):
-            game.status = Game.Status.BLACK_WINS
-            game.result = Game.Result.BLACK_WIN
-            game.result_reason = "resignation"
-            game.winner = game.black
-        elif self.user.pk == getattr(game.black, "pk", None):
-            game.status = Game.Status.WHITE_WINS
-            game.result = Game.Result.WHITE_WIN
-            game.result_reason = "resignation"
-            game.winner = game.white
-        else:
-            return {"error": "You are not a player in this game."}
+        try:
+            with transaction.atomic():
+                game = Game.objects.select_related("white", "black").select_for_update().get(pk=self.game_id)
+                if game.is_finished:
+                    return {"error": "Game is already finished."}
 
-        game.save()
+                if self.user.pk == getattr(game.white, "pk", None):
+                    game.status = Game.Status.BLACK_WINS
+                    game.result = Game.Result.BLACK_WIN
+                    game.result_reason = "resignation"
+                    game.winner = game.black
+                elif self.user.pk == getattr(game.black, "pk", None):
+                    game.status = Game.Status.WHITE_WINS
+                    game.result = Game.Result.WHITE_WIN
+                    game.result_reason = "resignation"
+                    game.winner = game.white
+                else:
+                    return {"error": "You are not a player in this game."}
+
+                game.save()
+        except Game.DoesNotExist:
+            return {"error": "Game not found."}
 
         return {"game_over": self._build_game_over(game)}
 

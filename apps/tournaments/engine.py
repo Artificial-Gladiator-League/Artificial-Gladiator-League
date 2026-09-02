@@ -597,6 +597,20 @@ def _complete_tournament(tournament: Tournament) -> None:
             except Exception:
                 log.debug("mail_admins failed for missing prize_amount alert", exc_info=True)
 
+    # ── Eligibility verification (money tournaments — winners only) ───────────
+    if tournament.is_money_tournament and champion_entry:
+        try:
+            from apps.tournaments.models import EligibilityVerification
+            EligibilityVerification.objects.get_or_create(tournament_entry=champion_entry)
+            log.info(
+                "EligibilityVerification created for tournament %s (pk=%s), winner=%s",
+                tournament.name, tournament.pk, champion.username,
+            )
+        except Exception:
+            log.exception(
+                "Failed to create EligibilityVerification for tournament %s", tournament.pk
+            )
+
     log.info(
         "Tournament %s completed — Champion: %s",
         tournament.name,
