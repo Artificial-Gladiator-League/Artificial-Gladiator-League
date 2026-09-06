@@ -232,6 +232,76 @@ def _parse_space_url_subdomain(space_url: str) -> "tuple[str | None, str | None]
     return subdomain, None
 
 
+def resolve_space_repo_id(url: str) -> str:
+    """Extract the bare ``owner/name`` Space repo ID from a stored Space URL.
+
+    Handles both the canonical ``https://huggingface.co/spaces/<owner>/<name>``
+    form and the Gradio subdomain form ``https://<owner>-<name>.hf.space``.
+    Returns an empty string when the URL is blank or cannot be parsed.
+    """
+    _space_url = (url or "").strip()
+    _hf_prefix = "https://huggingface.co/spaces/"
+    if _space_url.startswith(_hf_prefix):
+        return "/".join(_space_url[len(_hf_prefix):].strip("/").split("/")[:2])
+    # Gradio subdomain form: https://<owner>-<spacename>.hf.space
+    # _parse_space_url_subdomain is validation-only and returns the RAW,
+    # unsplit subdomain, so always split on the first dash ourselves
+    # (owner-spacename -> owner/spacename), matching the first split tried
+    # by _fetch_verify_file_from_space.
+    subdomain, _err = _parse_space_url_subdomain(_space_url)
+    if not subdomain:
+        return ""
+    owner, _sep, name = subdomain.partition("-")
+    return f"{owner}/{name}" if name else ""
+
+
+def _space_repo_id_candidates(url: str) -> list:
+    """Return every plausible ``owner/name`` Space repo id for *url*.
+
+    The Gradio subdomain form ``<owner>-<name>.hf.space`` is ambiguous because
+    both the owner and the space name may contain hyphens, so we cannot know
+    where to split. Return one candidate per possible split (left to right) so
+    a caller can probe each against the Hub, mirroring
+    :func:`_fetch_verify_file_from_space`.
+    """
+    _space_url = (url or "").strip()
+    if not _space_url:
+        return []
+    _hf_prefix = "https://huggingface.co/spaces/"
+    if _space_url.startswith(_hf_prefix):
+        rid = "/".join(_space_url[len(_hf_prefix):].strip("/").split("/")[:2])
+        return [rid] if rid else []
+    subdomain, _err = _parse_space_url_subdomain(_space_url)
+    if not subdomain:
+        return []
+    parts = subdomain.split("-")
+    candidates = []
+    for i in range(1, len(parts)):
+        owner = "-".join(parts[:i])
+        name = "-".join(parts[i:])
+        if owner and name:
+            candidates.append(f"{owner}/{name}")
+    return candidates
+
+
+def resolve_space_repo_sha(url: str, token: str, ref: str = "main"):
+    """Resolve a Space URL to ``(repo_id, sha)``, probing subdomain splits.
+
+    Tries each candidate ``owner/name`` split until one resolves to a real
+    Space commit, so a live SHA is captured for every user regardless of how
+    many hyphens appear in the owner or space name. Returns
+    ``(best_effort_repo_id, None)`` when no split resolves.
+    """
+    from apps.users.integrity import _resolve_ref_sha
+
+    candidates = _space_repo_id_candidates(url)
+    for rid in candidates:
+        sha = _resolve_ref_sha(rid, token, ref=ref, repo_type="space")
+        if sha:
+            return rid, sha
+    return (candidates[0] if candidates else ""), None
+
+
 def _fetch_verify_file_from_space(subdomain: str) -> "tuple[str | None, str | None, str | None]":
     """Download AGL_VERIFY.txt from an HF Space, trying every possible owner/space split.
 
@@ -496,6 +566,36 @@ def check_full_ownership(game_model: "UserGameModel") -> "tuple[bool, str]":
 
     # ── All passed ─────────────────────────────────────────────────────
     _update_space_status(game_model, "ready")
+
+    # Pin all three SHA baselines now that ownership is proven, so the
+    # registration-period audit has a baseline to compare against. Data and
+    # space fields are left empty when the repo is unset or the fetch fails.
+    from apps.users.integrity import _resolve_ref_sha, _get_stored_token
+    _token = _get_stored_token(game_model.user) or ""
+    _ref = (game_model.submitted_ref or "main").strip() or "main"
+    _model_type = (game_model.submission_repo_type or "model").strip() or "model"
+
+    _model_sha = (
+        _resolve_ref_sha(game_model.hf_model_repo_id, _token, ref=_ref, repo_type=_model_type)
+        if (game_model.hf_model_repo_id or "").strip() else ""
+    )
+    if _model_sha:
+        game_model.approved_full_sha = _model_sha
+    game_model.approved_data_repo_sha = (
+        (_resolve_ref_sha(data_repo_id, _token, ref=_ref, repo_type="dataset") or "")
+        if data_repo_id else ""
+    )
+    # space_url may be a full spaces URL or a Gradio subdomain URL;
+    # resolve_space_repo_sha probes every owner/name split so the SHA is
+    # captured even when the owner or space name contains hyphens.
+    _space_repo_id, _space_sha = resolve_space_repo_sha(space_url, _token, ref=_ref)
+    game_model.approved_space_sha = _space_sha or ""
+    game_model.save(update_fields=[
+        "approved_full_sha",
+        "approved_data_repo_sha",
+        "approved_space_sha",
+    ])
+
     log.info(
         "check_full_ownership: all checks PASSED for user=%s game=%s",
         game_model.user_id, game_model.game_type,

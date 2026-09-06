@@ -81,6 +81,15 @@
   </section>
   {% endif %}
 
+      {% if not user.is_authenticated %}
+      <div class="rounded-xl border border-brand/30 bg-brand/5 px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <p class="text-sm text-gray-300">
+          You're watching as a guest. <span class="text-gray-500">Log in to create or join games.</span>
+        </p>
+        <a href="{% url 'users:login' %}" class="btn-brand text-sm py-2 px-5 whitespace-nowrap">Log in to Play →</a>
+      </div>
+      {% endif %}
+      <br>
       <!-- ── Waiting Games ── -->
       <section class="space-y-4">
         <div class="flex items-center justify-between gap-3">

@@ -88,7 +88,7 @@
               Join — Free
             </button>
             {% if join_blocked_reason == 'ownership_unverified' %}
-              <a href="{% url 'users:ai_models' %}" class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-red-900/40 text-red-300 border border-red-700/50 ml-1">
+              <a href="{% url 'users:profile' %}" class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-red-900/40 text-red-300 border border-red-700/50 ml-1">
                 ❌ Verify ownership first
               </a>
             {% elif join_blocked_reason %}
@@ -213,7 +213,7 @@
           <div class="rounded-lg border border-red-700 bg-red-900/30 p-4 text-sm text-red-200 space-y-2 mt-3">
             <p class="font-semibold flex items-center gap-2">❌ Repo ownership not verified</p>
             <p>You must verify you own your model repository before joining tournaments.</p>
-            <a href="{% url 'users:ai_models' %}" class="inline-block mt-1 px-4 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-semibold">
+            <a href="{% url 'users:profile' %}" class="inline-block mt-1 px-4 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-semibold">
               Go to AI Models → Verify Ownership
             </a>
           </div>

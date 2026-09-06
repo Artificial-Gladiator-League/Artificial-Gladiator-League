@@ -291,6 +291,24 @@ class TournamentParticipant(models.Model):
             "Deleted at tournament end."
         ),
     )
+    registered_data_repo_sha = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "HF data-repo commit SHA at registration time. Baseline for the "
+            "registration-period audit. Deleted at tournament end."
+        ),
+    )
+    registered_space_sha = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text=(
+            "HF Space commit SHA at registration time. Baseline for the "
+            "registration-period audit. Deleted at tournament end."
+        ),
+    )
     tournament_hf_token = models.TextField(
         blank=True,
         default="",

@@ -504,6 +504,38 @@ class UserGameModel(models.Model):
         max_length=40, blank=True,
         help_text="Exact immutable commit SHA approved at submission.",
     )
+    current_repo_sha = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="SHA of the repo at the time it was last verified/approved.",
+    )
+    new_repo_sha = models.CharField(
+        max_length=64, null=True, blank=True,
+        help_text="SHA of the incoming repo when a change is detected.",
+    )
+    approved_data_repo_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Exact immutable data-repo commit SHA approved at submission.",
+    )
+    current_data_repo_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="SHA of the data repo at the time it was last verified/approved.",
+    )
+    new_data_repo_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="SHA of the incoming data repo when a change is detected.",
+    )
+    approved_space_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="Exact immutable HF Space commit SHA approved at submission.",
+    )
+    current_space_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="SHA of the HF Space repo at the time it was last verified/approved.",
+    )
+    new_space_sha = models.CharField(
+        max_length=64, blank=True, default="",
+        help_text="SHA of the incoming HF Space repo when a change is detected.",
+    )
     pinned_at = models.DateTimeField(null=True, blank=True)
 
     # ── Proof-of-Ownership verification ─────────
@@ -570,6 +602,8 @@ class UserGameModel(models.Model):
                     for f in self._REPO_CHANGE_FIELDS
                 )
                 if repo_changed:
+                    self.current_repo_sha = self.new_repo_sha
+                    self.new_repo_sha = self.last_known_commit_id
                     self.rated_games_since_revalidation = 0
                     self.model_integrity_ok = False
                     self.repo_changed = True
@@ -577,7 +611,10 @@ class UserGameModel(models.Model):
                     # fields are included so they are actually written to DB.
                     update_fields = kwargs.get("update_fields")
                     if update_fields is not None:
-                        extra = {"rated_games_since_revalidation", "model_integrity_ok", "repo_changed"}
+                        extra = {
+                            "rated_games_since_revalidation", "model_integrity_ok",
+                            "repo_changed", "current_repo_sha", "new_repo_sha",
+                        }
                         kwargs["update_fields"] = list(set(update_fields) | extra)
         super().save(*args, **kwargs)
 

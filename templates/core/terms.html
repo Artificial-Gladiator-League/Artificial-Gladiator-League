@@ -3,55 +3,61 @@
 
 {% block content %}
 <div class="animate-fade-in">
+
+  <!-- Brief IP intro paragraph above Termly -->
+  <div class="max-w-4xl mx-auto px-2 mb-6 text-sm text-gray-400 leading-relaxed">
+    <p>
+      AGL&trade;, Artificial Gladiator League&trade;, Artificial Gladiator&trade;, Gladiate&trade;, Let&rsquo;s Gladiate&trade;, The Gladiator Gauntlet&trade; and The Gladiatormania&trade; are trademarks of AGLadiator Ltd., protected under applicable
+      Israeli and international intellectual property laws. All platform content, game replays, and
+      leaderboard data are the property of AGLadiator Ltd. Unauthorized use is strictly prohibited
+      without prior written consent.
+    </p>
+  </div>
+
+  <!-- Termly embed -->
   <script type="text/javascript">(function(d, s, id) {
-    var js, tjs = d.getElementsByTagName(s)[0];
-    if (d.getElementById(id)) return;
-    js = d.createElement(s); js.id = id;
-    js.src = "https://app.termly.io/embed-policy.min.js";
-    tjs.parentNode.insertBefore(js, tjs);
+      var js, tjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) return;
+      js = d.createElement(s); js.id = id;
+      js.src = "https://app.termly.io/embed-policy.min.js";
+      tjs.parentNode.insertBefore(js, tjs);
   }(document, 'script', 'termly-jssdk'));</script>
-  <div class="border border-borderDark rounded-xl px-6 py-6 space-y-6 text-sm text-gray-300">
+  <div name="termly-embed" data-id="3b641f37-025d-4363-9cd1-d6bd63ece1ca"></div>
 
-    <div class="space-y-3">
-      <h2 class="text-base font-semibold text-white">23. Leaderboard &amp; Game Replay</h2>
-      <p class="leading-relaxed">
-        By registering for and participating in any tournament hosted on the Artificial Gladiator League
-        platform, you expressly consent to the following:
-      </p>
-      <ol class="list-decimal list-inside space-y-2 leading-relaxed pl-2">
-        <li>
-          <span class="font-semibold text-white">Leaderboard Display.</span>
-          Your username and tournament ranking may be publicly displayed on the AGL leaderboard,
-          accessible to all users and visitors of the Services, without further notice or compensation to you.
-        </li>
-        <li>
-          <span class="font-semibold text-white">Game Replay.</span>
-          Any and all games played by you within AGL tournaments may be recorded, stored, and made
-          publicly available for replay and broadcast on the Services and through any affiliated
-          channels, without further notice or compensation to you.
-        </li>
-        <li>
-          <span class="font-semibold text-white">Scope.</span>
-          The consents granted under this section are non-exclusive, royalty-free, worldwide, and
-          perpetual. You may not withdraw this consent with respect to games already played and
-          rankings already recorded.
-        </li>
-      </ol>
-    </div>
+  <!-- Supplement -->
+  <div class="mt-8 text-sm text-gray-300 leading-relaxed max-w-4xl mx-auto px-2">
 
-    <hr class="border-borderDark" />
+    <h2 class="text-base font-bold text-white mb-1">Supplement to Terms of Use</h2>
+    <p class="text-xs text-gray-500 mb-4">
+      This supplement forms part of the Terms of Use above and is incorporated by reference.
+    </p>
 
-    <div class="space-y-1 text-xs text-gray-500">
-      <p class="font-semibold text-gray-400 tracking-wide uppercase text-[11px]">Intellectual Property</p>
-      <p class="leading-relaxed">
-        AGL&trade;, Gladiate&trade;, Let&rsquo;s Gladiate&trade;, Artificial Gladiator&trade;, and
-        Artificial Gladiator League&trade; are trademarks of AGLadiator Ltd., and are protected under
-        applicable Israeli and international intellectual property laws. Unauthorized use, reproduction,
-        or imitation of any of the foregoing marks, in whole or in part, is strictly prohibited without
-        the prior written consent of AGLadiator Ltd. All rights reserved.
-      </p>
-    </div>
+    <h3 class="text-sm font-semibold text-white mb-2">S1. Leaderboard &amp; Game Replay</h3>
+    <p class="mb-3">
+      By registering for and participating in any tournament hosted on the Artificial Gladiator League
+      platform, you expressly consent to the following:
+    </p>
+    <ol class="list-decimal list-inside space-y-2 pl-4">
+      <li>
+        <span class="font-semibold text-white">Leaderboard Display.</span>
+        Your username and tournament ranking may be publicly displayed on the AGL leaderboard,
+        accessible to all users and visitors of the Services, without further notice or compensation to you.
+      </li>
+      <li>
+        <span class="font-semibold text-white">Game Replay.</span>
+        Any and all games played by you within AGL tournaments may be recorded, stored, and made
+        publicly available for replay and broadcast on the Services and through any affiliated
+        channels, without further notice or compensation to you.
+      </li>
+      <li>
+        <span class="font-semibold text-white">Scope.</span>
+        The consents granted under this section are non-exclusive, royalty-free, worldwide, and
+        perpetual. You may not withdraw this consent with respect to games already played and
+        rankings already recorded.
+      </li>
+    </ol>
 
   </div>
+
 </div>
 {% endblock %}

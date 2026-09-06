@@ -509,13 +509,40 @@
 
           {% if game.model %}
           <div class="text-sm text-gray-300 mb-4 space-y-1">
+            <!-- Model repo -->
             <p><span class="text-gray-500">Repo:</span> <code class="text-gray-200">{{ game.model.hf_model_repo_id }}</code></p>
-            {% if game.model.approved_full_sha %}
-            <p><span class="text-gray-500">Pinned SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
-            {% endif %}
+            <p><span class="text-gray-500">Model Primary SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
             {% if game.model.last_model_validation_date %}
             <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
             {% endif %}
+            {% if game.model.new_repo_sha %}
+            <p><span class="text-gray-500">Repo SHA (before change):</span> <code class="text-yellow-300">{{ game.model.current_repo_sha|default:game.model.approved_full_sha|truncatechars:16 }}</code></p>
+            <p><span class="text-gray-500">Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_repo_sha|truncatechars:16 }}</code></p>
+            {% endif %}
+
+            <hr class="border-gray-700 my-2">
+
+            <!-- Data repo -->
+            <p><span class="text-gray-500">Repo:</span> <code class="text-gray-200">{{ game.model.hf_data_repo_id }}</code></p>
+            <p><span class="text-gray-500">Data Primary SHA:</span> <code class="text-gray-200">{{ game.model.approved_data_repo_sha|truncatechars:16 }}</code></p>
+            {% if game.model.last_model_validation_date %}
+            <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
+            {% endif %}
+            {% if game.model.new_data_repo_sha %}
+            <p><span class="text-gray-500">Data Repo SHA (before change):</span> <code class="text-yellow-300">{{ game.model.current_data_repo_sha|default:game.model.approved_data_repo_sha|truncatechars:16 }}</code></p>
+            <p><span class="text-gray-500">Data Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_data_repo_sha|truncatechars:16 }}</code></p>
+            {% endif %}
+
+            <hr class="border-gray-700 my-2">
+
+            <!-- Space repo -->
+            <p><span class="text-gray-500">Repo:</span> <code class="text-gray-200">{{ game.model.hf_inference_endpoint_url }}</code></p>
+            <p><span class="text-gray-500">Space Primary SHA:</span> <code class="text-gray-200">{{ game.model.approved_space_sha|truncatechars:16 }}</code></p>
+            {% if game.model.last_model_validation_date %}
+            <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
+            {% endif %}
+            <p><span class="text-gray-500">Space Repo SHA (before change):</span> <code class="text-yellow-300">{{ game.model.current_space_sha|default:game.model.approved_space_sha|truncatechars:16 }}</code></p>
+            <p><span class="text-gray-500">Space Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_space_sha|truncatechars:16 }}</code></p>
           </div>
 
           <!-- Ownership verification status -->

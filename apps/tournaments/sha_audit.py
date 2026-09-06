@@ -208,9 +208,45 @@ def capture_round_baseline(tournament, round_num: int) -> int:
             except Exception:
                 log.debug("Could not persist last_known_commit_id", exc_info=True)
 
+        # Pin live data-repo and HF Space SHAs too, so the registration-period
+        # audit compares against these registration-time baselines instead of a
+        # potentially stale approved SHA.
+        _token = _get_stored_token(p.user) or ""
+        _ref = (gm.submitted_ref or "main").strip() or "main"
+        data_repo_id = (gm.hf_data_repo_id or "").strip()
+        if data_repo_id:
+            try:
+                data_live = _resolve_ref_sha(
+                    data_repo_id, _token, ref=_ref, repo_type="dataset",
+                )
+            except Exception:
+                data_live = None
+            if data_live:
+                p.registered_data_repo_sha = data_live
+        from apps.users.ownership_verification import resolve_space_repo_sha
+        try:
+            _space_repo_id, space_live = resolve_space_repo_sha(
+                gm.hf_inference_endpoint_url, _token, ref=_ref,
+            )
+        except Exception:
+            space_live = None
+        if space_live:
+            p.registered_space_sha = space_live
+            # Backfill the model's approved Space baseline so the profile can
+            # show the Space Primary SHA and the audit always has a fallback.
+            if not (gm.approved_space_sha or "").strip():
+                try:
+                    gm.approved_space_sha = space_live
+                    gm.save(update_fields=["approved_space_sha"])
+                except Exception:
+                    log.debug("Could not persist approved_space_sha", exc_info=True)
+
         p.round_pinned_sha = baseline
         p.round_pinned_at = now
-        p.save(update_fields=["round_pinned_sha", "round_pinned_at"])
+        p.save(update_fields=[
+            "round_pinned_sha", "round_pinned_at",
+            "registered_data_repo_sha", "registered_space_sha",
+        ])
         count += 1
 
         # Persistent audit row so the baseline itself is auditable.
@@ -372,6 +408,19 @@ def perform_sha_check(
     # prior mismatch). The pinned SHA is the single source of truth
     # for whether the model changed during this round.
     if current == expected:
+        # Model repo is unchanged — now verify the HF Space and data repo
+        # against their round-registered baselines before declaring PASS.
+        from apps.users.integrity import _get_stored_token
+        _token = _get_stored_token(user) or ""
+        _ref = (gm.submitted_ref or "main").strip() or "main"
+        extra_fail = _check_extra_repos(
+            participant=participant, gm=gm, tournament=tournament,
+            rnum=rnum, context=context, broadcast=broadcast,
+            token=_token, ref=_ref,
+        )
+        if extra_fail is not None:
+            return extra_fail
+
         row = TournamentShaCheck.objects.create(
             tournament=tournament, participant=participant, user=user,
             round_num=rnum, game_type=tournament.game_type,
@@ -454,6 +503,175 @@ def perform_sha_check(
 
 
 # ──────────────────────────────────────────────
+#  Space + data-repo runtime SHA check
+# ──────────────────────────────────────────────
+def _check_extra_repos(
+    *,
+    participant,
+    gm,
+    tournament,
+    rnum: int,
+    context: str,
+    broadcast: bool,
+    token: str,
+    ref: str,
+):
+    """Verify the HF Space and data-repo SHAs against their round baselines.
+
+    Mirrors the model-repo mismatch handling: on a mismatch a FAIL
+    ``TournamentShaCheck`` row is created, the same banner/summary style
+    is emitted, and ``_react_to_mismatch`` disqualifies the participant
+    with a reason containing the literal ``"space"`` / ``"data repo"``
+    substring required by ``disqualify_for_repo_change``.
+
+    HF-unreachable lookups are recorded as ERROR (fail-open) and never
+    cause a disqualification. Returns the FAIL row on a mismatch, else
+    ``None``.
+    """
+    from apps.tournaments.models import TournamentShaCheck
+    from apps.users.integrity import _resolve_ref_sha
+    from apps.users.ownership_verification import resolve_space_repo_id
+
+    user = participant.user
+    checks = (
+        (
+            resolve_space_repo_id(gm.hf_inference_endpoint_url),
+            "space",
+            (participant.registered_space_sha or "").strip(),
+            "Space",
+            "space",
+        ),
+        (
+            (gm.hf_data_repo_id or "").strip(),
+            "dataset",
+            (participant.registered_data_repo_sha or "").strip(),
+            "data repo",
+            "data repo",
+        ),
+    )
+
+    for repo_id, repo_type, baseline, label, reason_kind in checks:
+        if not repo_id or not baseline:
+            continue
+
+        try:
+            live = _resolve_ref_sha(repo_id, token, ref=ref, repo_type=repo_type)
+        except Exception as exc:
+            TournamentShaCheck.objects.create(
+                tournament=tournament, participant=participant, user=user,
+                round_num=rnum, game_type=tournament.game_type,
+                repo_id=repo_id, expected_sha=baseline,
+                result=TournamentShaCheck.Result.ERROR, context=context,
+                action_taken="logged_only", error_message=str(exc)[:500],
+            )
+            _emit_summary_line(
+                tournament=tournament, round_num=rnum, username=user.username,
+                expected_sha=baseline, current_sha=None,
+                result="ERROR", action=f"{label} HF unreachable: {exc}",
+            )
+            continue
+
+        # HF unreachable — fail open (ERROR, never a DQ).
+        if live is None:
+            TournamentShaCheck.objects.create(
+                tournament=tournament, participant=participant, user=user,
+                round_num=rnum, game_type=tournament.game_type,
+                repo_id=repo_id, expected_sha=baseline,
+                result=TournamentShaCheck.Result.ERROR, context=context,
+                action_taken="logged_only",
+                error_message=f"{label}: HF returned no SHA (auth or network error).",
+            )
+            _emit_summary_line(
+                tournament=tournament, round_num=rnum, username=user.username,
+                expected_sha=baseline, current_sha=None,
+                result="ERROR", action=f"{label} HF returned no SHA",
+            )
+            continue
+
+        if live == baseline:
+            TournamentShaCheck.objects.create(
+                tournament=tournament, participant=participant, user=user,
+                round_num=rnum, game_type=tournament.game_type,
+                repo_id=repo_id, expected_sha=baseline, current_sha=live,
+                result=TournamentShaCheck.Result.PASS, context=context,
+                action_taken="ok",
+            )
+            _emit_summary_line(
+                tournament=tournament, round_num=rnum, username=user.username,
+                expected_sha=baseline, current_sha=live,
+                result="PASS", action=f"{label} unchanged",
+            )
+            continue
+
+        # ── Mismatch on an extra repo = cheating ──
+        row = TournamentShaCheck.objects.create(
+            tournament=tournament, participant=participant, user=user,
+            round_num=rnum, game_type=tournament.game_type,
+            repo_id=repo_id, expected_sha=baseline, current_sha=live,
+            result=TournamentShaCheck.Result.FAIL, context=context,
+            action_taken="disqualified_in_round",
+        )
+        _alert = (
+            f"[!!!] TERMINAL: {label.upper()} CHANGED - {user.username} "
+            f"disqualified from {tournament.name} (Round {rnum})"
+        )
+        try:
+            print(_alert, flush=True)
+        except UnicodeEncodeError:
+            print(_alert.encode("ascii", "replace").decode("ascii"), flush=True)
+        log.warning("%s", _alert)
+
+        _emit_summary_line(
+            tournament=tournament, round_num=rnum, username=user.username,
+            expected_sha=baseline, current_sha=live,
+            result="FAIL", action=f"{label} changed — Disqualified",
+        )
+
+        banner_lines = [
+            "",
+            "!" * 78,
+            f"!!  {label.upper()} SHA MISMATCH DETECTED - PARTICIPANT DISQUALIFIED",
+            "!!  Tournament : #{} {!r} (type={})".format(
+                tournament.pk, tournament.name, tournament.type,
+            ),
+            "!!  Round      : {}".format(rnum),
+            "!!  User       : {} (id={})".format(user.username, user.pk),
+            "!!  Repo       : {}".format(repo_id or "<no-repo>"),
+            "!!  Expected   : {}".format(baseline),
+            "!!  Current    : {}".format(live),
+            "!!  Action     : DISQUALIFIED, current match forfeited,"
+            " admins notified",
+            "!" * 78,
+            "",
+        ]
+        banner = "\n".join(banner_lines)
+        try:
+            print(banner, flush=True)
+        except UnicodeEncodeError:
+            print(banner.encode("ascii", "replace").decode("ascii"), flush=True)
+        log.warning("%s", banner)
+
+        reason = (
+            f"Anti-cheat {reason_kind} SHA mismatch in round {rnum}: "
+            f"baseline={baseline[:12]}... live={live[:12]}..."
+        )
+        _react_to_mismatch(
+            tournament=tournament,
+            participant=participant,
+            game_model=gm,
+            expected=baseline,
+            current=live,
+            round_num=rnum,
+            broadcast=broadcast,
+            reason=reason,
+            repo_id=repo_id,
+        )
+        return row
+
+    return None
+
+
+# ──────────────────────────────────────────────
 #  Mismatch reaction (DQ + admin email + ws broadcast)
 # ──────────────────────────────────────────────
 def _react_to_mismatch(
@@ -465,6 +683,8 @@ def _react_to_mismatch(
     current: str,
     round_num: int,
     broadcast: bool,
+    reason: Optional[str] = None,
+    repo_id: Optional[str] = None,
 ) -> None:
     from django.core.mail import mail_admins
     from apps.tournaments.disqualification import disqualify_for_repo_change
@@ -475,10 +695,16 @@ def _react_to_mismatch(
     # immediately re-register for a fresh QA tournament.
     is_qa = tournament.type == tournament.Type.QA
 
-    reason = (
-        f"Anti-cheat SHA mismatch in round {round_num}: "
-        f"baseline={expected[:12]}... live={current[:12]}..."
-    )
+    # reason defaults to the model-repo wording; callers checking the
+    # Space or data repo pass a reason containing the literal "space" /
+    # "data repo" so disqualify_for_repo_change rolls the right SHA fields.
+    if reason is None:
+        reason = (
+            f"Anti-cheat SHA mismatch in round {round_num}: "
+            f"baseline={expected[:12]}... live={current[:12]}..."
+        )
+    if repo_id is None:
+        repo_id = game_model.hf_model_repo_id
 
     # 1. + 2. Atomic DQ + live-match forfeit. The service handles
     #    both regular and QA flows (QA additionally clears `ready`
@@ -486,6 +712,7 @@ def _react_to_mismatch(
     try:
         disqualify_for_repo_change(
             participant, reason=reason, forfeit_live_match=True,
+            new_sha=current,
         )
     except Exception:
         log.exception(
@@ -531,7 +758,7 @@ def _react_to_mismatch(
                 f"Tournament: {tournament.name} (pk={tournament.pk})\n"
                 f"Round: {round_num}\n"
                 f"User: {participant.user.username} (id={participant.user_id})\n"
-                f"Repo: {game_model.hf_model_repo_id}\n"
+                f"Repo: {repo_id}\n"
                 f"Expected SHA: {expected}\n"
                 f"Current  SHA: {current}\n\n"
                 "The participant has been disqualified, their live match "
@@ -547,7 +774,7 @@ def _react_to_mismatch(
             tournament=tournament,
             user_id=participant.user_id,
             username=participant.user.username,
-            repo_id=game_model.hf_model_repo_id,
+            repo_id=repo_id,
             round_num=round_num,
         )
 

@@ -17,7 +17,6 @@ urlpatterns = [
     path("login/", views.UserLoginView.as_view(), name="login"),
     path("logout/", views.UserLogoutView.as_view(), name="logout"),
     path("profile/", views.ProfileView.as_view(), name="profile"),
-    path("profile/ai-models/", views.ai_models, name="ai_models"),
     path("profile/@<str:username>/", views.public_profile, name="public_profile"),
     path("match/<int:match_id>/moves/", views.match_moves, name="match_moves"),
     path("game/<int:game_id>/moves/", views.game_moves, name="game_moves"),

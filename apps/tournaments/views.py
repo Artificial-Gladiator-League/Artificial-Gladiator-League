@@ -255,9 +255,12 @@ def tournament_detail(request, pk):
         user_ready = participant.ready if participant else False
 
     # QA lobby data: list of participants with ready status
+    # Disqualified players are unregistered from the roster, so exclude them.
     qa_participants = []
     if tournament.type == Tournament.Type.QA:
-        for p in tournament.participants.select_related("user").all():
+        for p in tournament.participants.select_related("user").exclude(
+            disqualified_for_sha_mismatch=True,
+        ):
             fide = p.user.get_fide_title()
             qa_participants.append({
                 "username": p.user.username,
@@ -628,6 +631,49 @@ def join_tournament(request, pk):
     sha_check_ctx = "join-qa" if tournament.type == Tournament.Type.QA else "join"
     sha_ok, db_sha, latest_sha = live_sha_check(game_model, context=sha_check_ctx)
     is_qa = tournament.type == Tournament.Type.QA
+
+    # ── Extend the integrity check to the data repo and HF Space repo ──
+    # Mirror live_sha_check's comparison: resolve the live SHA and compare
+    # it against the approved baseline stored on the game model. Fail open
+    # on a missing baseline/repo or a network error so honest users aren't
+    # punished by transient outages.
+    from apps.users.integrity import _resolve_ref_sha, _get_stored_token
+    _extra_token = _get_stored_token(game_model.user) or ""
+    _extra_ref = (game_model.submitted_ref or "main").strip() or "main"
+
+    def _extra_repo_sha_ok(repo_id, repo_type, approved_sha, label):
+        repo_id = (repo_id or "").strip()
+        approved_sha = (approved_sha or "").strip() or None
+        if not repo_id or not approved_sha:
+            return True
+        try:
+            live = _resolve_ref_sha(
+                repo_id, _extra_token, ref=_extra_ref, repo_type=repo_type,
+            )
+        except Exception:
+            live = None
+        if live is None:
+            return True  # fail open on network error
+        if live == approved_sha:
+            return True
+        log.warning(
+            "join_tournament SHA mismatch: user=%s t=%s type=%s "
+            "db_sha=%s hf_sha=%s qa_allow=%s repo=%s(%s)",
+            request.user.username, tournament.pk, tournament.type,
+            approved_sha[:12], live[:12], is_qa, repo_id, label,
+        )
+        return False
+
+    data_sha_ok = _extra_repo_sha_ok(
+        game_model.hf_data_repo_id, "dataset",
+        game_model.approved_data_repo_sha, "data-repo",
+    )
+    space_sha_ok = _extra_repo_sha_ok(
+        game_model.hf_inference_endpoint_url, "space",
+        game_model.approved_space_sha, "space-repo",
+    )
+    sha_ok = sha_ok and data_sha_ok and space_sha_ok
+
     if not sha_ok:
         # Highly visible terminal banner so the operator sees the
         # integrity test fire in real time, regardless of outcome.
@@ -717,6 +763,33 @@ def join_tournament(request, pk):
                 request.user.username, tournament.pk, tournament.type, reason,
             )
             messages.error(request, REVERIFY_MSG if is_repo_change else reason)
+            return redirect("games:lobby")
+
+    # ── Gate C.5: repo changed → 30 rated games since revalidation ──
+    # A user who changed their model repo must complete 30 rated games
+    # before they may register again. QA tournaments log the condition
+    # instead of blocking so the anti-cheat flow can be exercised.
+    if game_model.repo_changed and game_model.rated_games_since_revalidation < 30:
+        remaining = 30 - game_model.rated_games_since_revalidation
+        if tournament.type == Tournament.Type.QA:
+            log.debug(
+                "[QA DEBUG] User %s has changed their repo and only has %s rated "
+                "games since revalidation (needs 30). Allowing registration because "
+                "this is a QA tournament — this would be BLOCKED in a real tournament.",
+                request.user.username, game_model.rated_games_since_revalidation,
+            )
+        else:
+            log.warning(
+                "join_tournament BLOCKED (repo changed cooldown): user=%s t=%s remaining=%s",
+                request.user.username, tournament.pk, remaining,
+            )
+            messages.error(
+                request,
+                f"Your model repository was changed. Play {remaining} more rated "
+                f"{tournament.game_type} game{'s' if remaining != 1 else ''} before "
+                f"joining tournaments "
+                f"({game_model.rated_games_since_revalidation}/30 since update).",
+            )
             return redirect("games:lobby")
 
     # ── Gate D: ELO category range (skip for QA — has no category) ──
@@ -836,11 +909,14 @@ def join_tournament(request, pk):
             )
 
         # ── Send T&C confirmation email (every registration) ───────────────
-        # Run inline: .delay() would queue to the Redis broker, but no Celery
-        # worker consumes it in this deployment, so the email would never send.
+        # Called inline — no Celery worker in this deployment.
         try:
             from apps.tournaments.tasks import send_registration_confirmation
-            send_registration_confirmation(tournament.pk, request.user.pk)
+            send_registration_confirmation(
+                tournament.pk,
+                request.user.pk,
+                int(request.POST.get("ai_thinking_seconds", 5)),
+            )
         except Exception:
             log.exception(
                 "join_tournament: T&C email failed entirely for "
@@ -1064,7 +1140,7 @@ def _broadcast_qa_ready_state(tournament):
     participants = []
     for p in TournamentParticipant.objects.filter(
         tournament=tournament,
-    ).select_related("user"):
+    ).exclude(disqualified_for_sha_mismatch=True).select_related("user"):
         participants.append({
             "username": p.user.username,
             "elo": p.user.get_elo_for_game(tournament.game_type),

@@ -357,6 +357,7 @@ def run_registration_period_sha_audit(self) -> dict:
                         f"(approved={(db_sha or '')[:12]}, live={(live_sha or '')[:12]})"
                     ),
                     forfeit_live_match=False,  # tournament not started yet
+                    new_sha=live_sha,
                 )
             except Exception:
                 log.exception(
@@ -364,6 +365,89 @@ def run_registration_period_sha_audit(self) -> dict:
                     "for user=%s tournament=%s", p.user.username, tournament.pk,
                 )
             summary["removed"] += 1
+            continue
+
+        # ── Data repo + HF Space SHA checks (same logic as the model repo) ──
+        # hf_inference_endpoint_url may be a full spaces URL or a Gradio subdomain URL;
+        # resolve_space_repo_sha probes every owner/name split so the live SHA is
+        # fetched from the correct Space for every user, regardless of hyphens.
+        from apps.users.ownership_verification import resolve_space_repo_sha
+        try:
+            _space_repo_id, _ = resolve_space_repo_sha(
+                gm.hf_inference_endpoint_url, token, ref=ref,
+            )
+        except Exception:
+            _space_repo_id = ""
+        for _extra_repo_id, _extra_repo_type, _extra_baseline, _extra_label, _base_field, _approved_field in (
+            (gm.hf_data_repo_id, "dataset",
+             (p.registered_data_repo_sha or gm.approved_data_repo_sha), "data repo",
+             "registered_data_repo_sha", "approved_data_repo_sha"),
+            (_space_repo_id, "space",
+             (p.registered_space_sha or gm.approved_space_sha), "HF Space",
+             "registered_space_sha", "approved_space_sha"),
+        ):
+            _extra_repo_id = (_extra_repo_id or "").strip()
+            if not _extra_repo_id:
+                continue
+            try:
+                _extra_live = _resolve_ref_sha(
+                    _extra_repo_id, token, ref=ref, repo_type=_extra_repo_type,
+                )
+            except Exception:
+                log.exception(
+                    "run_registration_period_sha_audit: %s SHA fetch raised "
+                    "for user=%s tournament=%s",
+                    _extra_label, p.user.username, tournament.pk,
+                )
+                summary["errors"] += 1
+                continue
+            if _extra_live is None:
+                continue  # fail open on network error
+            _extra_baseline = (_extra_baseline or "").strip() or None
+            if not _extra_baseline:
+                # No baseline yet for this user — establish it now so any future
+                # change is caught, and backfill the approved baseline so the
+                # profile can show the Primary SHA. Applies to every user.
+                try:
+                    setattr(p, _base_field, _extra_live)
+                    p.save(update_fields=[_base_field])
+                    if not (getattr(gm, _approved_field, "") or "").strip():
+                        setattr(gm, _approved_field, _extra_live)
+                        gm.save(update_fields=[_approved_field])
+                except Exception:
+                    log.debug(
+                        "run_registration_period_sha_audit: could not establish "
+                        "%s baseline for user=%s", _extra_label, p.user.username,
+                        exc_info=True,
+                    )
+                continue
+            if _extra_live == _extra_baseline:
+                continue
+            log.warning(
+                "run_registration_period_sha_audit: %s SHA CHANGED during "
+                "registration period — disqualifying user=%s from tournament=%s "
+                "(db_sha=%s live_sha=%s)",
+                _extra_label, p.user.username, tournament.pk,
+                (_extra_baseline or "")[:12], (_extra_live or "")[:12],
+            )
+            try:
+                from apps.tournaments.disqualification import disqualify_for_repo_change
+                disqualify_for_repo_change(
+                    p,
+                    reason=(
+                        f"{_extra_label} SHA changed during registration period "
+                        f"(approved={(_extra_baseline or '')[:12]}, live={(_extra_live or '')[:12]})"
+                    ),
+                    forfeit_live_match=False,  # tournament not started yet
+                    new_sha=_extra_live,
+                )
+            except Exception:
+                log.exception(
+                    "run_registration_period_sha_audit: disqualify failed "
+                    "for user=%s tournament=%s", p.user.username, tournament.pk,
+                )
+            summary["removed"] += 1
+            break
 
     log.info(
         "run_registration_period_sha_audit: candidates=%d removed=%d errors=%d",
@@ -973,7 +1057,7 @@ def expire_stale_prize_claims() -> str:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @shared_task(bind=True, max_retries=2, default_retry_delay=30)
-def send_registration_confirmation(self, tournament_id: int, user_id: int) -> dict:
+def send_registration_confirmation(self, tournament_id: int, user_id: int, ai_thinking_seconds: int) -> dict:
     """Send a registration confirmation email with the T&C as a PDF attachment.
 
     Called immediately after a user successfully joins a money tournament.
@@ -1009,7 +1093,7 @@ def send_registration_confirmation(self, tournament_id: int, user_id: int) -> di
 
     # ── Build PDF ──────────────────────────────────────────────────
     try:
-        pdf_bytes = _build_tc_pdf(tournament, user)
+        pdf_bytes = _build_tc_pdf(tournament, user, ai_thinking_seconds)
     except Exception:
         log.exception(
             "send_registration_confirmation: PDF generation failed for "
@@ -1065,7 +1149,7 @@ def send_registration_confirmation(self, tournament_id: int, user_id: int) -> di
         raise
 
 
-def _build_tc_pdf(tournament, user) -> bytes:
+def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
     """Generate a PDF of the T&C for *tournament* and return raw bytes.
 
     Uses reportlab. The content mirrors the key points in money_terms.html.
@@ -1360,6 +1444,10 @@ def _build_tc_pdf(tournament, user) -> bytes:
     story.append(Spacer(1, 0.2 * cm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
     story.append(Spacer(1, 0.3 * cm))
+    story.append(Paragraph(
+        f"<b>AG Champion thinking time:</b> {ai_thinking_seconds} seconds per move",
+        body_style,
+    ))
     story.append(Paragraph(
         f"Participant: {user.username} | Accepted at registration for {tournament.name}.",
         body_style,

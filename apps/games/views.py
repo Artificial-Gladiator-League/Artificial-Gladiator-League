@@ -441,36 +441,46 @@ def _build_ongoing_games():
     return items
 
 
-@login_required
 def lobby(request):
-    """Lobby with quick pairing, open AI games, and live/replay previews."""
-    user = request.user
-    log.info("[LOBBY] User %s joined lobby", user.username)
-    display_games = _build_display_games()
-    waiting_games = _build_waiting_games(user)
-    ongoing_games_list = _build_ongoing_games()
-    my_active_games = _build_my_active_games(user)
-    fide = user.get_fide_title()
+    """Lobby with quick pairing, open AI games, and live/replay previews.
 
+    Accessible to unauthenticated users — they can watch replays and spectate.
+    Authenticated-only sections (create game, join game, active games) are
+    handled in the template via {% if user.is_authenticated %}.
+    """
+    display_games = _build_display_games()
     ongoing_count = Game.objects.filter(status=Game.Status.ONGOING).count()
     live_gladiators_count = ongoing_count * 2
     active_tournaments_count = Tournament.objects.filter(
         status__in=[Tournament.Status.OPEN, Tournament.Status.ONGOING]
     ).count()
 
-    return render(request, "games/lobby.html", {
-        "time_controls": TIME_CONTROLS,
-        "user_profile": user,
-        "category": user.get_category(),
-        "fide_title": fide,
-        "waiting_games": waiting_games,
-        "ongoing_games": ongoing_games_list,
-        "my_active_games": my_active_games,
+    ctx = {
         "display_games": display_games,
         "has_live_display_games": any(g["is_live"] for g in display_games),
         "live_gladiators_count": live_gladiators_count,
         "active_tournaments_count": active_tournaments_count,
-    })
+        "waiting_games": [],
+        "ongoing_games": [],
+        "my_active_games": [],
+        "time_controls": TIME_CONTROLS,
+    }
+
+    if request.user.is_authenticated:
+        log.info("[LOBBY] User %s joined lobby", request.user.username)
+        fide = request.user.get_fide_title()
+        ctx.update({
+            "user_profile": request.user,
+            "category": request.user.get_category(),
+            "fide_title": fide,
+            "waiting_games": _build_waiting_games(request.user),
+            "ongoing_games": _build_ongoing_games(),
+            "my_active_games": _build_my_active_games(request.user),
+        })
+    else:
+        ctx["ongoing_games"] = _build_ongoing_games()
+
+    return render(request, "games/lobby.html", ctx)
 
 
 @login_required

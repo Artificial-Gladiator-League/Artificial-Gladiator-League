@@ -8,12 +8,12 @@
       How to register Your Artificial Gladiator
     </h1>
     <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-      A step-by-step guide to registering your Artificial Gladiator (<span class="text-brand glow-brand">AG</span>) to the Artificial Gladiator League (<span class="text-brand glow-brand">AGL</span>) platform — from bringing to life your AG to gladiating with your AG in games and tournaments.
+      A step-by-step guide to joining your Artificial Gladiator Champion (<span class="text-brand glow-brand">AG Champion</span>) to the Artificial Gladiator League (<span class="text-brand glow-brand">AGL</span>) platform — from bringing to life your AG Champion to let him gladiate in games and tournaments.
     </p>
   </div>
 
   <div class="flex flex-wrap justify-center gap-4 mb-12 text-xs text-center">
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Bringing to life Your AG</span></div>
+    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Joining your AG Champion</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
     <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-purple flex items-center justify-center font-bold text-white">2</div><span class="text-gray-400">Create Repos</span></div>
     <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
@@ -29,9 +29,9 @@
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Bringing to life your AG</h2>
+        <h2 class="text-xl font-bold mb-1">Joining your AG Champion</h2>
         <p class="text-gray-400 text-sm mb-5">
-          Your AG is a Python brain that receives a board position and returns a legal move string.
+          Your AG Champion is a Python brain that receives a board position and returns a legal move string.
           The logic inside is entirely up to you — Monte Carlo Vector Search (MCVS), random play, minimax, MCTS, a neural network, or anything else.
           The recommended integration is a <strong class="text-white">Gradio Space</strong> hosted on Hugging Face:
           easy to deploy, easy to debug, and no server to manage on your end.
@@ -108,6 +108,9 @@
           <h3 class="font-semibold text-brand mb-2">Repo 1 — Model Repository <span class="text-xs font-normal text-gray-500">(HF Model repo)</span></h3>
           <p class="text-xs text-gray-400 mb-3">
             Contains your Artificial Gladiator code files and a <code class="bg-black/30 px-1 rounded">config_model.json</code> that lists all Python files and the entry-point module.
+          </p>
+          <p class="text-xs text-gray-400 mb-3">
+            Even if you use the Gradio interface, you still need to create this repo and its <code class="bg-black/30 px-1 rounded">config_model.json</code> file — it is used for ownership verification, even though the platform never downloads your actual code.
           </p>
 
           <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-start gap-2">
@@ -214,11 +217,14 @@
 
             <p class="text-sm text-gray-400 mb-3">
               Create and publish your three Hugging Face repositories here:
-              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-model" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
+              <a href="https://huggingface.co/chaim-duchovny/chess-model" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
                 Model repo
               </a>,
               <a href="https://huggingface.co/datasets/chaim-duchovny/chess-data" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
                 Data repo
+              </a>,
+              <a href="https://huggingface.co/spaces/chaim-duchovny/chess-space" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
+                Space repo
               </a>
             </p>
 
@@ -260,7 +266,7 @@
         <ol class="space-y-3 text-sm mb-5">
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
-            <span>Register your repo on the <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">AG Champion</a> page. The platform generates a unique 32-character verification code.</span>
+            <span>Register your repo on the <a href="{% url 'users:profile' %}" class="text-brand hover:underline">AG Champion</a> page. The platform generates a unique 32-character verification code.</span>
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
@@ -295,7 +301,7 @@
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Register Your AG Champion in the Platform</h2>
         <p class="text-gray-400 text-sm mb-4">
-          Go to <a href="{% url 'users:ai_models' %}" class="text-brand hover:underline">Profile → AG Champions</a> and fill in the repo details for each game type you want to gladiate.
+          Go to <a href="{% url 'users:profile' %}" class="text-brand hover:underline">Profile → AG Champions</a> and fill in the repo details for each game type you want to gladiate.
         </p>
 
         <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
@@ -369,7 +375,7 @@
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-amber-400 mb-2">Validate move format</div>
-        <p class="text-xs text-gray-400">Always return a valid move string. Invalid or empty responses are treated as illegal moves and may result in a forfeited turn. Check the expected move format for the game type in the Lobby.</p>
+        <p class="text-xs text-gray-400">Always return a valid move string. Invalid or empty responses are treated as illegal moves and may result in a forfeited turn. Check the expected move format for the game type in the Lobby — Chess uses UCI notation (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) and Breakthrough uses a coordinate string (e.g. <code class="bg-black/30 px-1 rounded">3,2-3,3</code>).</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gray-200 mb-2">Test before tournaments</div>
@@ -408,7 +414,7 @@
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Invalid move returned</div>
         <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your move string matches the expected format for the game (UCI for Chess, coordinate string for Breakthrough).</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your move string matches the expected format for the game — UCI for Chess (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) or a coordinate string for Breakthrough (e.g. <code class="bg-black/30 px-1 rounded">3,2-3,3</code>).</span></li>
           <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Make sure you return a plain string — not a list, not a JSON object, not <code class="bg-black/30 px-1 rounded">{"move": "..."}</code>.</span></li>
         </ul>
       </div>
@@ -502,9 +508,9 @@
 
   <!-- CTA -->
   <div class="text-center mb-12">
-    <p class="text-gray-400 mb-4">Ready to enter the arena?</p>
+    <p class="text-gray-400 mb-4">Ready to Gladiate?</p>
     <div class="flex flex-wrap justify-center gap-3">
-      <a href="{% url 'users:ai_models' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Go to AG Champions</a>
+      <a href="{% url 'users:profile' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Join Your AG Champions</a>
       <a href="{% url 'games:lobby' %}" class="px-6 py-2.5 text-sm font-semibold rounded-lg border border-borderDark text-gray-300 hover:bg-surfaceLight transition">Go to Lobby</a>
     </div>
   </div>

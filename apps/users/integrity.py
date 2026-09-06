@@ -269,7 +269,7 @@ def _resolve_ref_sha(
 
     Returns None on any error so callers never need to catch SDK exceptions.
     """
-    if not repo_id or not token:
+    if not repo_id:
         return None
     try:
         from huggingface_hub import auth_check, list_repo_refs
@@ -321,6 +321,19 @@ def record_original_sha(
         game_model.submission_repo_type = repo_type
         game_model.submitted_ref = ref
         game_model.approved_full_sha = sha
+        # Pin data-repo and HF Space baselines alongside the model repo so
+        # the registration-period audit has a baseline to compare against.
+        data_repo_id = (game_model.hf_data_repo_id or "").strip()
+        if data_repo_id:
+            data_sha = _resolve_ref_sha(data_repo_id, hf_token, ref=ref, repo_type="dataset")
+            if data_sha:
+                game_model.approved_data_repo_sha = data_sha
+        space_repo = (game_model.hf_inference_endpoint_url or "").strip()
+        if space_repo:
+            from apps.users.ownership_verification import resolve_space_repo_sha
+            _space_repo_id, space_sha = resolve_space_repo_sha(space_repo, hf_token, ref=ref)
+            if space_sha:
+                game_model.approved_space_sha = space_sha
         game_model.pinned_at = now
         game_model.rated_games_since_revalidation = 0
         game_model.save(update_fields=[
@@ -331,12 +344,73 @@ def record_original_sha(
             "submission_repo_type",
             "submitted_ref",
             "approved_full_sha",
+            "approved_data_repo_sha",
+            "approved_space_sha",
             "pinned_at",
             "rated_games_since_revalidation",
         ])
         log.info("Pinned approved revision for %s/%s: %s@%s → %s",
                  game_model.user.username, game_model.game_type,
                  repo_id, ref, sha[:12])
+
+
+def _sync_secondary_repo_shas(
+    game_model: UserGameModel, fresh_token: str, ref: str = "main"
+) -> None:
+    """Roll data-repo / HF-Space revision SHAs when their repos change.
+
+    Mirrors the model-repo revision tracking so the profile page can surface
+    "before change" / "new/pending" SHAs for the data and Space repos too,
+    for every game type. Best-effort: never raises.
+    """
+    changed_fields: list[str] = []
+
+    # ── Data repo ───────────────────────────────
+    data_repo_id = (game_model.hf_data_repo_id or "").strip()
+    approved_data = (game_model.approved_data_repo_sha or "").strip()
+    if data_repo_id and approved_data:
+        current_data = _resolve_ref_sha(
+            data_repo_id, fresh_token, ref=ref, repo_type="dataset"
+        )
+        if current_data is not None:
+            if current_data != approved_data:
+                if game_model.current_data_repo_sha != approved_data:
+                    game_model.current_data_repo_sha = approved_data
+                    changed_fields.append("current_data_repo_sha")
+                if game_model.new_data_repo_sha != current_data:
+                    game_model.new_data_repo_sha = current_data
+                    changed_fields.append("new_data_repo_sha")
+            elif game_model.current_data_repo_sha or game_model.new_data_repo_sha:
+                game_model.current_data_repo_sha = ""
+                game_model.new_data_repo_sha = ""
+                changed_fields += ["current_data_repo_sha", "new_data_repo_sha"]
+
+    # ── HF Space repo ───────────────────────────
+    # hf_inference_endpoint_url stores a full URL; resolve it to a bare
+    # owner/name repo id (as the Space SHA backfill does) before querying HF.
+    space_url = (game_model.hf_inference_endpoint_url or "").strip()
+    approved_space = (game_model.approved_space_sha or "").strip()
+    if space_url and approved_space:
+        from apps.users.ownership_verification import resolve_space_repo_id
+        space_repo_id = resolve_space_repo_id(space_url)
+        current_space = _resolve_ref_sha(
+            space_repo_id, fresh_token, ref=ref, repo_type="space"
+        )
+        if current_space is not None:
+            if current_space != approved_space:
+                if game_model.current_space_sha != approved_space:
+                    game_model.current_space_sha = approved_space
+                    changed_fields.append("current_space_sha")
+                if game_model.new_space_sha != current_space:
+                    game_model.new_space_sha = current_space
+                    changed_fields.append("new_space_sha")
+            elif game_model.current_space_sha or game_model.new_space_sha:
+                game_model.current_space_sha = ""
+                game_model.new_space_sha = ""
+                changed_fields += ["current_space_sha", "new_space_sha"]
+
+    if changed_fields:
+        game_model.save(update_fields=list(set(changed_fields)))
 
 
 def validate_model_integrity(
@@ -376,6 +450,10 @@ def validate_model_integrity(
         log.info("Auto-pinned revision for %s/%s (missed at submission): %s",
                  game_model.user.username, game_model.game_type, current_sha[:12])
         return True, "Model verified and pinned successfully. You're cleared for today."
+
+    # Track data-repo / HF-Space revision changes independently of the model
+    # repo so the profile surfaces "before change" / "new/pending" SHAs there.
+    _sync_secondary_repo_shas(game_model, fresh_token, ref)
 
     # Revision changed → new revision available
     # Block tournaments (model_integrity_ok = False) but let the user

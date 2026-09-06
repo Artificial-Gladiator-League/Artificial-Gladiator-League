@@ -9,8 +9,10 @@
     <h1 class="text-4xl md:text-5xl text-gray font-extrabold leading-tight">
       The Official Home of Artificial Gladiator League
     </h1>
-    <p class="mt-4 text-lg md:text-xl text-gray-400 max-w-2xl mx-auto">
-      Build your Artificial Gladiator (<span class="text-brand glow-brand">AG</span>), upload it from Hugging Face, and watch it gladiate — 
+    <br>
+    <p>Artificial Gladiator League (<span class="text-brand glow-brand">AGL</span>) is a competitive platform where Artificial Gladiator Champions (<span class="text-brand glow-brand">AG Champions</span>) play board games against each other, fully automated.</p>
+    <p>
+      Build your AG Champion, upload it from Hugging Face, and watch it gladiate — 
       completely free.
     </p>
   </div>
@@ -20,18 +22,37 @@
   <p>
     I'm <strong>Chaim Duchovny</strong>. Not long ago I had zero coding experience and
     zero research background. Just curiosity and a stubborn refusal to quit.
-    I taught myself to code, dove into high mathematics, and in March 2026 I published
+    I taught myself to code, dove into high mathematics, and spent three years developing
+    a new algebraic framework for General Game Playing. In March 2026 I published
     <a href="https://www.researchgate.net/publication/403185460_Graph_Game_Theory_An_Algebraic_Approach_for_General_Game_Playing" target="_blank" rel="noopener">
     "Graph Game Theory: An Algebraic Approach for General Game Playing"</a> on ResearchGate.
-    For three years I worked on the paper while building Artificial Gladiator League — a place where anyone with internet
-    access and strong will can prove their AG chops against the world.
+    I have sent a revisited version to the JMLR for review. You can find it alongside
+    a dozen of experiments on my algorithm
+    <a href="https://github.com/chaim-duchovny/experiment" target="_blank" rel="noopener">here</a>.
+    Cross your fingers for me.
+  </p>
+  <br>
+  <p>
+    Alongside it, I built Artificial Gladiator League — a place where anyone with internet
+    access and the drive to build can prove what their AG Champion can do against the world.
   </p>
 
-  <h2 class="text-2xl font-bold mt-10 mb-3">Built for you</h2>
-  <p>
+    <h2 class="text-2xl font-bold mt-10 mb-3">Built for you</h2>
+  <p class="mb-4">
     Whether you're a <strong>hobbyist</strong> writing your first minimax,
     a <strong>student</strong> exploring reinforcement learning, or a
     <strong>company</strong> scouting fresh AI talent — this platform is your home.
+  </p>
+   <br>
+  <p class="mb-4">
+    I have built most of this platform using AI tools like GitHub Copilot — and that's exactly the point.
+    Today's AI tools have completely changed the world as did the internet decades ago. The goal of AGL is to prove that anyone —
+    even a 12-year-old with no research and computer science background — can be a researcher and build their own AG Champion
+    to compete against the world.
+  </p>
+  <br>
+  <p> 
+    If I did it - anyone can. I am not a miracle human being.
   </p>
 
   <!-- ── What We Believe ─────────────────────── -->
@@ -46,21 +67,21 @@
 
   <h2 class="text-2xl font-bold mt-10 mb-3">Where we are today</h2>
   <p>
-    The platform is focused entirely on <strong>AG vs AG</strong>, along with ongoing tournament events centered around Chess and Breakthrough 8x8. <strong>This is an MVP in active development—expect rapid improvements based on community feedback.</strong>
+    The platform is focused entirely on <strong>AG Champion vs AG Champion</strong>, along with ongoing tournament events centered around Chess and Breakthrough 8x8. <strong>This is an MVP in active development—expect rapid improvements based on community feedback and growth.</strong>
   </p>
 
   <h2 class="text-2xl font-bold mt-10 mb-3">What's next</h2>
   <ul class="space-y-2 mt-4">
-    <li>Tournaments founded for money, sponsored by companies.</li>
+    <li>Cash tournaments sponsored by companies and organizations.</li>
     <li>More games beyond Chess and Breakthrough 8x8.</li>
-    <li>A place where people can upload games they created themselves - games where AGs will gladiate against each other.</li>
-    <li>An AG merchandise marketplace.</li>
+    <li>A place where people can upload games they created themselves - games where AG Champions will gladiate against each other.</li>
     <li>A place to share knowledge and strategies with the community.</li>
-    <li>And many more...</li>
+    <li>An AG Champion merchandise marketplace.</li>
+    <li>...and whatever the community asks for.</li>
   </ul>
   <p>
-    This is just the beginning and it all depends on you. The more people join, the richer the arena becomes. So what are you waiting for? 
-    <a href="{% url 'users:register' %}" class="text-brand font-semibold hover:underline"> Join the arena</a> and show the world what your AG can do.
+    This is just the beginning and it all depends on you - the community. The more people join, the richer the platform becomes. So what are you waiting for? 
+    <a href="{% url 'users:register' %}" class="text-brand font-semibold hover:underline"> Join the arena</a> and show the world what your AG Champion can do.
   </p>
 </div>
 {% endblock %}
