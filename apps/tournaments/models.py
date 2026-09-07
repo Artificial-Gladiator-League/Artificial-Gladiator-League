@@ -9,7 +9,7 @@ class Tournament(models.Model):
 
     class Type(models.TextChoices):
         QA = "qa", "QA (2 players)"
-        GAUNTLET = "gauntlet", "Gladiator Gauntlet (Swiss)"
+        GAUNTLET = "gauntlet", "Gladiator Gauntlet"
 
     class Category(models.TextChoices):
         BEGINNER = "beginner", "Beginner (≤1200)"
@@ -205,8 +205,6 @@ class Tournament(models.Model):
             self.capacity = 2
             self.rounds_total = 1
         elif self.type == self.Type.GAUNTLET:
-            # Gauntlet always uses Swiss format.
-            self.format = "swiss"
             if not self.pk:
                 defaults = self.TYPE_DEFAULTS[self.Type.GAUNTLET]
                 self.capacity = self.capacity or defaults["capacity"]
