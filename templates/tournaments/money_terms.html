@@ -49,9 +49,9 @@
       <hr class="border-gray-600">
       <p class="font-semibold text-gray-200 mb-1">Key Points (Summary)</p>
       <ul class="list-disc list-inside space-y-1">
-        <li>The Gladiator Gauntlet is a <strong>weekly, Swiss-format AG tournament</strong> (chess and/or breakthrough) &mdash; no elimination, everyone plays every round.</li>
+        <li>The Gladiator Gauntlet is a <strong>weekly, single-elimination AG tournament</strong> (chess and/or breakthrough) &mdash; lose one match and you are out.</li>
         <li><strong>Eligibility:</strong> you must be at least <strong>18 years old</strong> and a <strong>resident of Israel</strong> with a valid AGL account.</li>
-        <li><strong>Prizes:</strong> 1st place &#x20aa;100, 2nd place &#x20aa;50, 3rd place &#x20aa;25, paid in NIS, subject to tax and identity/payment information requirements.</li>
+        <li><strong>Prizes:</strong> the tournament champion receives {{ tournament.prize_amount }} {{ tournament.prize_currency }} (winner takes all), paid in NIS, subject to tax and identity/payment information requirements.</li>
         <li><strong>Zero tolerance for cheating</strong> &mdash; including changing your model&rsquo;s repository mid-tournament &mdash; results in immediate disqualification and forfeiture of prizes.</li>
         <li><strong>Zero tolerance for Violence:</strong> any form of violent behavior, threats, or harassment is strictly prohibited and may result in immediate disqualification and ban from every activity on the platform.</li>
         <li>AGL may cancel, postpone, or adjust the schedule, prize structure or any other feature of the tournament with reasonable notice.</li>
@@ -63,7 +63,7 @@
       <p>1.2 <strong>&ldquo;AG Champion&rdquo;</strong> means The Artificial Gladiator Champion, and its associated repository, that a participant submits to compete on their behalf.</p>
       <p>1.3 <strong>&ldquo;Participant&rdquo; / &ldquo;you&rdquo;</strong> means any individual who registers for and/or competes in The Gladiator Gauntlet with his AG Champion.</p>
       <p>1.4 <strong>&ldquo;Tournament&rdquo;</strong> means a single weekly instance of The Gladiator Gauntlet.</p>
-      <p>1.5 <strong>&ldquo;Swiss System&rdquo;</strong> means a multi-round tournament format in which no participant is eliminated; each round, participants are paired against others with a similar running score, and final standings are determined by cumulative score (and tiebreakers) after all rounds are complete.</p>
+      <p>1.5 <strong>&ldquo;Single-Elimination&rdquo;</strong> means a bracket tournament format in which a Participant who loses a match is eliminated from the Tournament and does not compete in any further round; a Participant who wins advances to face another winning Participant in the next round, until one Participant remains undefeated as champion.</p>
       <p>1.6 <strong>&ldquo;Platform&rdquo;</strong> means the AGL website and associated services through which the Tournament is operated.</p>
       <hr class="border-gray-600">
       <p class="font-semibold text-gray-200 mb-1">2. Eligibility &amp; Registration</p>
@@ -77,12 +77,13 @@
       <p>2.4 Registration for a given weekly Tournament is subject to the entry window, capacity limits, and any other requirements published on the Tournament page.</p>
       <hr class="border-gray-600">
       <p class="font-semibold text-gray-200 mb-1">3. Tournament Format &amp; Rules</p>
-      <p>3.1 <strong>Format.</strong> The Gladiator Gauntlet is run under the <strong>Swiss system</strong>. Participants are not eliminated after a loss; instead, each round they are paired against opponents with a comparable score, and final rankings are determined by total score across all rounds, with tiebreakers applied as needed to resolve ties.</p>
+      <p>3.1 <strong>Format.</strong> The Gladiator Gauntlet is run under a <strong>single-elimination</strong> bracket. A Participant who loses a match (including any Armageddon tiebreak under Section 3.7) is eliminated from that Tournament and does not compete in any further round. The Tournament concludes when one undefeated Participant remains as champion.</p>
       <p>3.2 <strong>Game type.</strong> Matches are played by AG models submitted by Participants, in chess and/or breakthrough, as specified on the Tournament page for that week.</p>
       <p>3.3 <strong>Time control.</strong> Each match is played under the time control specified on the Tournament page for that week&rsquo;s Tournament.</p>
       <p>3.4 <strong>Pairings and scoring.</strong> Round pairings, scoring, and standings are generated and maintained by AGL&rsquo;s tournament system. AGL&rsquo;s determination of pairings, results, and final standings is final, save for manifest error or a successful dispute under Section 8.</p>
       <p>3.5 <strong>Model conduct during matches.</strong> Your AG Champion   must compete as submitted at the time your Tournament registration is finalized. See Section 7 for restrictions on changes during an active Tournament.</p>
       <p>3.6 <strong>Time per move.</strong> Before joining a Tournament, the Participant selects a target "time per move" (AG Champion thinking time) setting for their AG Champion, as offered on the registration page. This setting reflects a target pace only; actual response time per move may vary depending on how the opposing Participant's model is hosted, and AGL does not guarantee that any match will complete within a specific duration. AGL may apply a reasonable maximum time limit per move or per match, at its discretion, to ensure Tournament matches complete in a timely manner.</p>
+      <p>3.7 <strong>Drawn games.</strong> If a match ends in a draw, it is automatically resolved by a single additional Armageddon game between the same two Participants under an accelerated time control, with colours reassigned at random. In the Armageddon game, the Participant playing Black wins if that game is also drawn ("draw odds"). The result of the Armageddon game determines who advances and who is eliminated for purposes of Section 3.1.</p>
       <hr class="border-gray-600">
       <p class="font-semibold text-gray-200 mb-1">4. Schedule &amp; Changes</p>
       <p>4.1 The Gladiator Gauntlet is held <strong>once per week</strong>.</p>
@@ -91,12 +92,7 @@
       <p>4.4 AGL reserves the right, at its sole discretion, to increase the prize amounts specified in Section 5 for a given Tournament — for example, where the number of registered Participants is lower than expected — without any obligation to do so and without this establishing any expectation of increased prizes for future Tournaments.</p>
       <hr class="border-gray-600">
       <p class="font-semibold text-gray-200 mb-1">5. Prizes &amp; Payment</p>
-      <p>5.1 <strong>Prize amounts</strong> for each weekly Gladiator Gauntlet Tournament are as follows, unless otherwise stated on the Tournament page:</p>
-      <ul class="list-disc pl-6 space-y-0.5">
-        <li><strong>1st place:</strong> &#x20aa;100 (100 NIS)</li>
-        <li><strong>2nd place:</strong> &#x20aa;50 (50 NIS)</li>
-        <li><strong>3rd place:</strong> &#x20aa;25 (25 NIS)</li>
-      </ul>
+      <p>5.1 <strong>Prize amount.</strong> This Tournament is <strong>winner-take-all</strong>: the sole prize is <strong>{{ tournament.prize_amount }} {{ tournament.prize_currency }}</strong>, awarded to the Tournament champion (the single undefeated Participant remaining under Section 3.1). No prize is paid to any other Participant.</p>
       <p>5.2 Prizes are paid in New Israeli Shekels (NIS), via a payment method specified by AGL (which may include, for example, bank transfer or PayPal).</p>
       <p>5.3 To receive a prize, a winning participant may be required to provide additional information and to complete any identity or eligibility verification requested by AGL. This may include, without limitation, providing a PayPal email address, participating in a verification call via phone or WhatsApp, and/or providing a copy of the Participant's Israeli identity card (Teudat Zehut) together with its address appendix (Sefach), to confirm identity, age, and Israeli residency.</p>
       <p>5.4 Prizes are subject to any applicable taxes, withholdings, or other legal requirements under Israeli law. Each Participant is solely responsible for any tax obligations arising from a prize they receive.</p>
