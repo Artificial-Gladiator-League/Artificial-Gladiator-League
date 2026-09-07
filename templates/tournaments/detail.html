@@ -140,6 +140,18 @@
   <div class="card mb-6" id="qaLobby">
     <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Player Lobby</h2>
 
+    {% if space_summary %}
+    <div class="mb-4 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border border-borderDark bg-surface text-gray-300">
+      🛰️ {{ space_summary.verified }}/{{ space_summary.total }} Spaces verified
+    </div>
+    {% endif %}
+
+    {% if user.is_authenticated %}
+    <div class="mb-4">
+      {% include "core/_verify_space_button.html" with game_type=tournament.game_type label="Test My Space" %}
+    </div>
+    {% endif %}
+
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5" id="qaPlayerSlots">
       {% for p in qa_participants %}
         <div class="flex items-center justify-between p-3 rounded-lg border
@@ -150,6 +162,17 @@
             {% if p.fide_abbr %}<span class="{{ p.fide_css }} font-bold text-xs" title="{{ p.fide_title }}">{{ p.fide_abbr }}</span>{% endif %}
             <span class="font-semibold text-sm">{{ p.username }}</span>
             <span class="text-gray-500 text-xs">({{ p.elo }})</span>
+            {% if p.space_status == 'ok' %}
+              <span class="text-xs" title="Space verified">✅</span>
+            {% elif p.space_status == 'cold_start' %}
+              <span class="text-xs" title="Space is waking up">🕒</span>
+            {% elif p.space_status == 'unreachable' %}
+              <span class="text-xs" title="Space unreachable">❌</span>
+            {% elif p.space_status == 'bad_response' %}
+              <span class="text-xs" title="Responded but move was invalid">⚠️</span>
+            {% else %}
+              <span class="text-xs text-gray-600" title="Space not tested">•</span>
+            {% endif %}
           </div>
           <span class="text-xs font-semibold {% if p.ready %}text-green-400{% else %}text-gray-500{% endif %}"
                 data-qa-status="{{ p.username }}">

@@ -1131,7 +1131,7 @@ def send_registration_confirmation(self, tournament_id: int, user_id: int, ai_th
             to=[recipient],
         )
         email.attach(
-            filename=f"AGL_Terms_{tournament.pk}.pdf",
+            filename=f"AGL_T&C_Tournament_{tournament.pk}.pdf",
             content=pdf_bytes,
             mimetype="application/pdf",
         )
@@ -1193,9 +1193,6 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
     sub_style = ParagraphStyle(
         "AglSub", parent=body_style, leftIndent=16,
     )
-    small_style = ParagraphStyle(
-        "AglSmall", parent=body_style, fontSize=8, textColor=colors.grey,
-    )
 
     story = []
 
@@ -1214,12 +1211,6 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
         story.append(Paragraph(prize_line, body_style))
         story.append(Spacer(1, 0.3 * cm))
 
-    story.append(Paragraph(
-        "AGL(TM), The Gladiator Gauntlet(TM), AG(TM), Gladiate(TM), Lets Gladiate(TM), "
-        "Artificial Gladiator(TM), and Artificial Gladiator League(TM) are trademarks of PTK Group.",
-        small_style,
-    ))
-    story.append(Spacer(1, 0.2 * cm))
     story.append(Paragraph(
         "<b>Organizer:</b> Artificial Gladiator League (AGL), Rishon LeZion, Israel",
         body_style,

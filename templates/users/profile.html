@@ -261,9 +261,10 @@
       <div class="flex border-b border-gray-700 mb-6">
         {% if is_own_profile %}
         <button class="profile-tab active" data-tab="edit">Profile</button>
+        <button class="profile-tab" data-tab="test-space">Test Space</button>
         <button class="profile-tab" data-tab="ai-models">AG Champions</button>
         <button class="profile-tab" data-tab="stats">Stats &amp; History</button>
-        <button class="profile-tab" data-tab="paypal">💳 PayPal</button>
+        <button class="profile-tab" data-tab="paypal">PayPal</button>
         {% else %}
         <button class="profile-tab active" data-tab="stats">Stats &amp; History</button>
         {% endif %}
@@ -515,10 +516,8 @@
             {% if game.model.last_model_validation_date %}
             <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
             {% endif %}
-            {% if game.model.new_repo_sha %}
             <p><span class="text-gray-500">Repo SHA (before change):</span> <code class="text-yellow-300">{{ game.model.current_repo_sha|default:game.model.approved_full_sha|truncatechars:16 }}</code></p>
-            <p><span class="text-gray-500">Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_repo_sha|truncatechars:16 }}</code></p>
-            {% endif %}
+            <p><span class="text-gray-500">Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_repo_sha|default_if_none:""|truncatechars:16 }}</code></p>
 
             <hr class="border-gray-700 my-2">
 
@@ -528,10 +527,8 @@
             {% if game.model.last_model_validation_date %}
             <p><span class="text-gray-500">Last verified:</span> {{ game.model.last_model_validation_date }}</p>
             {% endif %}
-            {% if game.model.new_data_repo_sha %}
             <p><span class="text-gray-500">Data Repo SHA (before change):</span> <code class="text-yellow-300">{{ game.model.current_data_repo_sha|default:game.model.approved_data_repo_sha|truncatechars:16 }}</code></p>
             <p><span class="text-gray-500">Data Repo SHA (new/pending):</span> <code class="text-yellow-300">{{ game.model.new_data_repo_sha|truncatechars:16 }}</code></p>
-            {% endif %}
 
             <hr class="border-gray-700 my-2">
 
@@ -717,6 +714,11 @@
                 ↗ Open Space
               </a>
               {% endif %}
+              {% if game.model and game.model.hf_inference_endpoint_url %}
+              <div class="mt-3">
+                {% include "core/_verify_space_button.html" with game_type=game.type %}
+              </div>
+              {% endif %}
             </div>
             <!-- ─────────────────────────────────────────────────────────── -->
 
@@ -868,6 +870,36 @@
         </script>
 
       </div>{# /tab-ai-models #}
+
+      <!-- ═══════════════════════════════════════
+           TAB: Test My Space
+           ═══════════════════════════════════════ -->
+      <div id="tab-test-space" class="tab-panel hidden space-y-6">
+        <div class="card">
+          <h2 class="text-xl font-semibold mb-4">Test My Space</h2>
+          <p class="text-gray-400 mb-6">
+            Click the button below to test whether your HF Space is alive and responding correctly.
+          </p>
+
+          <button id="testSpaceBtn"
+                  class="btn-brand w-full py-3 text-base font-semibold flex items-center justify-center gap-3 disabled:opacity-50">
+            <span id="btnText">Test My Space</span>
+          </button>
+
+          <div id="testSpaceLog" class="mt-6 hidden">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-gray-400">Test Log</h3>
+              <button onclick="clearTestLog()" class="text-xs text-gray-500 hover:text-gray-400">Clear</button>
+            </div>
+            <div id="testSpaceContent" class="bg-gray-950 border border-gray-800 rounded-xl p-4 text-xs font-mono text-gray-300 whitespace-pre-wrap max-h-96 overflow-auto"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 class="text-sm uppercase tracking-widest text-gray-500 font-semibold mb-3">Space Status</h3>
+          <div id="spaceStatusBadge" class="text-sm px-4 py-2 rounded-lg border text-center"></div>
+        </div>
+      </div>
       {% endif %}
 
       <!-- Friends tab removed -->
@@ -1113,6 +1145,7 @@
     const panel = document.getElementById('tab-' + tabName);
     if (panel) panel.classList.remove('hidden');
     if (tabName === 'stats') loadHeatmapForType('chess');
+    if (tabName === 'test-space') openTestSpaceTab();
     if (tabName === 'ai-models' && !_fileStatusLoaded) {
       _fileStatusLoaded = true;
       loadAllFileStatuses();
@@ -1663,5 +1696,107 @@
     if (e.key === 'End')        { e.preventDefault(); replayIdx = replayFens.length - 1; renderReplayPos(); }
   });
 })();
+</script>
+
+<script>
+  // ── New Test Space tab ──────────────────────────────────────────────────
+  const userProfile = {
+    space_status: '{{ user_profile.space_status|default:"unverified"|escapejs }}',
+    hf_inference_endpoint_url: '{{ user_profile.hf_model_repo_id|default:""|escapejs }}',
+  };
+
+  function openTestSpaceTab() {
+    const testBtn = document.querySelector('.profile-tab[data-tab="test-space"]');
+    if (!testBtn) return;
+    document.querySelectorAll('.profile-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    testBtn.classList.add('active');
+
+    const panel = document.getElementById('tab-test-space');
+    if (panel) panel.classList.remove('hidden');
+    showSpaceStatusBadge();
+  }
+
+  // Button handler
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('testSpaceBtn');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      document.getElementById('btnText').textContent = 'Testing...';
+
+      try {
+        const response = await fetch('{% url "core:verify_space" %}', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
+            'Content-Type': 'application/json',
+          }
+        });
+
+        const data = await response.json();
+        const content = document.getElementById('testSpaceContent');
+        const log = document.getElementById('testSpaceLog');
+        const badge = document.getElementById('spaceStatusBadge');
+
+        content.innerHTML = [
+          `🔍 Testing space: ${userProfile?.hf_inference_endpoint_url || 'unknown'}`,
+          `---`,
+          `Request sent at ${new Date().toLocaleTimeString()}`,
+          `Status: ${data.status.toUpperCase()}`,
+          data.message ? `Message: ${data.message}` : '',
+          data.latency_ms ? `Latency: ${data.latency_ms} ms` : '',
+          data.trace ? `Error: ${data.trace}` : '',
+        ].filter(Boolean).join('\n');
+
+        log.classList.remove('hidden');
+
+        // Update badge
+        badge.innerHTML = getBadgeHtml(data.status, data.message);
+        badge.className = `text-sm px-4 py-2 rounded-lg border text-center ${getBadgeColor(data.status)}`;
+
+      } catch (e) {
+        const content = document.getElementById('testSpaceContent');
+        content.innerHTML = `❌ Network error: ${e.message}`;
+        document.getElementById('testSpaceLog').classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        document.getElementById('btnText').textContent = '🚀 Test My Space';
+      }
+    });
+  });
+
+  function getBadgeColor(status) {
+    const colors = {
+      ok: 'border-green-500 bg-green-900/20 text-green-400',
+      cold_start: 'border-yellow-500 bg-yellow-900/20 text-yellow-400',
+      unreachable: 'border-red-500 bg-red-900/20 text-red-400',
+      bad_response: 'border-orange-500 bg-orange-900/20 text-orange-400',
+    };
+    return colors[status] || 'border-gray-500 bg-gray-900/20 text-gray-400';
+  }
+
+  function getBadgeHtml(status, msg) {
+    const icons = {
+      ok: '✅',
+      cold_start: '🕒',
+      unreachable: '❌',
+      bad_response: '⚠️',
+    };
+    return `${icons[status] || '❓'} ${status.replace('_', ' ').toUpperCase()} — ${msg || ''}`;
+  }
+
+  function showSpaceStatusBadge() {
+    const badge = document.getElementById('spaceStatusBadge');
+    if (!badge) return;
+    const status = userProfile?.space_status || 'unverified';
+    badge.innerHTML = getBadgeHtml(status);
+    badge.className = `text-sm px-4 py-2 rounded-lg border text-center ${getBadgeColor(status)}`;
+  }
+
+  function clearTestLog() {
+    document.getElementById('testSpaceContent').innerHTML = '';
+  }
 </script>
 {% endblock %}

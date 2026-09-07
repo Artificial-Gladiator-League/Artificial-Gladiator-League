@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}How It Works • agladiator.com{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-4xl mx-auto">
+  <div class="text-center mb-12">
+    <h1 class="text-4xl md:text-5xl text-gray font-extrabold leading-tight">
+      How the AGL Platform Actually Works
+    </h1>
+    <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
+      A behind-the-scenes look at what happens when you log in, play a match, and log out —
+      and why your <span class="text-brand glow-brand">AG Champion</span>'s code stays on
+      <em>your</em> Hugging Face account the whole time.
+    </p>
+  </div>
+
+  <!-- Model repo vs Dataset repo vs Space -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Model Repo, Dataset Repo, or Space — Which One Do You Need?</h2>
+    <p class="text-gray-400 text-sm mb-5">
+      Hugging Face accounts can hold several kinds of repos. Only one of them actually lets AGL play against
+      your AI — here's the difference.
+    </p>
+    <div class="grid sm:grid-cols-3 gap-4 mb-4">
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-gray-300 mb-2">📦 Model Repo</div>
+        <p class="text-xs text-gray-400">Storage only. Holds your trained weights and config files. Nothing runs here — there's no server to call.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-gray-300 mb-2">🗂️ Dataset Repo</div>
+        <p class="text-xs text-gray-400">Also storage only. Used for training/eval data if you have any. Not needed during a match at all.</p>
+      </div>
+      <div class="rounded-lg border border-brand/40 bg-surface p-4">
+        <div class="text-sm font-semibold text-brand mb-2">🚀 Space <span class="text-gray-500 font-normal">(required)</span></div>
+        <p class="text-xs text-gray-400">The only one of the three that's a <em>running app</em>. It loads your model and exposes a live <code>get_move</code> endpoint AGL can call over HTTP.</p>
+      </div>
+    </div>
+    <div class="rounded-lg border border-brand/30 bg-surface p-4">
+      <p class="text-xs text-gray-400">
+        <span class="text-brand font-semibold">In short:</span> your Model repo is just where the weights live —
+        it can't respond to anything on its own. Your Space is the thin serving layer that wraps those weights
+        and actually plays moves. AGL only ever <em>lists</em> your Model repo (for ownership verification) and
+        <em>calls</em> your Space (to play). A Dataset repo, if you have one, isn't touched by AGL at all.
+      </p>
+    </div>
+  </div>
+
+  <!-- Your code never leaves your control -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Your Code Never Leaves Hugging Face</h2>
+    <p class="text-gray-400 text-sm mb-5">
+      A common question: <em>"When I play, does AGL download my model repo?"</em> For the recommended
+      Gradio Space interface, the answer is no.
+    </p>
+    <div class="rounded-lg border border-brand/30 bg-surface p-5">
+      <p class="text-xs text-gray-400 mb-3">
+        Your AG Champion keeps running on your own Hugging Face Space. During a match, the platform
+        doesn't pull your source files or weights onto its own servers — it simply sends your Space
+        an HTTP request each time it's your Champion's turn, and reads back the move it returns.
+      </p>
+      <ul class="text-xs text-gray-400 space-y-1.5">
+        <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>Your model repo is only ever <em>listed</em> for ownership verification — never downloaded.</span></li>
+        <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>Inference happens on your Space's own hardware, on your account.</span></li>
+        <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>The platform only ever sees the move string your Space returns — not your code.</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Login -->
+  <div class="card mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold mb-1">When You Log In</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          Logging in prepares a lightweight, private session workspace just for you — nothing about
+          your AG Champions is downloaded or copied at this point either.
+        </p>
+        <div class="rounded-lg border border-borderDark bg-surface p-4">
+          <ul class="text-xs text-gray-400 space-y-1.5">
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>A private workspace is set up in the background for your account, scoped to Chess and Breakthrough.</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>The platform re-checks that your registered repos and Space are still reachable, so you're warned early if something's broken before a match starts.</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>None of this touches your model weights or code — it's bookkeeping, not a download.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Move generation -->
+  <div class="card mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-purple flex items-center justify-center font-bold text-white shrink-0">2</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold mb-1">While You Play — How a Move Is Generated</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          Every single move, for both players, is generated live — nothing is precomputed or cached
+          from a prior download.
+        </p>
+        <div class="rounded-lg bg-surface border border-borderDark p-4 text-sm mb-4">
+          <div class="flex flex-wrap gap-2 items-center text-xs">
+            <span class="bg-brand/20 text-brand px-2 py-1 rounded">Board position sent</span>
+            <span class="text-gray-600">→</span>
+            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Your Space's <code>get_move</code> called over HTTP</span>
+            <span class="text-gray-600">→</span>
+            <span class="bg-gold/20 text-gold px-2 py-1 rounded">Move validated</span>
+            <span class="text-gray-600">→</span>
+            <span class="bg-green-900/30 text-green-400 px-2 py-1 rounded">Game state updated</span>
+          </div>
+        </div>
+        <div class="rounded-lg border border-borderDark bg-surface p-4">
+          <ul class="text-xs text-gray-400 space-y-1.5">
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Each request carries a strict time budget. If your Space responds within it, the move is used as soon as it arrives (or after the configured "thinking time," whichever is longer).</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>If your Space is slow to respond — for example, a free-tier Space waking up from sleep — the platform waits, it doesn't forfeit immediately.</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Only if your Space is completely unreachable (roughly a 20s network timeout) does the platform fall back to a random legal move, so the game keeps going instead of stalling.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logout -->
+  <div class="card mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-gold flex items-center justify-center font-bold text-black shrink-0">3</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold mb-1">When You Log Out</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          The private workspace created at login is torn down completely — it doesn't linger after your session ends.
+        </p>
+        <div class="rounded-lg border border-borderDark bg-surface p-4">
+          <ul class="text-xs text-gray-400 space-y-1.5">
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your session workspace and any temporary bookkeeping files created for it are removed.</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your actual AG Champion — its code, weights, and data — is completely unaffected, since none of it ever lived on the platform's servers in the first place. It's still exactly where you deployed it, on Hugging Face.</span></li>
+            <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your Elo, match history, and registered repo links are saved permanently in your profile — only the ephemeral session data is cleared.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Why built this way -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-4">Why It's Built This Way</h2>
+    <div class="grid sm:grid-cols-2 gap-4">
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-brand mb-2">Your IP stays yours</div>
+        <p class="text-xs text-gray-400">Since your code and weights are never copied onto AGL's servers, there's nothing for the platform to leak, cache, or accidentally expose to other players.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-purple-400 mb-2">Fair, identical treatment</div>
+        <p class="text-xs text-gray-400">Every AG Champion — from a beginner's random-move bot to a Grandmaster-rated neural net — is called the same way, over the same protocol, with the same time budget.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-gold mb-2">Nothing persists between sessions</div>
+        <p class="text-xs text-gray-400">Each login starts from a clean slate. There's no stale cache from a previous match that could cause unexpected behavior in a new one.</p>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="text-sm font-semibold text-green-400 mb-2">You stay in control</div>
+        <p class="text-xs text-gray-400">Update your Space anytime (outside tournaments) and the next match calls your latest code — no re-upload to AGL required, because AGL never had a copy to begin with.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div class="text-center mb-12">
+    <p class="text-gray-400 mb-4">Ready to see it in action?</p>
+    <div class="flex flex-wrap justify-center gap-3">
+      <a href="{% url 'core:how_to_upload' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Register Your AG Champion</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

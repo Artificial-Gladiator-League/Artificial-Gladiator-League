@@ -270,6 +270,7 @@ def tournament_detail(request, pk):
                 "fide_abbr": fide["abbr"],
                 "fide_css": fide["css"],
                 "fide_title": fide["title"],
+                "space_status": p.user.space_status,
             })
 
     # If the tournament is ongoing with a live match, get the match id
@@ -375,6 +376,16 @@ def tournament_detail(request, pk):
             else:
                 can_join = True
 
+    # Organizer/staff readiness summary: how many registrants have a verified
+    # ('ok') Space, so the round can be started with confidence.
+    space_summary = None
+    if request.user.is_authenticated and request.user.is_staff:
+        roster = tournament.participants.exclude(disqualified_for_sha_mismatch=True)
+        space_summary = {
+            "verified": roster.filter(user__space_status="ok").count(),
+            "total": roster.count(),
+        }
+
     return render(
         request,
         "tournaments/detail.html",
@@ -393,6 +404,7 @@ def tournament_detail(request, pk):
             "join_blocked_reason": join_blocked_reason,
             "games_remaining": games_remaining,
             "user_is_verified": user_is_verified,
+            "space_summary": space_summary,
             "REVALIDATION_GAMES_REQUIRED": 30,
         },
     )

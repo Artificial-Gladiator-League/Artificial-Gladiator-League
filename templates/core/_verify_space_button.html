@@ -1,0 +1,95 @@
+{% comment %}
+Reusable "Test My Space" component.
+
+Usage:
+    {% include "core/_verify_space_button.html" with game_type="chess" %}
+    {% include "core/_verify_space_button.html" with game_type="breakthrough" label="Test Breakthrough Space" %}
+
+POSTs to core:verify_space (CSRF-protected) and renders a coloured status badge.
+The <script> is guarded so including this partial multiple times on one page
+only binds a single delegated click handler.
+{% endcomment %}
+<div class="agl-verify-space inline-flex flex-col items-start gap-2">
+  <button type="button"
+          class="agl-verify-space-btn inline-flex items-center justify-center gap-2 py-2 px-4 text-sm font-semibold rounded-lg border border-borderDark bg-surface text-gray-200 hover:border-brand hover:text-brand transition disabled:opacity-60 disabled:cursor-not-allowed"
+          data-game-type="{{ game_type|default:'chess' }}">
+    <span class="agl-vs-icon">🧪</span>
+    <span class="agl-vs-label">{{ label|default:'Test My Space' }}</span>
+  </button>
+  <span class="agl-vs-badge hidden text-xs font-semibold px-2.5 py-1 rounded-full"></span>
+</div>
+
+<script>
+(function () {
+  if (window.__aglVerifySpaceInit) return;
+  window.__aglVerifySpaceInit = true;
+
+  const csrfToken = '{{ csrf_token }}';
+  const ENDPOINT = '{% url "core:verify_space" %}';
+
+  function agoText(iso) {
+    if (!iso) return 'just now';
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    return s + 's ago';
+  }
+
+  function renderBadge(badge, data) {
+    badge.className = 'agl-vs-badge inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border';
+    const st = data.status;
+    if (st === 'ok') {
+      badge.classList.add('bg-brand/10', 'text-brand', 'border-brand/40');
+      const ms = (data.latency_ms != null) ? ' (' + data.latency_ms + 'ms)' : '';
+      badge.textContent = '✅ Verified ' + agoText(data.verified_at) + ms;
+    } else if (st === 'cold_start') {
+      badge.classList.add('bg-gold/10', 'text-gold', 'border-gold/40');
+      badge.textContent = '🕒 Space is waking up, try again';
+    } else if (st === 'unreachable') {
+      badge.classList.add('bg-red-500/10', 'text-red-400', 'border-red-500/40');
+      badge.textContent = '❌ Unreachable';
+    } else if (st === 'bad_response') {
+      badge.classList.add('bg-amber-500/10', 'text-amber-400', 'border-amber-500/40');
+      badge.textContent = '⚠️ Responded but move was invalid';
+    } else {
+      badge.classList.add('bg-surface', 'text-gray-400', 'border-borderDark');
+      badge.textContent = data.message || 'Not tested yet';
+    }
+  }
+
+  document.addEventListener('click', function (e) {
+    const btn = e.target.closest('.agl-verify-space-btn');
+    if (!btn) return;
+
+    const wrap = btn.closest('.agl-verify-space');
+    const badge = wrap.querySelector('.agl-vs-badge');
+    const label = btn.querySelector('.agl-vs-label');
+    const gameType = btn.dataset.gameType || 'chess';
+    const originalLabel = label.textContent;
+
+    btn.disabled = true;
+    label.textContent = 'Testing…';
+    badge.classList.add('hidden');
+
+    fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrfToken,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({ game_type: gameType }).toString(),
+    })
+      .then(r => r.json())
+      .then(data => {
+        badge.classList.remove('hidden');
+        renderBadge(badge, data);
+      })
+      .catch(() => {
+        badge.classList.remove('hidden');
+        renderBadge(badge, { status: 'unreachable', message: 'Network error.' });
+      })
+      .finally(() => {
+        btn.disabled = false;
+        label.textContent = originalLabel;
+      });
+  });
+})();
+</script>

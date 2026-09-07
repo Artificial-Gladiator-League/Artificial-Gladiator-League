@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Count, Q
@@ -7,6 +9,8 @@ from django.shortcuts import redirect, render
 from apps.games.models import Game
 from apps.tournaments.models import Badge, GauntletStanding, Tournament
 from apps.users.models import CustomUser
+
+log = logging.getLogger(__name__)
 
 # ── Category ELO boundaries (match CustomUser.get_category) ──
 CATEGORY_FILTERS = {
@@ -231,6 +235,8 @@ def cookies(request):
 def how_to_upload(request):
     return render(request, "core/how_to_upload.html")
 
+def how_it_works(request):
+    return render(request, "core/how_it_works.html")
 
 def _per_game_stats(player_ids, game_type):
     """Return per-game W/L/D/total/streak keyed by player PK for the given game_type."""
@@ -422,6 +428,178 @@ def presence_view(request):
         count = 1
 
     return JsonResponse({"type": "online_count", "count": count})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  "Test My Space" self-service verification
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _probe_space(repo_id: str, game_type: str) -> tuple[str, int | None, str]:
+    """Probe a user's HF Space ``get_move`` endpoint with a starting position.
+
+    Reuses the exact Space-URL resolution, 20-second stream timeout, shared
+    HTTP session, Gradio endpoint name and move-validation used by the live
+    match engine (apps.games.predict_chess / predict_breakthrough). The only
+    difference here is that outcomes are classified granularly —
+    ok / cold_start / unreachable / bad_response — instead of silently
+    falling back to a random move.
+
+    Returns ``(status, latency_ms, trace)``; ``latency_ms`` is ``None`` when
+    the Space did not return a response and ``trace`` is a short diagnostic
+    string (empty on success) to help the user debug their Space.
+    """
+    import json as _json
+    import time as _time
+
+    import requests
+
+    if game_type == "breakthrough":
+        from apps.games import predict_breakthrough as _pb
+        from apps.games.breakthrough_engine import STARTING_FEN, is_legal_move
+
+        base = _pb._space_base_url(repo_id).rstrip("/")
+        session = _pb._session
+        submit_timeout = _pb._SUBMIT_TIMEOUT
+        stream_timeout = _pb._STREAM_TIMEOUT
+        gradio_fn = _pb._GRADIO_FN
+        fen, player = STARTING_FEN, "w"
+        payload = {"data": [fen, player]}
+
+        def _legal(mv: str) -> bool:
+            return is_legal_move(fen, mv)
+    else:
+        import chess
+
+        from apps.games import predict_chess as _pc
+        from apps.games.chess_engine import is_legal_move
+
+        base = _pc._space_url_for(repo_id).rstrip("/")
+        session = _pc._session
+        submit_timeout = _pc._SUBMIT_TIMEOUT
+        stream_timeout = _pc._STREAM_TIMEOUT
+        gradio_fn = _pc._GRADIO_FN
+        board = chess.Board()
+        fen = board.fen()
+        payload = {"data": [fen]}
+
+        def _legal(mv: str) -> bool:
+            return is_legal_move(board, mv)
+
+    submit_url = f"{base}/gradio_api/call/{gradio_fn}"
+    headers = {"Content-Type": "application/json"}
+    t0 = _time.monotonic()
+
+    try:
+        # Step 1 — submit
+        resp = session.post(submit_url, json=payload, headers=headers, timeout=submit_timeout)
+        resp.raise_for_status()
+        if "application/json" not in resp.headers.get("content-type", ""):
+            # Non-JSON response = Space is asleep/booting.
+            return "cold_start", None, f"POST {submit_url} → HTTP {resp.status_code}: non-JSON response (Space is asleep/booting)"
+        event_id = resp.json().get("event_id")
+        if not event_id:
+            return "cold_start", None, f"POST {submit_url} → HTTP {resp.status_code}: no event_id returned (Space not ready)"
+
+        # Step 2 — stream result (SSE)
+        result_url = f"{base}/gradio_api/call/{gradio_fn}/{event_id}"
+        stream = session.get(result_url, stream=True, timeout=stream_timeout)
+        stream.raise_for_status()
+
+        move_str: str | None = None
+        complete_seen = False
+        error_seen = False
+        for raw_line in stream.iter_lines():
+            if not raw_line:
+                continue
+            line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
+            if line.startswith("event: error"):
+                error_seen = True
+            elif line.startswith("event: complete"):
+                complete_seen = True
+            elif line.startswith("data:"):
+                try:
+                    data = _json.loads(line[len("data:"):].strip())
+                    if isinstance(data, list) and data:
+                        move_str = str(data[0]).strip()
+                except Exception:
+                    pass
+                if complete_seen or error_seen:
+                    break
+
+        latency_ms = int((_time.monotonic() - t0) * 1000)
+        if move_str and _legal(move_str):
+            return "ok", latency_ms, ""
+        if move_str:
+            return "bad_response", latency_ms, f"Space returned move '{move_str}', which is not legal for the starting position"
+        return "bad_response", latency_ms, "Space stream returned no move (empty or invalid SSE data)"
+    except requests.exceptions.RequestException as exc:
+        # Timeouts and connection errors alike mean the Space is unreachable.
+        log.warning("verify_space probe failed (repo=%s): %s", repo_id, exc)
+        return "unreachable", None, f"{type(exc).__name__}: {exc} (url={base})"
+    except Exception as exc:
+        log.exception("Unexpected error probing Space (repo=%s)", repo_id)
+        return "unreachable", None, f"{type(exc).__name__}: {exc}"
+
+
+@login_required
+def verify_space(request):
+    """Self-service 'Test My Space' check.
+
+    Sends the starting position for the user's default game type to their
+    Space's ``get_move`` endpoint (the same way the match engine calls it),
+    measures latency, validates the returned move, and stores the result on
+    the user. Never crashes the request on network errors — failures are
+    caught and reported as an ``unreachable`` status (mirrors presence_view).
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    from django.utils import timezone
+
+    user = request.user
+    game_type = request.POST.get("game_type", "chess").strip().lower()
+    if game_type not in ("chess", "breakthrough"):
+        game_type = "chess"
+
+    repo_id = user.get_repo_for_game(game_type)
+    if not repo_id:
+        return JsonResponse({
+            "status": "unverified",
+            "latency_ms": None,
+            "message": f"No {game_type} model registered yet.",
+            "verified_at": None,
+            "trace": None,
+        })
+
+    status, latency_ms, trace = _probe_space(repo_id, game_type)
+
+    user.space_status = status
+    user.space_last_latency_ms = latency_ms
+    if status == "ok":
+        user.space_last_verified_at = timezone.now()
+    try:
+        user.save(update_fields=[
+            "space_status", "space_last_latency_ms", "space_last_verified_at",
+        ])
+    except Exception:
+        log.exception("Failed to save Space status for user=%s", user.pk)
+
+    messages_map = {
+        "ok": "Your Space responded with a legal move.",
+        "cold_start": "Your Space is waking up — try again in a few seconds.",
+        "unreachable": "Your Space did not respond in time.",
+        "bad_response": "Your Space responded, but the move was invalid.",
+    }
+
+    return JsonResponse({
+        "status": status,
+        "latency_ms": latency_ms,
+        "message": messages_map.get(status, "Unknown status."),
+        "verified_at": (
+            user.space_last_verified_at.isoformat()
+            if user.space_last_verified_at else None
+        ),
+        "trace": trace or None,
+    })
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

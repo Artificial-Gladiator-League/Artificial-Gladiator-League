@@ -192,6 +192,31 @@ class CustomUser(AbstractUser):
         help_text="False = model changed or needs re-validation. Blocks rated/tournament play.",
     )
 
+    # ── "Test My Space" self-service verification ──
+    class SpaceStatus(models.TextChoices):
+        UNVERIFIED = "unverified", "Unverified"
+        OK = "ok", "OK"
+        COLD_START = "cold_start", "Cold start"
+        UNREACHABLE = "unreachable", "Unreachable"
+        BAD_RESPONSE = "bad_response", "Bad response"
+
+    space_status = models.CharField(
+        max_length=20,
+        choices=SpaceStatus.choices,
+        default=SpaceStatus.UNVERIFIED,
+        help_text="Result of the user's last 'Test My Space' get_move probe.",
+    )
+    space_last_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Timestamp of the last successful Space probe (status='ok').",
+    )
+    space_last_latency_ms = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Round-trip latency (ms) measured during the last Space probe.",
+    )
+
     # ── PayPal payout email ──────────────────────
     paypal_email = models.EmailField(
         max_length=254,
