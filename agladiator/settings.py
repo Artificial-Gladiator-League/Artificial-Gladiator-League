@@ -33,7 +33,9 @@ INSTALLED_APPS = [
     "apps.users",
     "apps.tournaments",
     "apps.games",
-    # Forum and chat apps removed
+    "apps.forum",
+    "apps.news",
+    # Chat app removed
     # Third‑party
     "channels",
     # django_recaptcha removed — native reCAPTCHA v3 via Google siteverify API

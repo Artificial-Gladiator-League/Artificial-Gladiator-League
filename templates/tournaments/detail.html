@@ -78,7 +78,7 @@
           {% elif games_remaining > 0 %}
             {# New/cooldown users: no button at all, just the games-to-go hint #}
             <span class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-yellow-900/40 text-yellow-300 border border-yellow-700/50">
-              🎮 {{ games_remaining }} game{{ games_remaining|pluralize }} to go
+              {{ games_remaining }} game{{ games_remaining|pluralize }} to go
             </span>
           {% else %}
             {# Other blocks (e.g. unverified ownership): show disabled button + badge #}
@@ -116,7 +116,7 @@
       {% if my_live_match %}
         <a href="{% url 'tournaments:live_match' tournament.pk my_live_match.pk %}"
            class="btn-brand text-sm py-1.5 px-5">
-          ▶️ Resume Your Match — Round {{ my_live_match.round_num }} →
+          Resume Your Match — Round {{ my_live_match.round_num }} →
         </a>
       {% endif %}
     {% elif tournament.status == 'completed' %}
@@ -142,7 +142,7 @@
 
     {% if space_summary %}
     <div class="mb-4 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border border-borderDark bg-surface text-gray-300">
-      🛰️ {{ space_summary.verified }}/{{ space_summary.total }} Spaces verified
+      {{ space_summary.verified }}/{{ space_summary.total }} Spaces verified
     </div>
     {% endif %}
 
@@ -242,7 +242,7 @@
           </div>
           {% elif games_remaining > 0 %}
           <div class="rounded-lg border border-yellow-700 bg-yellow-900/30 p-4 text-sm text-yellow-100 space-y-3 mt-3">
-            <p class="font-semibold">🎮 Play {{ games_remaining }} more rated game{{ games_remaining|pluralize }} to qualify</p>
+            <p class="font-semibold">Play {{ games_remaining }} more rated game{{ games_remaining|pluralize }} to qualify</p>
             <div>
               {% with played=REVALIDATION_GAMES_REQUIRED|subtract:games_remaining %}
               <div class="flex justify-between text-xs text-yellow-300 mb-1">

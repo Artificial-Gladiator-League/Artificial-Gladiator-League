@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'edit' %}Edit "{{ post.title }}"{% else %}New Post{% endif %} — News — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-2xl mx-auto">
+
+  <div class="text-xs text-gray-500 mb-4">
+    <a href="{% url 'news:list' %}" class="hover:text-gold transition">&larr; Back to news</a>
+  </div>
+
+  <h1 class="text-2xl sm:text-3xl font-bold mb-6">
+    {% if mode == 'edit' %}Edit Post{% else %}New Post{% endif %}
+  </h1>
+
+  <form method="post" class="bg-surface border border-borderDark rounded-xl p-6 sm:p-8 space-y-5">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="rounded-lg px-4 py-2.5 text-sm bg-red-900/60 text-red-200 border border-red-800">
+        {{ form.non_field_errors }}
+      </div>
+    {% endif %}
+
+    <div>
+      <label for="{{ form.title.id_for_label }}" class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Title</label>
+      {{ form.title }}
+      {% if form.title.errors %}<p class="text-xs text-red-400 mt-1">{{ form.title.errors|join:", " }}</p>{% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.summary.id_for_label }}" class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Summary</label>
+      {{ form.summary }}
+      {% if form.summary.errors %}<p class="text-xs text-red-400 mt-1">{{ form.summary.errors|join:", " }}</p>{% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.body.id_for_label }}" class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Body</label>
+      {{ form.body }}
+      {% if form.body.errors %}<p class="text-xs text-red-400 mt-1">{{ form.body.errors|join:", " }}</p>{% endif %}
+    </div>
+
+    <div>
+      <label for="{{ form.tags.id_for_label }}" class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Tags</label>
+      {{ form.tags }}
+      {% if form.tags.errors %}<p class="text-xs text-red-400 mt-1">{{ form.tags.errors|join:", " }}</p>{% endif %}
+    </div>
+
+    <div class="flex items-center gap-6">
+      <div>
+        <label for="{{ form.status.id_for_label }}" class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Status</label>
+        {{ form.status }}
+        {% if form.status.errors %}<p class="text-xs text-red-400 mt-1">{{ form.status.errors|join:", " }}</p>{% endif %}
+      </div>
+      <label class="flex items-center gap-2 text-sm text-gray-300 mt-6" for="{{ form.is_pinned.id_for_label }}">
+        {{ form.is_pinned }} Pinned
+      </label>
+    </div>
+
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit" class="btn-gold btn-sm">
+        {% if mode == 'edit' %}Save changes{% else %}Create post{% endif %}
+      </button>
+      <a href="{% url 'news:list' %}" class="text-sm text-gray-400 hover:text-gold transition">Cancel</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

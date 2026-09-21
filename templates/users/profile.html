@@ -313,7 +313,7 @@
         <!-- GDPR / Data & Privacy link -->
         <div class="card text-center">
           <a href="{% url 'users:gdpr' %}" class="text-brand hover:underline text-sm font-medium">
-            🔒 Data &amp; Privacy (GDPR)
+            Data &amp; Privacy (GDPR)
           </a>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             Export your data, submit deletion requests, or view request history.
@@ -727,7 +727,7 @@
             {% if not game.model.model_repo_ownership_verified or game.model.hf_inference_endpoint_url and not game.model.space_ownership_verified or game.model.hf_data_repo_id and not game.model.data_repo_ownership_verified %}
             <div class="rounded-lg border border-blue-700 bg-blue-900/30 p-4 text-sm text-blue-100 space-y-2">
               <p class="font-semibold text-blue-200 flex items-center gap-2">
-                🔑 Proof of Ownership
+                Proof of Ownership
                 {% if game.model.model_repo_ownership_verified %}
                   <span class="text-xs text-green-400">✅ Model repo verified — add file to remaining repos below</span>
                 {% else %}
@@ -809,7 +809,7 @@
               <div id="file-status-{{ game.type }}" class="mt-2 space-y-3"
                    data-model-repo="{{ game.model.hf_model_repo_id }}"
                    data-data-repo="{{ game.model.hf_data_repo_id|default:game.model.hf_model_repo_id }}">
-                <p class="text-sm text-gray-500 italic">⏳ Checking repository file status…</p>
+                <p class="text-sm text-gray-500 italic">Checking repository file status…</p>
               </div>
             {% else %}
               <p class="text-sm text-gray-500">Save your repos above to check file status.</p>
@@ -1741,7 +1741,7 @@
         const badge = document.getElementById('spaceStatusBadge');
 
         content.innerHTML = [
-          `🔍 Testing space: ${userProfile?.hf_inference_endpoint_url || 'unknown'}`,
+          `Testing space: ${userProfile?.hf_inference_endpoint_url || 'unknown'}`,
           `---`,
           `Request sent at ${new Date().toLocaleTimeString()}`,
           `Status: ${data.status.toUpperCase()}`,
@@ -1762,7 +1762,7 @@
         document.getElementById('testSpaceLog').classList.remove('hidden');
       } finally {
         btn.disabled = false;
-        document.getElementById('btnText').textContent = '🚀 Test My Space';
+        document.getElementById('btnText').textContent = 'Test My Space';
       }
     });
   });

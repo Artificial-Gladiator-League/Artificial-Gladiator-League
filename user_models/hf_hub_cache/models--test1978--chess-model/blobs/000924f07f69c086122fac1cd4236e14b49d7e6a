@@ -1,0 +1,13 @@
+{
+  "game_type": "chess",
+  "files": ["chess_mcvs.py"],
+  "main": "chess_mcvs.py",
+  "handler_class": "EndpointHandler",
+  "lambda_zone": 1.0,
+  "k_zone": 5.0,
+  "time_per_move": 1.0,
+  "temperature": 0.25,
+  "use_nets": false,
+  "cpuct": 1.5,
+  "dirichlet_alpha": 0.3
+}

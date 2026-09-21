@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Delete "{{ post.title }}" — News — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-lg mx-auto">
+
+  <div class="bg-surface border border-borderDark rounded-xl p-6 sm:p-8 text-center">
+    <h1 class="text-xl font-bold mb-2">Delete this post?</h1>
+    <p class="text-sm text-gray-400 mb-6">
+      "<span class="text-gray-200">{{ post.title }}</span>" will be permanently deleted. This cannot be undone.
+    </p>
+
+    <form method="post" class="flex items-center justify-center gap-3">
+      {% csrf_token %}
+      <button type="submit" class="btn-danger btn-sm">Yes, delete it</button>
+      <a href="{{ post.get_absolute_url }}" class="text-sm text-gray-400 hover:text-gold transition">Cancel</a>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

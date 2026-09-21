@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% load news_tags %}
+{% block title %}News & Updates — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-8">
+    <div>
+      <h1 class="text-3xl font-bold">News &amp; Updates</h1>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+        Announcements, changelogs and tournament news from the Artificial Gladiator League.
+      </p>
+    </div>
+    {% if user.is_authenticated and user.is_staff %}
+      <a href="{% url 'news:create' %}" class="btn-gold btn-sm flex-shrink-0">+ New post</a>
+    {% endif %}
+  </div>
+
+  <div class="grid lg:grid-cols-3 gap-8 items-start">
+
+    <!-- ─── Main feed ─────────────────────────── -->
+    <div class="lg:col-span-2 space-y-5">
+
+      {% if tag %}
+        <div class="flex items-center gap-2 text-sm text-gray-400">
+          <span>Filtered by tag:</span>
+          <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-purple/15 text-purple border border-purple/30 font-medium">
+            #{{ tag }}
+          </span>
+          <a href="{% url 'news:list' %}" class="text-xs text-gray-500 hover:text-gold transition underline">clear</a>
+        </div>
+      {% endif %}
+
+      {% for post in page_obj %}
+        <article class="bg-surface border border-borderDark rounded-xl p-5 sm:p-6 hover:border-purple transition">
+          <div class="flex items-center gap-2 flex-wrap mb-1.5">
+            {% if post.is_pinned %}
+              <span class="inline-flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30">
+                📌 Pinned
+              </span>
+            {% endif %}
+            {% if user.is_authenticated and user.is_staff and post.status == 'draft' %}
+              <span class="text-[0.65rem] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">
+                Draft
+              </span>
+            {% endif %}
+          </div>
+
+          <h2 class="text-xl sm:text-2xl font-bold leading-snug">
+            <a href="{{ post.get_absolute_url }}" class="text-gold hover:text-brand transition no-underline hover:underline">
+              {{ post.title }}
+            </a>
+          </h2>
+
+          <p class="text-xs text-gray-500 mt-1.5">
+            by <span class="text-gray-400">{{ post.author.username|default:"deleted user" }}</span>
+            &middot; {{ post.published_at|timesince }} ago
+          </p>
+
+          <div class="text-sm text-gray-300 mt-3 leading-relaxed">
+            {{ post.summary }}
+          </div>
+
+          <div class="flex items-center justify-between mt-4 flex-wrap gap-3">
+            <a href="{{ post.get_absolute_url }}" class="text-sm font-semibold text-brand hover:text-gold transition no-underline hover:underline">
+              Read more &rarr;
+            </a>
+            {% if post.tag_list %}
+              <div class="flex flex-wrap gap-1.5">
+                {% for t in post.tag_list %}
+                  <a href="{% url 'news:list' %}?tag={{ t|urlencode }}"
+                     class="text-[0.7rem] px-2 py-0.5 rounded-full bg-surfaceLight text-gray-400 hover:text-purple hover:border-purple border border-transparent transition">
+                    #{{ t }}
+                  </a>
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </article>
+      {% empty %}
+        <div class="bg-surface border border-borderDark rounded-xl p-8 text-center text-gray-400">
+          {% if tag %}
+            No news posts tagged <span class="text-gray-200">#{{ tag }}</span>.
+            <a href="{% url 'news:list' %}" class="text-gold hover:underline">View all news</a>.
+          {% else %}
+            No news posts yet. Check back soon!
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <!-- Pagination -->
+      {% if page_obj.paginator.num_pages > 1 %}
+      <div class="flex items-center justify-center gap-2 mt-6 text-sm" role="navigation" aria-label="News pagination">
+        {% if page_obj.has_previous %}
+          <a href="?{% if tag %}tag={{ tag|urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"
+             class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">&laquo; Prev</a>
+        {% endif %}
+        <span class="text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+          <a href="?{% if tag %}tag={{ tag|urlencode }}&{% endif %}page={{ page_obj.next_page_number }}"
+             class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">Next &raquo;</a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ─── Sidebar ────────────────────────────── -->
+    <aside class="space-y-6 lg:sticky lg:top-20" aria-label="News sidebar">
+
+      {% if pinned_posts %}
+        <div class="rounded-xl border border-gold/30 bg-gold/5 p-4">
+          <h3 class="text-xs font-bold uppercase tracking-widest text-gold mb-3">Pay attention</h3>
+          <ul class="space-y-2">
+            {% for p in pinned_posts %}
+              <li>
+                <a href="{{ p.get_absolute_url }}" class="text-sm text-gray-200 hover:text-gold transition no-underline hover:underline">
+                  {{ p.title }}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <div class="bg-surface border border-borderDark rounded-xl p-4">
+        <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Recent posts</h3>
+        {% if recent_posts %}
+          <ul class="space-y-2.5">
+            {% for p in recent_posts %}
+              <li>
+                <a href="{{ p.get_absolute_url }}" class="block text-sm text-gray-300 hover:text-gold transition no-underline hover:underline">
+                  {{ p.title }}
+                </a>
+                <span class="text-xs text-gray-500">{{ p.published_at|date:"M j, Y" }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-sm text-gray-500">Nothing published yet.</p>
+        {% endif %}
+      </div>
+
+      {% if all_tags %}
+        <div class="bg-surface border border-borderDark rounded-xl p-4">
+          <h3 class="text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">Tags</h3>
+          <div class="flex flex-wrap gap-1.5">
+            {% for t in all_tags %}
+              <a href="{% url 'news:list' %}?tag={{ t|urlencode }}"
+                 class="text-[0.7rem] px-2 py-0.5 rounded-full {% if t == tag %}bg-purple text-white{% else %}bg-surfaceLight text-gray-400 hover:text-purple{% endif %} transition">
+                #{{ t }}
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+    </aside>
+  </div>
+
+</div>
+{% endblock %}

@@ -9,7 +9,6 @@
 {% if not tournament %}
 <!-- ═══ No Gauntlet Yet ═══ -->
 <div class="text-center py-20 animate-fade-in">
-  <div class="text-6xl mb-4">⚔️</div>
   <h1 class="text-3xl font-extrabold mb-3">Gladiator Gauntlet</h1>
   <p class="text-gray-400 text-lg mb-6">No gauntlet has been run yet. Stay tuned!</p>
   <a href="{% url 'core:home' %}" class="btn-gold">← Back to Home</a>
@@ -23,7 +22,6 @@
     <div>
       <a href="{% url 'tournaments:list' %}" class="text-xs text-gray-500 hover:text-brand transition">← All Arenas</a>
       <h1 class="text-2xl sm:text-3xl font-extrabold mt-1 flex items-center gap-3">
-        <span class="text-4xl">⚔️</span>
         {{ tournament.name }}
       </h1>
       <p class="text-sm text-gray-400 mt-1">
@@ -37,11 +35,11 @@
         </span>
       {% elif tournament.status == 'completed' %}
         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple/20 text-purple text-xs font-semibold border border-purple/40">
-          ✅ Completed
+          Completed
         </span>
       {% elif tournament.status == 'upcoming' or tournament.status == 'open' %}
         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-yellow-900/40 text-yellow-300 text-xs font-semibold border border-yellow-700">
-          ⏳ Upcoming
+          Upcoming
         </span>
       {% endif %}
     </div>
@@ -74,7 +72,7 @@
       <div class="card p-0" id="standings-card">
         <div class="px-4 py-3 border-b border-borderDark flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 flex items-center gap-2">
-            🏆 Standings
+            Standings
           </h2>
           {% if tournament.status == 'ongoing' %}
           <span class="text-xs text-gray-500"
@@ -199,7 +197,7 @@
                 {% if m.is_live %}
                   <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
                      class="text-xs text-green-400 hover:text-green-300 font-semibold transition">
-                    👁️ Watch
+                    Watch
                   </a>
                 {% elif m.is_completed and m.pk in game_map %}
                   <a href="{% url 'games:game_detail' game_map|dictget:m.pk %}"
@@ -302,7 +300,7 @@
       <!-- Navigation -->
       <div class="space-y-2">
         <a href="{% url 'tournaments:list' %}" class="btn-outline text-xs py-2 w-full text-center">← All Arenas</a>
-        <a href="{% url 'core:home' %}" class="btn-outline text-xs py-2 w-full text-center">🏠 Home</a>
+        <a href="{% url 'core:home' %}" class="btn-outline text-xs py-2 w-full text-center">Home</a>
       </div>
     </div>
 

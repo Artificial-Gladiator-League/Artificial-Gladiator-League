@@ -113,8 +113,7 @@
             Even if you use the Gradio interface, you still need to create this repo and its <code class="bg-black/30 px-1 rounded">config_model.json</code> file — it is used for ownership verification, even though the platform never downloads your actual code.
           </p>
 
-          <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3 flex items-start gap-2">
-            <span class="shrink-0">🔒</span>
+          <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3">
             <span>
               <strong>Strongly recommended: Gated (Access Requests).</strong>
               A Gated repo requires visitors to request access before downloading any files — protecting your Artificial Gladiator code from being copied.
@@ -362,7 +361,7 @@
         <p class="text-xs text-gray-400">Load models, weights, and opening books in <code class="bg-black/30 px-1 rounded">__init__</code> (EndpointHandler) or at module level (Gradio Space). Never load files inside <code class="bg-black/30 px-1 rounded">get_move</code> — cold load time counts against your move clock.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-gold mb-2">⏱ Respect the time limit</div>
+        <div class="text-sm font-semibold text-gold mb-2">Respect the time limit</div>
         <p class="text-xs text-gray-400">The platform enforces a per-move timeout. Budget your search depth or inference time accordingly. Returning a random legal move as a fallback avoids timeouts that would forfeit the game entirely.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">

@@ -89,11 +89,11 @@
 <body class="bg-black text-gray-200 font-sans antialiased min-h-screen flex flex-col">
   <!-- ─── Sticky Top Navbar ────────────────────── -->
   <nav class="bg-white/95 dark:bg-navy/95 backdrop-blur-md border-b border-gray-200 dark:border-borderDark sticky top-0 z-50 transition-colors" role="navigation" aria-label="Main navigation">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div class="max-w-[120rem] whitespace-nowrap mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
 
         <!-- Logo -->
-        <a href="{% url 'core:home' %}" class="flex items-center gap-3 group no-underline" aria-label="Artificial Gladiator League home">
+        <a href="{% url 'core:home' %}" class="flex items-center gap-5 group no-underline" aria-label="Artificial Gladiator League home">
           <img src="{% static 'favicon.svg' %}" alt="agladiator" class="h-8 w-8 group-hover:scale-110 transition-transform rounded">
           <div class="leading-tight flex items-center">
             <div class="text-center">
@@ -105,21 +105,22 @@
         </a>
 
         <!-- Center Nav Links -->
-        <div class="hidden md:flex items-center gap-1 text-sm font-medium">
+        <div class="hidden md:flex items-center gap-5 text-sm font-medium">
           <a href="{% url 'core:home' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Home</a>
+          <a href="{% url 'news:list' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">News</a>
           <a href="{% url 'core:how_to_upload' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How to Register</a>
           <a href="{% url 'core:how_it_works' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How it Works</a>
           <!-- Play dropdown -->
           <div class="relative" id="playDropdownWrap">
             <div class="flex items-center">
-              <a href="{% url 'games:lobby' %}" class="nav-link px-2 py-2 rounded-l-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Gladiate</a>
+              <a href="{% url 'games:lobby' %}" class="nav-link px-2 py-2 rounded-l-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Hatzar Grutaot</a>
               <button type="button" id="playDropdownBtn" class="nav-link px-1 py-2 rounded-r-lg hover:bg-gray-100 dark:hover:bg-surfaceLight cursor-pointer">
                 <svg class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
               </button>
             </div>
             <div id="playDropdownMenu" class="hidden absolute left-0 mt-1 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
               <button type="button" id="navCreateLobbyBtn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition w-full text-left cursor-pointer">
-                <span></span> Create Lobby Game
+                <span></span> Gladiate in Lobby Game
               </button>
               <a href="{% url 'tournaments:list' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
                 <span>  </span> Arena Tournament
@@ -127,9 +128,9 @@
             </div>
           </div>
           <a href="{% url 'core:leaderboard' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
+          <a href="{% url 'forum:category_list' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Forum</a>
           <a href="{% url 'core:about' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
           <a href="{% url 'core:contact' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Contact</a>
-          <!-- Forum removed -->
           {% if active_play %}
             <a href="{{ active_play.url }}"
                class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight flex items-center gap-1.5 text-red-400 font-semibold animate-pulse">
@@ -155,9 +156,8 @@
 
           <!-- Online players count (visible to everyone) -->
           <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-surfaceLight text-sm">
-            <span>👤</span>
             <span id="onlineCount" class="font-semibold text-brand">0</span>
-            <span class="text-gray-400 text-xs">online</span>
+            <span id="onlineLabel" class="text-gray-400 text-xs">Online. Be the first</span>
           </div>
 
           {% if user.is_authenticated %}
@@ -210,16 +210,17 @@
 
     <!-- Mobile drawer menu -->
     <div id="mobileMenu" class="hidden md:hidden bg-white dark:bg-surface border-t border-gray-200 dark:border-borderDark px-4 pb-4 space-y-1 text-sm transition-colors">
-      <a href="{% url 'core:home' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">🏠 Home</a>
+      <a href="{% url 'core:home' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Home</a>
+      <a href="{% url 'news:list' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">News</a>
       <span class="block text-xs uppercase tracking-widest text-gray-500 font-semibold pt-2 px-3">Play</span>
-      <a href="{% url 'games:lobby' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">🎮 Lobby</a>
-      <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">➕ Create Lobby Game</button>
-      <a href="{% url 'tournaments:list' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">⚔️ Arena Tournament</a>
-      <a href="{% url 'core:leaderboard' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">🏆 Leaderboards</a>
-      <!-- Forum removed -->
+      <a href="{% url 'games:lobby' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Lobby</a>
+      <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">Create Lobby Game</button>
+      <a href="{% url 'tournaments:list' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Arena Tournament</a>
+      <a href="{% url 'core:leaderboard' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Leaderboards</a>
+      <a href="{% url 'forum:category_list' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Forum</a>
       <hr class="border-gray-200 dark:border-borderDark">
       {% if user.is_authenticated %}
-        <a href="{% url 'users:profile' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">👤 {% fide_badge user %} {{ user.username }}</a>
+        <a href="{% url 'users:profile' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">{% fide_badge user %} {{ user.username }}</a>
       <!-- Messages removed -->
         <form method="post" action="{% url 'users:logout' %}" onsubmit="if(window._presenceWs)window._presenceWs.close()">
           {% csrf_token %}
@@ -617,12 +618,23 @@
   (function () {
     const onlineEl = document.getElementById('onlineCount');
     const lobbyEl  = document.getElementById('lobbyOnlineCount');
+    const labelEl  = document.getElementById('onlineLabel');
     let presenceWs = null;
     let reconnectTimer = null;
 
     function updateCount(count) {
       if (onlineEl) onlineEl.textContent = count;
       if (lobbyEl)  lobbyEl.textContent  = count;
+
+      if (labelEl) {
+        if (count === 1) {
+          labelEl.textContent = 'online. Join your friends';
+        } else if (count === 0) {
+          labelEl.textContent = 'online. Be the first';
+        } else {
+          labelEl.textContent = 'online';
+        }
+      }
     }
 
     function connectPresence() {
@@ -660,7 +672,7 @@
 
     connectPresence();
   })();
-  </script>
+</script>
 
   {% block extra_js %}{% endblock %}
 </body>

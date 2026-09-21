@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load news_tags %}
+{% block title %}{{ post.title }} — News — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-3xl mx-auto">
+
+  <div class="text-xs text-gray-500 mb-4">
+    <a href="{% url 'news:list' %}" class="hover:text-gold transition">&larr; Back to news</a>
+  </div>
+
+  <article class="bg-surface border border-borderDark rounded-xl p-6 sm:p-8">
+    <div class="flex items-center gap-2 flex-wrap mb-2">
+      {% if post.is_pinned %}
+        <span class="inline-flex items-center gap-1 text-[0.65rem] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-gold/15 text-gold border border-gold/30">
+          📌 Pinned
+        </span>
+      {% endif %}
+      {% if post.status == 'draft' %}
+        <span class="text-[0.65rem] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">
+          Draft
+        </span>
+      {% endif %}
+    </div>
+
+    <h1 class="text-2xl sm:text-3xl font-bold leading-snug">{{ post.title }}</h1>
+
+    <p class="text-xs text-gray-500 mt-2">
+      by <span class="text-gray-400">{{ post.author.username|default:"deleted user" }}</span>
+      &middot;
+      {% if post.published_at %}{{ post.published_at|timesince }} ago{% else %}unpublished{% endif %}
+      {% if post.updated_at and post.published_at and post.updated_at > post.published_at %}
+        &middot; updated {{ post.updated_at|timesince }} ago
+      {% endif %}
+    </p>
+
+    {% if post.tag_list %}
+      <div class="flex flex-wrap gap-1.5 mt-3">
+        {% for t in post.tag_list %}
+          <a href="{% url 'news:list' %}?tag={{ t|urlencode }}"
+             class="text-[0.7rem] px-2 py-0.5 rounded-full bg-surfaceLight text-gray-400 hover:text-purple hover:border-purple border border-transparent transition">
+            #{{ t }}
+          </a>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="prose-news text-sm sm:text-base text-gray-300 mt-6 leading-relaxed">
+      {{ post.body|render_markdown }}
+    </div>
+
+    {% if user.is_authenticated and user.is_staff %}
+      <div class="flex items-center gap-3 mt-8 pt-4 border-t border-borderDark">
+        <a href="{% url 'news:edit' post.slug %}" class="btn-purple btn-sm">Edit</a>
+        <a href="{% url 'news:delete' post.slug %}" class="btn-danger btn-sm">Delete</a>
+      </div>
+    {% endif %}
+  </article>
+
+</div>
+{% endblock %}

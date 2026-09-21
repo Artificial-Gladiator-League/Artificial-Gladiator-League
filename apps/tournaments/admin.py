@@ -73,7 +73,7 @@ class TournamentAdmin(admin.ModelAdmin):
     @admin.display(description="Entry")
     def entry_display(self, obj):
         if obj.is_money_tournament and obj.prize_amount:
-            return f"💰 {obj.prize_amount} {obj.prize_currency}"
+            return f"{obj.prize_amount} {obj.prize_currency}"
         return "Free"
 
 

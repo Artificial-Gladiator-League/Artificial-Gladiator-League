@@ -68,12 +68,12 @@
 
       <!-- Resign button (only shown to active players) -->
       <div id="resignWrap" class="hidden w-full max-w-[560px]">
-        <button id="resignBtn" class="btn-danger text-xs py-2 px-4">⚑ Resign</button>
+        <button id="resignBtn" class="btn-danger text-xs py-2 px-4">Resign</button>
       </div>
 
       <!-- Cancel Game button (shown to game creator/white when game is waiting) -->
       <div id="cancelGameWrap" class="hidden w-full max-w-[560px] text-center">
-        <a href="{% url 'games:cancel_game' game.pk %}" id="cancelGameBtn" class="btn-danger text-sm py-2 px-6 inline-block">✕ Cancel Game</a>
+        <a href="{% url 'games:cancel_game' game.pk %}" id="cancelGameBtn" class="btn-danger text-sm py-2 px-6 inline-block">Cancel Game</a>
       </div>
 
       <!-- Leave Game button (shown to joining player/black when game is waiting) -->

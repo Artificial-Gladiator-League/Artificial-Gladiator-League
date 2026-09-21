@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% load forum_tags %}
+{% block title %}{{ topic.title }} — Forum{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in max-w-4xl mx-auto">
+
+  <div class="text-xs text-gray-500 mb-2">
+    <a href="{% url 'forum:category_list' %}" class="hover:text-gold transition">Forum</a>
+    <span class="mx-1">/</span>
+    <a href="{{ topic.category.get_absolute_url }}" class="hover:text-gold transition">{{ topic.category.name }}</a>
+  </div>
+
+  <div class="mb-6">
+    <h1 class="text-2xl sm:text-3xl font-bold flex items-center gap-2 flex-wrap">
+      {% if topic.is_pinned %}<span title="Pinned">📌</span>{% endif %}
+      {{ topic.title }}
+      {% if topic.is_hot %}
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">HOT</span>
+      {% elif topic.is_new %}
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-brand/15 text-brand border border-brand/30">NEW</span>
+      {% endif %}
+      {% if topic.is_locked %}
+        <span class="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-700 text-gray-300">Locked</span>
+      {% endif %}
+    </h1>
+    <p class="text-sm text-gray-500 mt-1">{{ total_replies }} repl{{ total_replies|pluralize:"y,ies" }} &middot; {{ topic.views_count }} view{{ topic.views_count|pluralize }}</p>
+  </div>
+
+  <!-- ── Original post ─────────────────────────── -->
+  <div class="card mb-4">
+    <div class="flex items-start gap-3">
+      <div class="w-9 h-9 rounded-full bg-purple flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+        {{ topic.author.username|default:"?"|first|upper }}
+      </div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-semibold text-gray-100">{{ topic.author.username|default:"deleted user" }}</span>
+          <span class="text-xs text-gray-500">posted {{ topic.created_at|timesince }} ago</span>
+        </div>
+        <div class="prose-forum text-sm text-gray-300 mt-2 leading-relaxed">{{ topic.body|render_markdown }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Threaded replies ──────────────────────── -->
+  <div class="space-y-3 mb-6">
+    {% for post in posts_page %}
+    <div id="post-{{ post.pk }}" class="card" style="margin-left: {{ post.indent|multiply:24 }}px;">
+      <div class="flex items-start gap-3">
+        <div class="w-8 h-8 rounded-full bg-purple flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+          {{ post.author.username|default:"?"|first|upper }}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-semibold text-gray-100 text-sm">{{ post.author.username|default:"deleted user" }}</span>
+            <span class="text-xs text-gray-500">{{ post.created_at|timesince }} ago</span>
+            {% if post.parent_id %}<span class="text-xs text-gray-500">↳ replying to a post above</span>{% endif %}
+          </div>
+          <div class="prose-forum text-sm text-gray-300 mt-2 leading-relaxed">{{ post.body|render_markdown }}</div>
+
+          <div class="flex items-center gap-4 mt-3">
+            {% if user.is_authenticated %}
+              <form method="post" action="{% url 'forum:toggle_like' post.pk %}" class="inline">
+                {% csrf_token %}
+                <button type="submit" class="text-xs font-medium flex items-center gap-1 transition {% if post.user_has_liked %}text-gold{% else %}text-gray-500 hover:text-gold{% endif %}">
+                  👍 {{ post.like_count }}
+                </button>
+              </form>
+            {% else %}
+              <span class="text-xs text-gray-500 flex items-center gap-1">👍 {{ post.like_count }}</span>
+            {% endif %}
+
+            {% if user.is_authenticated and not topic.is_locked %}
+              <button type="button"
+                      class="text-xs font-medium text-gray-500 hover:text-gold transition reply-to-btn"
+                      data-post-id="{{ post.pk }}"
+                      data-username="{{ post.author.username|default:'deleted user' }}">
+                Reply
+              </button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% empty %}
+      <p class="text-gray-500 text-sm">No replies yet.</p>
+    {% endfor %}
+  </div>
+
+  <!-- Pagination -->
+  {% if posts_page.paginator.num_pages > 1 %}
+  <div class="flex items-center justify-center gap-2 mb-8 text-sm">
+    {% if posts_page.has_previous %}
+      <a href="?page={{ posts_page.previous_page_number }}" class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">&laquo; Prev</a>
+    {% endif %}
+    <span class="text-gray-500">Page {{ posts_page.number }} of {{ posts_page.paginator.num_pages }}</span>
+    {% if posts_page.has_next %}
+      <a href="?page={{ posts_page.next_page_number }}" class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">Next &raquo;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ── Reply form ────────────────────────────── -->
+  {% if user.is_authenticated %}
+    {% if topic.is_locked %}
+      <p class="text-sm text-gray-500 italic">This topic is locked — no new replies allowed.</p>
+    {% else %}
+      <form method="post" action="{% url 'forum:add_reply' topic.category.slug topic.pk %}" id="replyForm" class="card space-y-3">
+        {% csrf_token %}
+        <div id="replyingToBanner" class="hidden text-xs text-gray-400 flex items-center gap-2">
+          <span>Replying to <span id="replyingToUsername" class="text-gold font-semibold"></span></span>
+          <button type="button" id="cancelReplyTo" class="text-gray-500 hover:text-red-400">&times; cancel</button>
+        </div>
+        <input type="hidden" name="parent_id" id="replyParentId" value="">
+        {{ reply_form.body }}
+        <button type="submit" class="btn-brand py-2 px-6 text-sm">Post Reply</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="text-sm text-gray-500">
+      <a href="{% url 'users:login' %}" class="text-gold hover:underline">Log in</a> to join the conversation.
+    </p>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const parentInput = document.getElementById('replyParentId');
+    const banner = document.getElementById('replyingToBanner');
+    const usernameEl = document.getElementById('replyingToUsername');
+    const cancelBtn = document.getElementById('cancelReplyTo');
+    const replyForm = document.getElementById('replyForm');
+
+    document.querySelectorAll('.reply-to-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!parentInput) return;
+        parentInput.value = btn.dataset.postId;
+        if (usernameEl) usernameEl.textContent = btn.dataset.username;
+        if (banner) banner.classList.remove('hidden');
+        if (replyForm) replyForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        parentInput.value = '';
+        banner.classList.add('hidden');
+      });
+    }
+  })();
+</script>
+{% endblock %}

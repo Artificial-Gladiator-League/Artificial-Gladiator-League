@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ category.name }} — Forum — Artificial Gladiator{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <div class="text-xs text-gray-500 mb-2">
+    <a href="{% url 'forum:category_list' %}" class="hover:text-gold transition">Forum</a>
+    <span class="mx-1">/</span>
+    <span class="text-gray-400">{{ category.name }}</span>
+  </div>
+
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-bold">
+        {{ category.name }}
+      </h1>
+      {% if category.description %}
+        <p class="text-sm text-gray-400 mt-1">{{ category.description }}</p>
+      {% endif %}
+    </div>
+    {% if user.is_authenticated %}
+      <a href="{% url 'forum:new_topic' category.slug %}" class="btn-brand text-sm py-2 px-5 flex-shrink-0">+ New Topic</a>
+    {% endif %}
+  </div>
+
+  <!-- Sort tabs -->
+  <div class="flex items-center gap-1 mb-4 text-sm font-medium">
+    <a href="?sort=latest" class="px-3 py-1.5 rounded-lg {% if sort == 'latest' %}bg-brand/15 text-brand{% else %}text-gray-400 hover:text-gray-200{% endif %}">Latest</a>
+    <a href="?sort=top" class="px-3 py-1.5 rounded-lg {% if sort == 'top' %}bg-brand/15 text-brand{% else %}text-gray-400 hover:text-gray-200{% endif %}">Top</a>
+    {% if user.is_authenticated %}
+      <a href="?sort=unread" class="px-3 py-1.5 rounded-lg {% if sort == 'unread' %}bg-brand/15 text-brand{% else %}text-gray-400 hover:text-gray-200{% endif %}">Unread</a>
+    {% endif %}
+  </div>
+
+  {% if page_obj %}
+  <div class="card overflow-x-auto p-0">
+    <table class="stats-table text-sm w-full">
+      <thead>
+        <tr>
+          <th>Topic</th>
+          <th class="text-center">Replies</th>
+          <th class="text-right">Last Activity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for topic in page_obj %}
+        <tr>
+          <td class="max-w-0 w-full">
+            <a href="{{ topic.get_absolute_url }}" class="no-underline hover:no-underline group">
+              <div class="flex items-center gap-2">
+                {% if topic.is_pinned %}<span class="text-gray-500" title="Pinned">Pinned</span>{% endif %}
+                <span class="font-medium text-gray-100 group-hover:text-gold transition truncate">{{ topic.title }}</span>
+                {% if topic.is_hot %}
+                  <span class="text-[0.6rem] font-bold px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-700/40">HOT</span>
+                {% elif topic.is_new %}
+                  <span class="text-[0.6rem] font-bold px-1.5 py-0.5 rounded-full bg-brand/15 text-brand border border-brand/30">NEW</span>
+                {% endif %}
+                {% if topic.is_locked %}<span class="text-gray-500" title="Locked">Locked</span>{% endif %}
+              </div>
+              <div class="text-xs text-gray-500 mt-0.5">by {{ topic.author.username|default:"deleted user" }}</div>
+            </a>
+          </td>
+          <td class="text-center text-gray-400">{{ topic.num_replies }}</td>
+          <td class="text-right text-gray-500 whitespace-nowrap">{{ topic.last_activity|timesince }} ago</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="flex items-center justify-center gap-2 mt-6 text-sm">
+    {% if page_obj.has_previous %}
+      <a href="?sort={{ sort }}&page={{ page_obj.previous_page_number }}" class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">&laquo; Prev</a>
+    {% endif %}
+    <span class="text-gray-500">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}
+      <a href="?sort={{ sort }}&page={{ page_obj.next_page_number }}" class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">Next &raquo;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% else %}
+    <p class="text-gray-400">
+      No topics yet.
+      {% if user.is_authenticated %}Be the first to <a href="{% url 'forum:new_topic' category.slug %}" class="text-gold hover:underline">start one</a>.{% endif %}
+    </p>
+  {% endif %}
+
+</div>
+{% endblock %}

@@ -32,6 +32,8 @@ urlpatterns = [
          name="password_reset_complete"),
     path("tournaments/", include("apps.tournaments.urls")),
     path("games/", include("apps.games.urls")),
+    path("forum/", include("apps.forum.urls")),
+    path("news/", include("apps.news.urls")),
     # chat app removed (apps.chat does not exist)
 ]
 
