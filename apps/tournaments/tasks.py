@@ -367,24 +367,11 @@ def run_registration_period_sha_audit(self) -> dict:
             summary["removed"] += 1
             continue
 
-        # ── Data repo + HF Space SHA checks (same logic as the model repo) ──
-        # hf_inference_endpoint_url may be a full spaces URL or a Gradio subdomain URL;
-        # resolve_space_repo_sha probes every owner/name split so the live SHA is
-        # fetched from the correct Space for every user, regardless of hyphens.
-        from apps.users.ownership_verification import resolve_space_repo_sha
-        try:
-            _space_repo_id, _ = resolve_space_repo_sha(
-                gm.hf_inference_endpoint_url, token, ref=ref,
-            )
-        except Exception:
-            _space_repo_id = ""
+        # ── Data repo SHA check (same logic as the model repo) ──
         for _extra_repo_id, _extra_repo_type, _extra_baseline, _extra_label, _base_field, _approved_field in (
             (gm.hf_data_repo_id, "dataset",
              (p.registered_data_repo_sha or gm.approved_data_repo_sha), "data repo",
              "registered_data_repo_sha", "approved_data_repo_sha"),
-            (_space_repo_id, "space",
-             (p.registered_space_sha or gm.approved_space_sha), "HF Space",
-             "registered_space_sha", "approved_space_sha"),
         ):
             _extra_repo_id = (_extra_repo_id or "").strip()
             if not _extra_repo_id:

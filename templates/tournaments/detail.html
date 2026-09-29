@@ -1,13 +1,13 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% load core_tags %}
-{% block title %}{{ tournament.name }} — Artificial Gladiator{% endblock %}
+{% block title %}{{ tournament.name }} � Artificial Gladiator{% endblock %}
 
 {% block content %}
 <div class="animate-fade-in">
 
-  <!-- ═══════════════════════════════════════════
+  <!-- ???????????????????????????????????????????
        Header
-       ═══════════════════════════════════════════ -->
+       ??????????????????????????????????????????? -->
   <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6">
     <div>
       <div class="flex items-center gap-2 mb-1">
@@ -18,7 +18,7 @@
           </span>
         {% endif %}
         <span class="text-xs text-gray-500 uppercase font-semibold">
-          {{ tournament.get_type_display }} · {{ tournament.get_game_type_display }} · {{ tournament.rounds_total }} rounds · {{ tournament.time_control_display }}
+          {{ tournament.get_type_display }} � {{ tournament.get_game_type_display }} � {{ tournament.rounds_total }} rounds � {{ tournament.time_control_display }}
         </span>
       </div>
       <h1 class="text-2xl sm:text-3xl font-bold">{{ tournament.name }}</h1>
@@ -70,9 +70,9 @@
                   <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="15">15s</button>
                   <input type="hidden" name="ai_thinking_seconds" value="5" data-thinking-input>
                 </span>
-                <button type="submit" class="btn-brand text-xs py-1.5 px-4">Join — Free</button>
+                <button type="submit" class="btn-brand text-xs py-1.5 px-4">Join � Free</button>
               </div>
-              <p class="text-xs text-gray-500">Target pace for your AI’s moves. Actual time depends on how your model is hosted — Spaces on free tier can be slower.</p>
+              <p class="text-xs text-gray-500">Target pace for your AI�s moves. Actual time depends on how your model is hosted.</p>
             </form>
             {% endif %}
           {% elif games_remaining > 0 %}
@@ -85,15 +85,15 @@
             <button type="button" disabled
                     class="inline-flex items-center gap-1.5 text-xs py-1.5 px-4 rounded bg-gray-700 text-gray-400 border border-gray-600 cursor-not-allowed opacity-40"
                     title="{% if join_blocked_reason %}{{ join_blocked_reason }}{% else %}You are not eligible to join this tournament{% endif %}">
-              Join — Free
+              Join � Free
             </button>
             {% if join_blocked_reason == 'ownership_unverified' %}
               <a href="{% url 'users:profile' %}" class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-red-900/40 text-red-300 border border-red-700/50 ml-1">
-                ❌ Verify ownership first
+                ? Verify ownership first
               </a>
             {% elif join_blocked_reason %}
               <span class="inline-flex items-center gap-1.5 text-xs py-1 px-3 rounded bg-yellow-900/40 text-yellow-200 border border-yellow-700/50 ml-1">
-                ⚠️ Not eligible
+                ?? Not eligible
               </span>
             {% endif %}
           {% endif %}
@@ -103,7 +103,7 @@
       {% if tournament.type == 'qa' %}
         <span class="text-xs font-semibold text-yellow-400 uppercase">Waiting for players to ready up</span>
       {% else %}
-        <span class="text-xs font-semibold text-yellow-400 uppercase">Full — Starting Soon</span>
+        <span class="text-xs font-semibold text-yellow-400 uppercase">Full � Starting Soon</span>
       {% endif %}
       {% if user.is_authenticated and is_participant %}
         <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
@@ -112,11 +112,11 @@
         </form>
       {% endif %}
     {% elif tournament.status == 'ongoing' %}
-      <span class="status-live">Live — Round {{ tournament.current_round }}</span>
+      <span class="status-live">Live � Round {{ tournament.current_round }}</span>
       {% if my_live_match %}
         <a href="{% url 'tournaments:live_match' tournament.pk my_live_match.pk %}"
            class="btn-brand text-sm py-1.5 px-5">
-          Resume Your Match — Round {{ my_live_match.round_num }} →
+          Resume Your Match � Round {{ my_live_match.round_num }} ?
         </a>
       {% endif %}
     {% elif tournament.status == 'completed' %}
@@ -129,28 +129,16 @@
     <!-- WS status -->
     <span class="ml-auto flex items-center gap-1.5 text-xs text-gray-500">
       <span id="wsDot" class="ws-dot connecting"></span>
-      <span id="wsLabel">Connecting…</span>
+      <span id="wsLabel">Connecting�</span>
     </span>
   </div>
 
-  <!-- ═══════════════════════════════════════════
-       QA Lobby — Ready-up section
-       ═══════════════════════════════════════════ -->
+  <!-- ???????????????????????????????????????????
+       QA Lobby � Ready-up section
+       ??????????????????????????????????????????? -->
   {% if tournament.type == 'qa' and tournament.status != 'completed' and tournament.status != 'ongoing' %}
   <div class="card mb-6" id="qaLobby">
     <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-4">Player Lobby</h2>
-
-    {% if space_summary %}
-    <div class="mb-4 inline-flex items-center gap-2 text-xs font-semibold px-3 py-1.5 rounded-full border border-borderDark bg-surface text-gray-300">
-      {{ space_summary.verified }}/{{ space_summary.total }} Spaces verified
-    </div>
-    {% endif %}
-
-    {% if user.is_authenticated %}
-    <div class="mb-4">
-      {% include "core/_verify_space_button.html" with game_type=tournament.game_type label="Test My Space" %}
-    </div>
-    {% endif %}
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5" id="qaPlayerSlots">
       {% for p in qa_participants %}
@@ -162,35 +150,24 @@
             {% if p.fide_abbr %}<span class="{{ p.fide_css }} font-bold text-xs" title="{{ p.fide_title }}">{{ p.fide_abbr }}</span>{% endif %}
             <span class="font-semibold text-sm">{{ p.username }}</span>
             <span class="text-gray-500 text-xs">({{ p.elo }})</span>
-            {% if p.space_status == 'ok' %}
-              <span class="text-xs" title="Space verified">✅</span>
-            {% elif p.space_status == 'cold_start' %}
-              <span class="text-xs" title="Space is waking up">🕒</span>
-            {% elif p.space_status == 'unreachable' %}
-              <span class="text-xs" title="Space unreachable">❌</span>
-            {% elif p.space_status == 'bad_response' %}
-              <span class="text-xs" title="Responded but move was invalid">⚠️</span>
-            {% else %}
-              <span class="text-xs text-gray-600" title="Space not tested">•</span>
-            {% endif %}
           </div>
           <span class="text-xs font-semibold {% if p.ready %}text-green-400{% else %}text-gray-500{% endif %}"
                 data-qa-status="{{ p.username }}">
-            {% if p.ready %}✓ Ready{% else %}Waiting…{% endif %}
+            {% if p.ready %}? Ready{% else %}Waiting�{% endif %}
           </span>
         </div>
       {% endfor %}
 
       {% if qa_participants|length == 0 %}
         <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
-          Waiting for player…
+          Waiting for player�
         </div>
         <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
-          Waiting for player…
+          Waiting for player�
         </div>
       {% elif qa_participants|length == 1 %}
         <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
-          Waiting for opponent…
+          Waiting for opponent�
         </div>
       {% endif %}
     </div>
@@ -215,10 +192,10 @@
               <button type="button" class="thinking-btn tc-btn text-xs px-2 py-1" data-val="15">15s</button>
               <input type="hidden" name="ai_thinking_seconds" value="5" data-thinking-input>
             </span>
-            <p class="text-xs text-gray-500">Target pace for your AI’s moves. Actual time depends on how your model is hosted — Spaces on free tier can be slower.</p>
+            <p class="text-xs text-gray-500">Target pace for your AI�s moves. Actual time depends on how your model is hosted.</p>
             <button type="submit"
                     class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto text-center block sm:inline-block">
-              ♟ Register
+              ? Register
             </button>
           </form>
           {% endif %}
@@ -227,17 +204,17 @@
           <button type="button" disabled
                   class="btn-brand text-sm py-2.5 px-8 w-full sm:w-auto opacity-40 cursor-not-allowed"
                   title="{% if join_blocked_reason %}{{ join_blocked_reason }}{% else %}Not eligible{% endif %}">
-            ♟ Register
+            ? Register
           </button>
         {% endif %}
         {# Eligibility feedback card (shown whenever the button is blocked) #}
         {% if not can_join %}
           {% if join_blocked_reason == 'ownership_unverified' %}
           <div class="rounded-lg border border-red-700 bg-red-900/30 p-4 text-sm text-red-200 space-y-2 mt-3">
-            <p class="font-semibold flex items-center gap-2">❌ Repo ownership not verified</p>
+            <p class="font-semibold flex items-center gap-2">? Repo ownership not verified</p>
             <p>You must verify you own your model repository before joining tournaments.</p>
             <a href="{% url 'users:profile' %}" class="inline-block mt-1 px-4 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-semibold">
-              Go to AI Models → Verify Ownership
+              Go to AI Models ? Verify Ownership
             </a>
           </div>
           {% elif games_remaining > 0 %}
@@ -258,7 +235,7 @@
           </div>
           {% elif join_blocked_reason %}
           <div class="rounded-lg border border-yellow-700 bg-yellow-900/30 p-4 text-sm text-yellow-200 mt-3">
-            ⚠️ {{ join_blocked_reason }}
+            ?? {{ join_blocked_reason }}
           </div>
           {% endif %}
         {% endif %}
@@ -266,12 +243,12 @@
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex items-center gap-3 text-sm text-green-400">
             <span class="spinner"></span>
-            <span>Tournament starting…</span>
+            <span>Tournament starting�</span>
           </div>
         </div>
       {% elif is_participant and tournament.status == 'open' %}
         <div class="flex flex-wrap items-center gap-3">
-          <p class="text-sm text-gray-400">Waiting for another player to join…</p>
+          <p class="text-sm text-gray-400">Waiting for another player to join�</p>
           <form method="post" action="{% url 'tournaments:leave' tournament.pk %}" class="inline">
             {% csrf_token %}
             <button type="submit" class="btn-danger text-sm py-2.5 px-8">Leave</button>
@@ -286,9 +263,9 @@
   </div>
   {% endif %}
 
-  <!-- ═══════════════════════════════════════════
+  <!-- ???????????????????????????????????????????
        QA Live / Completed Game
-       ═══════════════════════════════════════════ -->
+       ??????????????????????????????????????????? -->
   {% if tournament.type == 'qa' and tournament.status == 'ongoing' or tournament.type == 'qa' and tournament.status == 'completed' %}
   <div class="card mb-6">
     {% if tournament.status == 'ongoing' %}
@@ -305,11 +282,11 @@
               </span>
             </div>
             <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
-               class="btn-brand text-sm py-2 px-6">Watch Game →</a>
+               class="btn-brand text-sm py-2 px-6">Watch Game ?</a>
           </div>
         {% endfor %}
       {% else %}
-        <p class="text-sm text-gray-400">Waiting for the match to start…</p>
+        <p class="text-sm text-gray-400">Waiting for the match to start�</p>
       {% endif %}
     {% elif tournament.status == 'completed' %}
       <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400 mb-3">Game Result</h2>
@@ -327,16 +304,16 @@
             {% endif %}
           </div>
           <a href="{% url 'tournaments:live_match' tournament.pk qa_match.pk %}"
-             class="btn-brand text-sm py-2 px-6">View Board →</a>
+             class="btn-brand text-sm py-2 px-6">View Board ?</a>
         </div>
       {% endif %}
     {% endif %}
   </div>
   {% endif %}
 
-  <!-- ═══════════════════════════════════════════
+  <!-- ???????????????????????????????????????????
        Bracket Tree
-       ═══════════════════════════════════════════ -->
+       ??????????????????????????????????????????? -->
   <div class="card overflow-hidden p-0">
     <div class="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
       <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-400">Bracket</h2>
@@ -353,7 +330,7 @@
         <div class="bracket-round" data-round="{{ round.round_num }}">
           <div class="bracket-round-label {% if round.is_current %}active{% endif %}">
             {{ round.label }}
-            {% if round.is_current %}<span class="text-brand ml-1">●</span>{% endif %}
+            {% if round.is_current %}<span class="text-brand ml-1">?</span>{% endif %}
           </div>
           <div class="bracket-matches">
             {% for m in round.matches %}
@@ -367,7 +344,7 @@
                   </span>
                   <span class="player-elo">{{ m.player1.elo }}</span>
                   <span class="player-result">
-                    {% if m.result == '1-0' %}1{% elif m.result == '0-1' %}0{% elif m.result == '1/2-1/2' %}½{% endif %}
+                    {% if m.result == '1-0' %}1{% elif m.result == '0-1' %}0{% elif m.result == '1/2-1/2' %}�{% endif %}
                   </span>
                 </div>
                 <!-- Player 2 (black) -->
@@ -377,13 +354,13 @@
                   </span>
                   <span class="player-elo">{{ m.player2.elo }}</span>
                   <span class="player-result">
-                    {% if m.result == '0-1' %}1{% elif m.result == '1-0' %}0{% elif m.result == '1/2-1/2' %}½{% endif %}
+                    {% if m.result == '0-1' %}1{% elif m.result == '1-0' %}0{% elif m.result == '1/2-1/2' %}�{% endif %}
                   </span>
                 </div>
                 <!-- Match footer -->
                 <div class="flex items-center justify-between px-2 py-1 bg-gray-900/40 text-[0.6rem]">
                   <span>
-                    {% if m.is_armageddon %}<span class="armageddon-badge">⚡ ARM</span>{% endif %}
+                    {% if m.is_armageddon %}<span class="armageddon-badge">? ARM</span>{% endif %}
                     {% if m.is_live %}
                       <span class="status-live">Live</span>
                     {% elif m.is_completed %}
@@ -394,10 +371,10 @@
                   </span>
                   {% if m.is_live %}
                     <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
-                       class="text-brand hover:underline font-semibold">Watch →</a>
+                       class="text-brand hover:underline font-semibold">Watch ?</a>
                   {% elif m.is_completed %}
                     <a href="{% url 'tournaments:live_match' tournament.pk m.pk %}"
-                       class="text-gray-500 hover:text-gray-300 font-semibold">Details →</a>
+                       class="text-gray-500 hover:text-gray-300 font-semibold">Details ?</a>
                   {% endif %}
                 </div>
               </div>
@@ -420,9 +397,9 @@
     </div>
   </div>
 
-  <!-- ═══════════════════════════════════════════
+  <!-- ???????????????????????????????????????????
        Tournament Rules / Info
-       ═══════════════════════════════════════════ -->
+       ??????????????????????????????????????????? -->
 
   {% if tournament.is_money_tournament or tournament.join_password or tournament.category %}
   <div class="mt-6 rounded-lg border border-gray-700 bg-gray-800/60 p-4 space-y-2">
@@ -434,7 +411,7 @@
         <span class="text-purple-300"></span>
         <div>
           <p class="text-purple-300 font-semibold text-xs">Password Protected</p>
-          <p class="text-gray-400 text-xs">Invite-only — you must know the tournament password to join.</p>
+          <p class="text-gray-400 text-xs">Invite-only � you must know the tournament password to join.</p>
         </div>
       </div>
       {% else %}
@@ -442,7 +419,7 @@
         <span class="text-green-400"></span>
         <div>
           <p class="text-green-300 font-semibold text-xs">Open to All</p>
-          <p class="text-gray-400 text-xs">No password required — any eligible player may join.</p>
+          <p class="text-gray-400 text-xs">No password required � any eligible player may join.</p>
         </div>
       </div>
       {% endif %}
@@ -475,12 +452,12 @@
     <div class="card text-center">
       <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Format</p>
       <p class="font-medium">Single Elimination</p>
-      <p class="text-xs text-gray-400 mt-0.5">{{ tournament.rounds_total }} rounds · {{ tournament.capacity }} players</p>
+      <p class="text-xs text-gray-400 mt-0.5">{{ tournament.rounds_total }} rounds � {{ tournament.capacity }} players</p>
     </div>
     <div class="card text-center">
       <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Time Control</p>
       <p class="font-medium">{{ tournament.time_control_display }}</p>
-      <p class="text-xs text-gray-400 mt-0.5">Random colours · Queen auto‑promote</p>
+      <p class="text-xs text-gray-400 mt-0.5">Random colours � Queen auto?promote</p>
     </div>
     <div class="card text-center">
       <p class="text-xs text-gray-500 uppercase font-semibold mb-1">Tiebreak</p>
@@ -548,7 +525,7 @@
   let ws = null;
 
   {% if qa_live_match_id %}
-    /* QA tournament is already live — redirect participants to the game */
+    /* QA tournament is already live � redirect participants to the game */
     {% if is_participant %}
       window.location.href = '{% url "tournaments:live_match" tournament.pk qa_live_match_id %}';
     {% endif %}
@@ -564,7 +541,7 @@
     };
     ws.onclose = () => {
       wsDot.className = 'ws-dot disconnected';
-      wsLabel.textContent = 'Reconnecting…';
+      wsLabel.textContent = 'Reconnecting�';
       setTimeout(connectWS, 3000);
     };
     ws.onerror = () => {
@@ -580,7 +557,7 @@
   connectWS();
 
   {% if is_participant and tournament.status == "open" or is_participant and tournament.status == "full" %}
-  /* ── Registration-period anti-cheat poll ──────────────────────
+  /* ?? Registration-period anti-cheat poll ??????????????????????
      While waiting for the tournament to start, periodically ping the
      server so the SHA/repo audit runs even without page reloads. If
      the audit disqualifies this user, the server redirects to the
@@ -599,7 +576,7 @@
   function handleMessage(data) {
     switch (data.type) {
       case 'bracket_state':
-        /* Full bracket refresh — reload the page for simplicity */
+        /* Full bracket refresh � reload the page for simplicity */
         break;
 
       case 'match_result': {
@@ -617,7 +594,7 @@
       }
 
       case 'round_started':
-        /* New round — reload to get new matches */
+        /* New round � reload to get new matches */
         setTimeout(() => location.reload(), 500);
         break;
 
@@ -632,7 +609,7 @@
         break;
 
       case 'qa_game_start':
-        /* Both players ready — redirect to the live game */
+        /* Both players ready � redirect to the live game */
         if (data.match_id) {
           window.location.href = `/tournaments/${data.tournament_id}/match/${data.match_id}/`;
         }
@@ -640,7 +617,7 @@
     }
   }
 
-  /* ── QA ready-state UI updates via WebSocket ─── */
+  /* ?? QA ready-state UI updates via WebSocket ??? */
   function updateQAReadyState(participants, status, count) {
     const slotsContainer = document.getElementById('qaPlayerSlots');
     if (!slotsContainer) return;
@@ -652,7 +629,7 @@
         ? 'border-green-500 bg-green-900/20'
         : 'border-gray-700 bg-gray-800/50';
       const statusCls = p.ready ? 'text-green-400' : 'text-gray-500';
-      const statusTxt = p.ready ? '✓ Ready' : 'Waiting…';
+      const statusTxt = p.ready ? '? Ready' : 'Waiting�';
       slotsContainer.innerHTML += `
         <div class="flex items-center justify-between p-3 rounded-lg border ${borderCls}"
              data-qa-player="${p.username}">
@@ -669,12 +646,12 @@
     if (participants.length < 2) {
       slotsContainer.innerHTML += `
         <div class="flex items-center justify-center p-3 rounded-lg border border-dashed border-gray-700 text-gray-600 text-sm">
-          Waiting for opponent…
+          Waiting for opponent�
         </div>`;
     }
 
     /* Refresh the page to update buttons when status changes */
-    /* (e.g. someone left and the status went from full → open) */
+    /* (e.g. someone left and the status went from full ? open) */
     if (status && status !== '{{ tournament.status }}') {
       location.reload();
     }

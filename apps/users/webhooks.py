@@ -97,91 +97,12 @@ def hf_webhook(request):
     if not repo_name:
         return HttpResponse("Missing repo name", status=400)
 
-    # ── Handle Space deploys — update hf_inference_endpoint_url ─────────────
-    if repo_type == "space":
-        return _handle_space_update(repo_name)
-
     # Integrity checks run only at tournament registration — no action on push.
     log.info("HF webhook: repo=%s push received; no integrity action taken", repo_name)
 
     return JsonResponse({
         "status": "ok",
         "users_flagged": 0,
-    })
-
-
-def _handle_space_update(space_repo_name: str):
-    """Re-probe the Space and update hf_inference_endpoint_url / status.
-
-    Called when HF delivers a webhook for a *space* repo push.
-    The Space owner is matched against UserGameModel records whose
-    derived URL would point to this Space, then probed to confirm liveness.
-
-    space_repo_name example: ``"john/chess-space"``
-    Derived Space URL:        ``"https://john-chess-space.hf.space"``
-    """
-    import threading
-    import requests as _req
-    from apps.users.models import UserGameModel
-
-    # Derive the public Space URL from the space repo slug
-    owner, _, slug = space_repo_name.partition("/")
-    space_url = f"https://{owner}-{slug}.hf.space" if slug else f"https://{owner}-{owner}.hf.space"
-
-    # Find all UserGameModel rows that currently point at this Space URL
-    # OR whose derived owner matches (catches newly-added records whose
-    # URL was set by the populate_hf_space_url signal).
-    affected_qs = UserGameModel.objects.filter(
-        hf_inference_endpoint_url=space_url,
-    )
-    # Also catch records where the repo owner matches and URL is derived
-    owner_derived_url = f"https://{owner}-{owner}.hf.space"
-    if owner_derived_url != space_url:
-        from django.db.models import Q
-        affected_qs = UserGameModel.objects.filter(
-            Q(hf_inference_endpoint_url=space_url)
-            | Q(hf_inference_endpoint_url=owner_derived_url)
-        )
-
-    ugm_pks = list(affected_qs.values_list("pk", flat=True))
-    log.info(
-        "HF Space webhook: space=%s url=%s — found %d UGM record(s) to re-probe",
-        space_repo_name, space_url, len(ugm_pks),
-    )
-
-    def _probe_and_update(pks: list, url: str) -> None:
-        try:
-            resp = _req.post(
-                f"{url}/gradio_api/call/get_move",
-                json={"data": ["rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]},
-                headers={"Content-Type": "application/json"},
-                timeout=20,
-            )
-            # Only mark failed on server error; "ready" is reserved for ownership verification.
-            reachable = resp.status_code < 500
-        except Exception as exc:
-            log.warning("Space probe failed url=%s: %s", url, exc)
-            reachable = False
-
-        if pks:
-            update_fields: dict = {"hf_inference_endpoint_url": url}
-            if not reachable:
-                update_fields["hf_inference_endpoint_status"] = "failed"
-            UserGameModel.objects.filter(pk__in=pks).update(**update_fields)
-            log.info("Space probe: reachable=%s updated %d UGM record(s)", reachable, len(pks))
-
-    threading.Thread(
-        target=_probe_and_update,
-        args=(ugm_pks, space_url),
-        daemon=True,
-        name=f"space-webhook-probe-{owner}",
-    ).start()
-
-    return JsonResponse({
-        "status": "ok",
-        "space": space_repo_name,
-        "space_url": space_url,
-        "ugm_records_queued": len(ugm_pks),
     })
 
 

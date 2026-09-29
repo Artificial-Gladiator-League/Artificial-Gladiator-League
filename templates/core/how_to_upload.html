@@ -33,54 +33,33 @@
         <p class="text-gray-400 text-sm mb-5">
           Your AG Champion is a Python brain that receives a board position and returns a legal move string.
           The logic inside is entirely up to you — Monte Carlo Vector Search (MCVS), random play, minimax, MCTS, a neural network, or anything else.
-          The recommended integration is a <strong class="text-white">Gradio Space</strong> hosted on Hugging Face:
-          easy to deploy, easy to debug, and no server to manage on your end.
+          Your code is downloaded into a private cache and executed inside an isolated <strong class="text-white">Docker sandbox</strong>
+          on the platform's own servers — no external hosting or always-on server required on your end.
         </p>
 
-        <!-- Interface 1: Gradio Space -->
+        <!-- Interface: Docker sandbox entry point -->
         <div class="rounded-lg border border-brand/30 bg-surface p-5 mb-5">
-          <h3 class="text-sm font-semibold text-brand mb-1">Interface 1 — Gradio Space <span class="ml-2 text-xs font-normal text-gray-500">(Recommended)</span></h3>
+          <h3 class="text-sm font-semibold text-brand mb-1">Entry Point — <code class="bg-black/30 px-1 rounded">get_move</code></h3>
           <p class="text-xs text-gray-400 mb-3">
-            Deploy a Gradio app on Hugging Face Spaces. The platform calls your Space's
-            <code class="bg-black/30 px-1 rounded">get_move</code> function over HTTP on every move — no server to manage on your end.
-            Your function receives the board position and the active player, and returns a move string.
+            Your model repo's entry-point module must expose one of <code class="bg-black/30 px-1 rounded">get_move(fen, player, zone_db=None)</code>,
+            a <code class="bg-black/30 px-1 rounded">UCTSearcher</code> class with a <code class="bg-black/30 px-1 rounded">.search(fen, player)</code> method, or a
+            <code class="bg-black/30 px-1 rounded">predict(fen, player)</code> function. On every move, the platform launches a fresh sandbox
+            container, calls your function with the board position and active player, and reads back the move string it returns.
           </p>
           <div class="rounded-lg bg-black/30 p-4 text-sm font-mono mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1"># app.py — in your Gradio Space repo</div>
-            <div><span class="text-purple-400">import</span> gradio <span class="text-purple-400">as</span> gr</div>
-            <div class="mt-3 text-gray-400 text-xs"># The platform sends the board position (and optionally the active player).</div>
+            <div class="text-gray-500 mb-1"># my_model.py — in your model repo</div>
+            <div class="mt-3 text-gray-400 text-xs"># The platform sends the board position (and the active player).</div>
             <div class="text-gray-400 text-xs"># Return your chosen move as a string in the format the game expects.</div>
-            <div class="mt-1"><span class="text-blue-300">def</span> <span class="text-brand">get_move</span>(position: str, player: str) -&gt; str:</div>
+            <div class="mt-1"><span class="text-blue-300">def</span> <span class="text-brand">get_move</span>(fen: str, player: str, zone_db=<span class="text-purple-400">None</span>) -&gt; str:</div>
             <div class="pl-4 text-gray-500 text-xs"># ---- your AI logic here ----</div>
             <div class="pl-4 text-gray-500 text-xs"># minimax, MCTS, neural net, opening table — whatever you like</div>
             <div class="pl-4"><span class="text-purple-400">return</span> <span class="text-green-400">"e2e4"</span>  <span class="text-gray-500"># return a valid move string</span></div>
-            <div class="mt-3">gr.Interface(</div>
-            <div class="pl-4">fn=get_move,</div>
-            <div class="pl-4">inputs=[<span class="text-green-400">"text"</span>, <span class="text-green-400">"text"</span>],</div>
-            <div class="pl-4">outputs=<span class="text-green-400">"text"</span>,</div>
-            <div class="pl-4">api_name=<span class="text-green-400">"get_move"</span>,  <span class="text-gray-500"># ← required</span></div>
-            <div>).launch()</div>
-          </div>
-          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1"># requirements.txt — Space root</div>
-            <div class="text-green-400">gradio</div>
-            <div class="text-gray-400">torch         # add any framework you need</div>
-            <div class="text-gray-400">numpy</div>
           </div>
           <ul class="text-xs text-gray-400 space-y-1.5">
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span><code class="bg-black/30 px-1 rounded">api_name="get_move"</code> is required — the platform posts to <code class="bg-black/30 px-1 rounded">/gradio_api/call/get_move</code></span></li>
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>The Space must remain <strong class="text-gray-200">Public</strong> and running while your matches are scheduled</span></li>
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>You choose the hardware tier — upgrade for heavier models (GPU Spaces supported)</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>No web server, no <code class="bg-black/30 px-1 rounded">requirements.txt</code> to keep alive — the sandbox image already has common ML libraries installed.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>The sandbox has no network access, a read-only filesystem, and strict CPU/memory/time limits.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>Your model repo can be Gated — the platform only needs read access, never a public endpoint.</span></li>
           </ul>
-        </div>
-
-        <!-- Advanced: EndpointHandler mention -->
-        <div class="mt-1 rounded-lg border border-borderDark bg-surface px-4 py-3 text-xs text-gray-400">
-          <span class="font-semibold text-gray-300">Advanced option — Direct Python Handler:</span>
-          For lower-latency scenarios or when you need tight control over the local runtime,
-          the platform also supports a class-based <strong class="text-gray-200">EndpointHandler</strong> interface
-          executed directly in a sandboxed environment without a Gradio Space.
-          Full documentation for this interface will be published separately.
         </div>
 
         <!-- Flexibility callout -->
@@ -99,7 +78,7 @@
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Create Your Hugging Face Repositories</h2>
         <p class="text-gray-400 text-sm mb-5">
-          You need up to <strong>three resources</strong> on Hugging Face — a model code repo, a data repo, and (for the Gradio interface) a Space.
+          You need up to <strong>two resources</strong> on Hugging Face — a model code repo, and an optional data repo.
           Each has a different visibility requirement explained below.
         </p>
 
@@ -110,19 +89,21 @@
             Contains your Artificial Gladiator code files and a <code class="bg-black/30 px-1 rounded">config_model.json</code> that lists all Python files and the entry-point module.
           </p>
           <p class="text-xs text-gray-400 mb-3">
-            Even if you use the Gradio interface, you still need to create this repo and its <code class="bg-black/30 px-1 rounded">config_model.json</code> file — it is used for ownership verification, even though the platform never downloads your actual code.
+            Even though your code runs inside the platform's Docker sandbox rather than a public endpoint, you still need
+            to create this repo and its <code class="bg-black/30 px-1 rounded">config_model.json</code> file — the platform
+            downloads it into a private cache and mounts it read-only into the sandbox for each move.
           </p>
 
           <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3">
             <span>
               <strong>Strongly recommended: Gated (Access Requests).</strong>
               A Gated repo requires visitors to request access before downloading any files — protecting your Artificial Gladiator code from being copied.
-              The platform only checks the public <em>file listing</em> during ownership verification; it never downloads your source for Gradio-interface bots.
+              The platform downloads your repo into a private per-user cache before running it in the sandbox, so gating only affects other visitors, not the platform.
               Go to your repo's <em>Settings → Access Control → Gated</em> to enable it.
               <br><br>
               <strong>Important:</strong> once Gated, you must grant access to the platform's Hugging Face account
-              <strong class="text-amber-200">ArtificialGladiatorLeague</strong> so it can read your file listing during verification.
-              Without this grant, ownership checks will fail even if the verification code is correct.
+              <strong class="text-amber-200">ArtificialGladiatorLeague</strong> so it can download your files during caching and verification.
+              Without this grant, ownership checks and inference will fail even if the verification code is correct.
             </span>
           </div>
 
@@ -143,8 +124,7 @@
             <div>}</div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            <code class="bg-black/30 px-1 rounded">main</code> is the module filename without <code>.py</code> — this is the module that contains your <code>EndpointHandler</code> class.
-            If using the Gradio interface, only the file listing is read during ownership verification; your code is never downloaded.
+            <code class="bg-black/30 px-1 rounded">main</code> is the module filename without <code>.py</code> — this is the module that contains your <code>get_move</code>/<code>UCTSearcher</code>/<code>predict</code> entry point, called inside the Docker sandbox on every move.
           </p>
         </div>
 
@@ -178,76 +158,10 @@
             <div>}</div>
           </div>
           <p class="text-xs text-gray-500 mt-2">
-            List every file you need downloaded. For EndpointHandler bots, they are placed in a local cache directory whose path is passed to <code class="bg-black/30 px-1 rounded">__init__(self, path)</code>. For Gradio Artificial Gladiators, load them yourself inside your Space (e.g. from the HF Hub using <code class="bg-black/30 px-1 rounded">huggingface_hub.hf_hub_download</code>).
+            List every file you need downloaded. The platform mounts them read-only into the Docker sandbox alongside your
+            model repo, at a path passed to your entry point (e.g. via the optional <code class="bg-black/30 px-1 rounded">zone_db</code> argument
+            or read directly from the mounted data directory).
           </p>
-        </div>
-
-        <!-- Repo 3 - Space -->
-        <div class="rounded-lg border border-borderDark bg-surface p-5">
-          <h3 class="font-semibold text-green-400 mb-2">Repo 3 — Gradio Space <span class="text-xs font-normal text-gray-500">(HF Space — required for Interface 1)</span></h3>
-          <p class="text-xs text-gray-400 mb-3">
-            The platform calls your Artificial Gladiator over HTTP using the Gradio 4 SSE API. On each move it posts to
-            <code class="bg-black/30 px-1 rounded">/gradio_api/call/get_move</code> on your Space's subdomain and streams the response.
-          </p>
-
-          <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-2.5 text-xs text-red-300 mb-3 flex items-start gap-2">
-            <span class="shrink-0">⚠️</span>
-            <span>
-              <strong>Must be fully Public — no exceptions.</strong>
-              The platform posts to your Space's HTTP API with no authentication token.
-              A private or sleeping Space will cause the move request to fail or time out, forfeiting the turn.
-            </span>
-          </div>
-
-          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1">Required layout:</div>
-            <div>your-username/my-bot-space/</div>
-            <div class="pl-4 text-green-400">├── app.py               ← Gradio app exposing get_move()</div>
-            <div class="pl-4 text-gray-300">└── requirements.txt     ← gradio + all dependencies</div>
-          </div>
-          <p class="text-xs text-gray-500 mb-4">
-            After deploying, copy the Space's public subdomain
-            (e.g. <code class="bg-black/30 px-1 rounded">your-username-my-bot-space.hf.space</code>) and paste it as the
-            <strong class="text-gray-200">HF Space Link</strong> when registering your Artificial Gladiator.
-          </p>
-
-          <div class="rounded-lg border border-borderDark bg-surface p-5">
-            <h3 class="font-semibold text-gray-200 mb-3">Example:</h3>
-
-            <p class="text-sm text-gray-400 mb-3">
-              Create and publish your three Hugging Face repositories here:
-              <a href="https://huggingface.co/chaim-duchovny/chess-model" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
-                Model repo
-              </a>,
-              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-data" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
-                Data repo
-              </a>,
-              <a href="https://huggingface.co/spaces/chaim-duchovny/chess-space" class="text-brand hover:underline" target="_blank" rel="noopener noreferrer">
-                Space repo
-              </a>
-            </p>
-
-            <p class="text-sm text-gray-400 mb-3">
-              The
-              <a href="https://huggingface.co/datasets/chaim-duchovny/chess-model"
-                class="text-purple-400 hover:underline"
-                target="_blank"
-                rel="noopener noreferrer">
-                Model repo
-              </a>
-              is based on the paper,
-              <a href="https://www.researchgate.net/publication/403185460_Graph_Game_Theory_An_Algebraic_Approach_for_General_Game_Playing"
-                class="text-purple hover:underline"
-                target="_blank"
-                rel="noopener">
-                Graph Game Theory: An Algebraic Approach for General Game Playing
-              </a>.
-            </p>
-
-            <p class="text-xs text-gray-500">
-              After deploying, copy the Space’s public subdomain and paste it as the HF Space Link when registering your AG.
-            </p>
-          </div>
         </div>
       </div>
     </div>
@@ -308,7 +222,6 @@
           <ul class="text-gray-400 space-y-2 text-xs">
             <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">AG Champion Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code> — your Artificial Gladiator code repository</span></li>
             <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG-data</code> — your data repository (leave blank if not used)</span></li>
-            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">HF Space Link</strong> — <code class="bg-black/30 px-1 rounded">username-my-AG-space.hf.space</code> — your Gradio Space subdomain (Gradio interface only)</span></li>
           </ul>
         </div>
 
@@ -340,7 +253,7 @@
           <div class="flex flex-wrap gap-2 items-center text-xs">
             <span class="bg-brand/20 text-brand px-2 py-1 rounded">Board FEN sent</span>
             <span class="text-gray-600">→</span>
-            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Gradio Space <code>get_move</code> called</span>
+            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Docker sandbox runs your <code>get_move</code></span>
             <span class="text-gray-600">→</span>
             <span class="bg-gold/20 text-gold px-2 py-1 rounded">Move validated</span>
             <span class="text-gray-600">→</span>
@@ -358,15 +271,15 @@
     <div class="grid sm:grid-cols-2 gap-4">
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-brand mb-2">Pre-load at startup</div>
-        <p class="text-xs text-gray-400">Load models, weights, and opening books in <code class="bg-black/30 px-1 rounded">__init__</code> (EndpointHandler) or at module level (Gradio Space). Never load files inside <code class="bg-black/30 px-1 rounded">get_move</code> — cold load time counts against your move clock.</p>
+        <p class="text-xs text-gray-400">Load models, weights, and opening books at module level so they're ready as soon as your entry point is called. Never load files inside <code class="bg-black/30 px-1 rounded">get_move</code> — load time counts against your move clock and the sandbox timeout.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gold mb-2">Respect the time limit</div>
         <p class="text-xs text-gray-400">The platform enforces a per-move timeout. Budget your search depth or inference time accordingly. Returning a random legal move as a fallback avoids timeouts that would forfeit the game entirely.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-purple-400 mb-2">Avoid cold starts</div>
-        <p class="text-xs text-gray-400">Hugging Face Spaces can go to sleep after inactivity. Use the <em>Always On</em> option if available on your plan, or periodically ping your Space to keep it warm and prevent the first move from timing out.</p>
+        <div class="text-sm font-semibold text-purple-400 mb-2">Keep it lightweight</div>
+        <p class="text-xs text-gray-400">The sandbox has fixed CPU/memory limits and no network access. Keep your dependencies minimal and avoid anything that expects internet connectivity at inference time.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-green-400 mb-2">Pin your dependencies</div>
@@ -390,9 +303,8 @@
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Move timed out / AG forfeited the turn</div>
         <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your Space may have been sleeping — enable <em>Always On</em> or warm it up before matches start.</span></li>
           <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Inference is too slow — reduce search depth, switch to a lighter model, or pre-cache results.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Check the Space logs on Hugging Face for Python errors or out-of-memory crashes.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your code raised an exception inside the sandbox — test it locally with the same entry point signature before registering.</span></li>
         </ul>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
@@ -433,7 +345,7 @@
     <div class="space-y-5 text-sm divide-y divide-borderDark">
       <div class="pt-4 first:pt-0">
         <p class="font-semibold text-gray-200">Can I use PyTorch, TensorFlow, JAX, scikit-learn, or any other ML framework?</p>
-        <p class="text-gray-400 mt-1">Yes. List all pip packages in <code class="bg-surface px-1 rounded">requirements.txt</code>. They are installed in your Gradio Space (or local sandbox for EndpointHandler AG Champions) before your code runs.</p>
+        <p class="text-gray-400 mt-1">Yes. List all pip packages your model repo needs; common ML libraries are already available in the Docker sandbox image, and any others can be documented in your repo's own requirements file for your own reference.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What game types are supported?</p>
@@ -441,27 +353,23 @@
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Do I need a Hugging Face account?</p>
-        <p class="text-gray-400 mt-1">Yes — to create repos and deploy a Space. No HF API token is required by the platform; all access is anonymous via public resources.</p>
+        <p class="text-gray-400 mt-1">Yes — to create your model repo (and optional data repo). No HF API token is required by the platform; all access is anonymous via public/gated resources.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Can I update my AG Champion between games (outside tournaments)?</p>
         <p class="text-gray-400 mt-1">
           Yes, you can update your AG Champion or change your repository links outside of tournaments. 
-          However, <strong class="text-white">any change to your AG Champion's Repo, Data Repo, or HF Space Link will reset your rated games counter</strong>. 
+          However, <strong class="text-white">any change to your AG Champion's Repo or Data Repo will reset your rated games counter</strong>. 
           You will need to play another <strong class="text-white">30 rated games</strong> before you can enter tournaments again.
         </p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Should my AG Champion's model repo be Gated?</p>
-        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your AG Champion from misusing it by other human users. The platform only reads the file listing for verification — it does not download your source files for Gradio-interface AG Champions. However, you must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can read that listing; without this, ownership verification will fail.</p>
+        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your AG Champion from being copied by other users. The platform downloads your repo into a private cache before running it in the sandbox, so gating only affects other visitors, not the platform. You must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can download and verify it; without this, ownership verification and inference will fail.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Why must the data repo and Space be fully Public?</p>
-        <p class="text-gray-400 mt-1">The platform's servers make anonymous HTTP requests to both. No user token is passed. Private or gated access on these resources will cause failures at match time.</p>
-      </div>
-      <div class="pt-4">
-        <p class="font-semibold text-gray-200">Which interface should I choose — Gradio Space or EndpointHandler?</p>
-        <p class="text-gray-400 mt-1">Start with the Gradio Space. It's easier to deploy, easier to debug (logs are visible on HF), and you control the hardware tier. Use EndpointHandler only if you need sandbox-level control or have specific platform-integration requirements.</p>
+        <p class="font-semibold text-gray-200">Why must the data repo be fully Public?</p>
+        <p class="text-gray-400 mt-1">The platform's servers make anonymous HTTP requests to it when downloading data files into the sandbox cache. No user token is passed. Private or gated access on this resource will cause failures at match time.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Why do I need 30 rated games before entering tournaments?</p>
@@ -473,7 +381,7 @@
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What is "AI thinking time" and is it guaranteed?</p>
-        <p class="text-gray-400 mt-1">"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on how the opponent's AG Champion is hosted: Gradio Spaces — especially free-tier ones or those that have gone to sleep — can take several seconds per move due to network and queueing overhead, while dedicated Inference Endpoints are typically faster and more consistent. If a move arrives faster than the target, the platform waits to reach the target before showing it; if the model responds slower, the move is still accepted and used. Only if the Space is entirely unreachable (network timeout after ~20 s) does the platform fall back to a random legal move rather than forfeiting the turn. Both the game creator and the joining player each set their own thinking-time target independently for their own AI.</p>
+        <p class="text-gray-400 mt-1">"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on your model's inference speed inside the Docker sandbox — heavier models or deep searches take longer. If a move arrives faster than the target, the platform waits to reach the target before showing it; if the model responds slower, the move is still accepted and used. Only if the sandbox times out or errors entirely does the platform fall back to a random legal move rather than forfeiting the turn. Both the game creator and the joining player each set their own thinking-time target independently for their own AI.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What ranking titles are used on the AGL platform?</p>

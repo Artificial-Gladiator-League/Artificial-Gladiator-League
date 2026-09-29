@@ -1,161 +1,18 @@
 # ──────────────────────────────────────────────
 # apps/games/hf_inference.py
 #
-# HF Inference API — calls the Hugging Face Inference
-# API (serverless or dedicated endpoint) to get a move.
+# Compatibility shim.  All live inference now runs via the Docker
+# sandbox (apps.games.local_inference / apps.games.sandbox_runner) —
+# there is no HF Inference API / HF Space call path anymore.
 #
-# Architecture
-# ────────────
-# Each user's model repo contains a handler.py that
-# implements the HF custom inference interface.  We call
-# it via:
-#   1. Dedicated endpoint URL stored on UserGameModel
-#      (hf_inference_endpoint_url), if configured.
-#   2. HF Serverless Inference API:
-#      POST https://api-inference.huggingface.co/models/{repo_id}
-#
-# Request body:  {"inputs": "<fen_string>"}
-# Response body: {"move": "e2e4"} or {"generated_text": "e2e4"}
-#                or plain string "e2e4"
-#
-# Auth: settings.HF_PLATFORM_TOKEN (platform read token).
+# The functions below are intentionally no-ops, kept only so old
+# imports (apps.users.hf_inference re-exports these names) don't break.
 # ──────────────────────────────────────────────
 from __future__ import annotations
 
-import logging
-import os
-import time
-
-import requests
-from django.conf import settings
-
-log = logging.getLogger(__name__)
-
-# Timeout for a single HF API call (seconds).
-_HF_API_TIMEOUT = int(os.environ.get("HF_API_TIMEOUT", "30"))
-
-_SERVERLESS_BASE = "https://api-inference.huggingface.co/models"
-
-# Reused across calls so repeat requests to the same host keep the
-# underlying TCP/TLS connection alive instead of re-handshaking every move.
-_session = requests.Session()
-_session.headers.update({"Content-Type": "application/json"})
-
-
-def _platform_token() -> str | None:
-    """Return the platform-level HF token, or None."""
-    return (
-        getattr(settings, "HF_PLATFORM_TOKEN", None)
-        or os.environ.get("HF_TOKEN")
-    ) or None
-
-
-def get_move_api(
-    repo_id: str,
-    fen: str,
-    *,
-    token: str | None = None,
-    endpoint_url: str | None = None,
-    timeout: int = _HF_API_TIMEOUT,
-) -> str | None:
-    """Call the HF Inference API and return a move string, or None on failure.
-
-    Parameters
-    ----------
-    repo_id:
-        HF model repository ID, e.g. ``'test1978/chess-model'``.
-    fen:
-        Game-state string (FEN for chess, position string for breakthrough).
-    token:
-        Override HF token.  Defaults to ``HF_PLATFORM_TOKEN``.
-    endpoint_url:
-        Dedicated endpoint URL.  Defaults to serverless API.
-    timeout:
-        HTTP timeout in seconds.
-    """
-    hf_token = token or _platform_token()
-    url = endpoint_url or f"{_SERVERLESS_BASE}/{repo_id}"
-    headers: dict[str, str] = {}
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-    headers["Content-Type"] = "application/json"
-
-    try:
-        resp = _session.post(
-            url,
-            json={"inputs": fen},
-            headers=headers,
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-    except requests.exceptions.Timeout:
-        log.warning("HF API timeout for repo=%s url=%s", repo_id, url)
-        return None
-    except requests.exceptions.RequestException as exc:
-        log.warning("HF API request failed for repo=%s: %s", repo_id, exc)
-        return None
-
-    try:
-        data = resp.json()
-    except Exception:
-        # Plain-text response (some custom handlers return just the move)
-        text = resp.text.strip()
-        log.debug("HF API plain-text response for repo=%s: %r", repo_id, text)
-        return text or None
-
-    # HF serverless "cold start": the model is still loading and returned
-    # HTTP 200 with {"error": ..., "estimated_time": ...} instead of a move.
-    # Wait the reported time (capped) and retry exactly once so a genuinely
-    # broken endpoint still fails fast rather than hanging indefinitely.
-    if isinstance(data, dict) and "error" in data and "estimated_time" in data:
-        wait = min(float(data["estimated_time"]), 10.0)
-        log.info("HF model cold-starting for repo=%s, waiting %.1fs then retrying", repo_id, wait)
-        time.sleep(wait)
-        try:
-            resp = _session.post(url, json={"inputs": fen}, headers=headers, timeout=timeout)
-            resp.raise_for_status()
-            data = resp.json()
-        except requests.exceptions.Timeout:
-            log.warning("HF API timeout on cold-start retry for repo=%s url=%s", repo_id, url)
-            return None
-        except requests.exceptions.RequestException as exc:
-            log.warning("HF API request failed on cold-start retry for repo=%s: %s", repo_id, exc)
-            return None
-        except Exception:
-            log.warning("HF API cold-start retry returned non-JSON for repo=%s", repo_id)
-            return None
-
-    # Parse structured response — accept several common layouts
-    move = _extract_move(data)
-    log.debug("HF API response for repo=%s: %r → move=%r", repo_id, data, move)
-    return move
-
-
-def _extract_move(data) -> str | None:
-    """Extract a move string from various HF response shapes."""
-    if isinstance(data, str):
-        return data.strip() or None
-    if isinstance(data, dict):
-        for key in ("move", "generated_text", "output", "result", "prediction"):
-            val = data.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-        # Some handlers nest under "outputs" or "predictions"
-        for key in ("outputs", "predictions"):
-            val = data.get(key)
-            if isinstance(val, str) and val.strip():
-                return val.strip()
-            if isinstance(val, list) and val:
-                return _extract_move(val[0])
-    if isinstance(data, list) and data:
-        return _extract_move(data[0])
-    return None
-
-
-# ── Compat stubs so old imports don't break ──────────────────────────────────
 
 def verify_model(game_model, *, token: str | None = None, force: bool = False):
-    """Stub: integrity checks removed — verification only runs at tournament registration."""
+    """Stub: integrity checks only run at tournament registration."""
     return True, "OK", {}
 
 
@@ -164,55 +21,17 @@ def reverify_model(game_model, *, token: str | None = None):
 
 
 def get_move_local(*args, **kwargs):
-    """Removed — use get_move_api()."""
+    """Stub: use apps.games.local_inference.get_move_local() (Docker sandbox)."""
     return None
 
 
 def download_model(*args, **kwargs):
     """No-op stub."""
-    return True, "HF API mode — no local download required", None
+    return True, "Docker sandbox mode — no runtime download required", None
 
 
 def scan_model(*args, **kwargs):
     """No-op stub."""
     return True, {}
 
-
-# ── Space URL probe ─────────────────────────────────────────────────────────
-
-_PROBE_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-_SPACE_PROBE_TIMEOUT = 20
-
-
-def probe_space_url(base_url: str) -> tuple[bool, str]:
-    """Probe a Gradio Space base URL via the /gradio_api/call/get_move endpoint.
-
-    Returns ``(success, message)``.  Does NOT raise — always returns a bool.
-    Used by profile view to validate user-supplied Space URLs before saving.
-
-    Only HTTP 2xx responses are treated as success.  4xx responses (including
-    404 Not Found) mean the Space does not exist or is not running — these are
-    treated as failure so the caller can surface a clear error to the user.
-    """
-    submit_url = f"{base_url.rstrip('/')}/gradio_api/call/get_move"
-    try:
-        resp = requests.post(
-            submit_url,
-            json={"data": [_PROBE_FEN]},
-            headers={"Content-Type": "application/json"},
-            timeout=_SPACE_PROBE_TIMEOUT,
-        )
-        if 200 <= resp.status_code < 300:
-            return True, f"Space reachable (HTTP {resp.status_code})"
-        if resp.status_code == 404:
-            return False, "Space not found (HTTP 404) — check the URL or deploy your Space first"
-        if resp.status_code == 401 or resp.status_code == 403:
-            return False, f"Space access denied (HTTP {resp.status_code}) — Space may be private"
-        return False, f"Space returned HTTP {resp.status_code}"
-    except requests.exceptions.ConnectionError as exc:
-        return False, f"Cannot connect to Space: {exc}"
-    except requests.exceptions.Timeout:
-        return False, f"Space did not respond within {_SPACE_PROBE_TIMEOUT}s"
-    except requests.exceptions.RequestException as exc:
-        return False, f"Request failed: {exc}"
 

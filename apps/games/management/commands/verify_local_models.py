@@ -43,7 +43,9 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         from apps.users.models import UserGameModel
-        from apps.games.local_inference import verify_local_files
+        from apps.games.local_inference import verify_local_files, resolve_model_path
+        from apps.games.model_check import check_model
+        from apps.games.exceptions import SandboxUnavailableError
 
         user_id: int | None = options["user_id"]
         game_type: str | None = options["game_type"]
@@ -59,7 +61,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("No UserGameModel records matched the filters."))
             return
 
-        total = passed = failed = 0
+        total = passed = failed = unavailable = 0
 
         for gm in records:
             uid = gm.user_id
@@ -75,13 +77,36 @@ class Command(BaseCommand):
                 continue
 
             self.stdout.write(f"  FILES OK  {label}: {msg}")
+
+            # ── Contract check (only a passing model may become ACTIVE) ────
+            model_dir, data_dir = resolve_model_path(uid, gtype, repo_id=gm.hf_model_repo_id or None)
+            try:
+                problems = check_model(model_dir, data_dir, gtype) if model_dir else [msg]
+            except SandboxUnavailableError as exc:
+                unavailable += 1
+                self.stderr.write(self.style.WARNING(f"  SANDBOX UNAVAILABLE  {label}: {exc}"))
+                continue
+
+            if problems:
+                gm.status = gm.ContractStatus.FAILED
+                gm.last_error = "; ".join(problems)
+                gm.save(update_fields=["status", "last_error"])
+                failed += 1
+                self.stderr.write(self.style.ERROR(f"  CONTRACT FAIL  {label}: {gm.last_error}"))
+                continue
+
+            gm.status = gm.ContractStatus.ACTIVE
+            gm.last_error = ""
+            gm.save(update_fields=["status", "last_error"])
             passed += 1
+            self.stdout.write(self.style.SUCCESS(f"  CONTRACT OK  {label}"))
 
         self.stdout.write("")
         self.stdout.write(
             f"Results: {total} model(s) checked — "
             f"{self.style.SUCCESS(str(passed) + ' passed')}, "
-            f"{self.style.ERROR(str(failed) + ' failed')}"
+            f"{self.style.ERROR(str(failed) + ' failed')}, "
+            f"{self.style.WARNING(str(unavailable) + ' sandbox-unavailable')}"
         )
 
         if failed:

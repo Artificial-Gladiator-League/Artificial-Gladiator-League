@@ -155,17 +155,11 @@ def disqualify_for_repo_change(
         }
         # Roll forward only the SHA whose repo triggered this disqualification:
         # the previous "new" SHA becomes the "before change" SHA.
-        # Match case-insensitively so labels like "HF Space" (registration
-        # audit) and "space" (mid-round audit) both route to the space fields.
         reason_lc = (reason or "").lower()
         if "data repo" in reason_lc:
             update_kwargs["current_data_repo_sha"] = F("new_data_repo_sha")
             if new_sha:
                 update_kwargs["new_data_repo_sha"] = new_sha
-        elif "space" in reason_lc:
-            update_kwargs["current_space_sha"] = F("new_space_sha")
-            if new_sha:
-                update_kwargs["new_space_sha"] = new_sha
         else:
             # model repo change
             update_kwargs["current_repo_sha"] = F("new_repo_sha")

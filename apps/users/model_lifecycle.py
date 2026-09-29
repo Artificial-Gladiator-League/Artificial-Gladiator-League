@@ -234,11 +234,6 @@ def download_model_to_cache(
 ) -> tuple[bool, str, Path | None]:
     """Download a HF repository into the persistent per-user cache.
 
-    A Space and a Model repo can share the same "owner/name" path but are
-    different objects in the HF API, so when *repo_type* isn't given
-    explicitly we try "model" first, then fall back to "space" on a
-    RepositoryNotFoundError before giving up.
-
     This uses `huggingface_hub.snapshot_download()` and places the files
     under: {MODEL_CACHE_ROOT|USER_MODELS_BASE_DIR}/user_{id}/{game_type}/model/
 
@@ -275,7 +270,7 @@ def download_model_to_cache(
 
     hf_token = token or _resolve_token(game_model.user)
     cache_dir = dest / ".hf_cache"
-    candidate_types = [repo_type] if repo_type else ["model", "space"]
+    candidate_types = [repo_type] if repo_type else ["model"]
 
     for i, candidate_type in enumerate(candidate_types):
         try:
@@ -316,7 +311,7 @@ def download_model_to_cache(
         # A token was supplied yet the repo still 404s under every type —
         # more likely private/access-denied than a typo.
         return False, (
-            "Repo found but access denied — check the Space/repo is public or "
+            "Repo found but access denied — check the repo is public or "
             "your HF token has access"
         ), None
     return False, f"Repository '{repo_id}' was not found on Hugging Face (tried: {', '.join(candidate_types)})", None

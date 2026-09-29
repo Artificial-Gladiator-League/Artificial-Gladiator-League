@@ -1,11 +1,20 @@
 ﻿# ──────────────────────────────────────────────
 # apps/games/predict_chess.py
 #
-# Chess prediction — calls the HF Gradio Space API.
+# Chess prediction — runs the user's model in the Docker sandbox.
 #
 # Priority order:
-#   1. HF Gradio Space (POST /run/predict/ → {"data":["e2e4"]})
-#   2. Random legal move fallback (prefers captures)
+#   1. Docker sandbox (apps.games.local_inference.get_move_local())
+#   2. Random legal move fallback (prefers captures) — UNLESS the model's
+#      last contract check failed (UserGameModel.status == FAILED), in
+#      which case ``None`` is returned so the caller (apps.games.bot_runner)
+#      forfeits the game instead of silently playing random moves on the
+#      user's behalf.
+#
+# SandboxUnavailableError (Docker daemon/image unreachable) is an
+# infrastructure fault and is NOT caught here — it propagates to the
+# caller (apps.games.bot_runner) instead of silently falling back to
+# a random move.
 # ──────────────────────────────────────────────
 from __future__ import annotations
 
@@ -14,80 +23,25 @@ import random
 import time as _time
 
 import chess
-import requests
 
 from apps.games.chess_engine import is_legal_move
 
 log = logging.getLogger(__name__)
 
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Space URL resolution
+#  Repo → UserGameModel resolution
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-_SUBMIT_TIMEOUT = 5    # the submit step should be near-instant if the Space is awake
-_STREAM_TIMEOUT = 20   # actual inference can legitimately take longer
-_GRADIO_FN = "get_move"      # Gradio named endpoint exposed by the Space
-
-# Reused across calls so repeat requests to the same Space keep the
-# underlying TCP/TLS connection alive instead of re-handshaking every move.
-_session = requests.Session()
-
-# Fallback map for known repos whose Space URL can't be derived automatically.
-# The Space owner/name on HF need not match the model repo owner/name.
-# Store the explicit URL in UserGameModel.hf_inference_endpoint_url to override.
-_KNOWN_SPACE_URLS: dict[str, str] = {
-    "typical-cyber/chess-model": "https://typical-cyber-typical-cyber.hf.space",
-    "test1978/chess-model":      "https://typical-cyber-typical-cyber.hf.space",
-}
-
-
-def _space_url_for(hf_repo_id: str) -> str:
-    """Return the Gradio Space *base* URL for *hf_repo_id*.
-
-    Resolution order:
-      1. UserGameModel.hf_inference_endpoint_url  (explicit DB override)
-      2. _KNOWN_SPACE_URLS  (static fallback map)
-      3. CHESS_SPACE_URL Django setting
-      4. Last-resort hard-coded default
-    """
+def _game_model_for_repo(hf_repo_id: str):
+    """Look up the owning UserGameModel for a chess repo, or None if unregistered."""
     try:
         from apps.users.models import UserGameModel
-        ugm = UserGameModel.objects.filter(
+        return UserGameModel.objects.filter(
             hf_model_repo_id=hf_repo_id, game_type="chess",
-        ).select_related("user").first()
-
-        if ugm:
-            log.info(
-                "UGM fields: django_user=%s endpoint_name=%r endpoint_status=%r repo=%s",
-                ugm.user.username,
-                ugm.hf_inference_endpoint_name,
-                ugm.hf_inference_endpoint_status,
-                hf_repo_id,
-            )
-            if ugm.hf_inference_endpoint_url:
-                url = ugm.hf_inference_endpoint_url.rstrip("/")
-                log.info("Using explicit endpoint URL from DB: %s", url)
-                return url
-
+        ).first()
     except Exception:
         log.exception("Failed to look up UGM for repo=%s", hf_repo_id)
-
-    if hf_repo_id in _KNOWN_SPACE_URLS:
-        url = _KNOWN_SPACE_URLS[hf_repo_id]
-        log.info("Using known Space URL for %s: %s", hf_repo_id, url)
-        return url
-
-    try:
-        from django.conf import settings
-        url = getattr(settings, "CHESS_SPACE_URL", None)
-        if url:
-            log.warning("Using CHESS_SPACE_URL setting fallback: %s", url)
-            return url.rstrip("/")
-    except Exception:
-        pass
-
-    default = "https://typical-cyber-typical-cyber.hf.space"
-    log.warning("Using hard-coded Space URL fallback: %s", default)
-    return default
+        return None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -98,16 +52,15 @@ def get_move(
     player: str,
     hf_repo_id: str,
     hf_token: str | None = None,
-    *,
-    space_url: str | None = None,
-) -> tuple[str, float]:
+) -> tuple[str | None, float]:
     """Return ``(uci_move, latency_seconds)`` for the given position.
 
-    Calls the Gradio Space for ``hf_repo_id`` via
-    ``POST <space_url>/run/predict`` with ``{"data": [fen, player, "mcvs"]}``
-    and extracts the move from ``response["data"][0]``.
-    Falls back to a random legal move if the Space is unreachable or returns
-    an invalid move.
+    Runs the user's model in the Docker sandbox via
+    ``apps.games.local_inference.get_move_local()``. Falls back to a
+    random legal move if the sandbox ran but returned no valid move —
+    unless the model's last contract check failed, in which case
+    ``uci_move`` is ``None`` so the caller forfeits instead of playing on
+    the user's behalf with random moves.
 
     Parameters
     ----------
@@ -116,11 +69,9 @@ def get_move(
     player:
         ``'w'`` or ``'b'``.
     hf_repo_id:
-        The user's HuggingFace model repository (used to resolve Space URL).
+        The user's registered model repository (used to resolve user_id).
     hf_token:
-        Optional HF token forwarded as a Bearer header.
-    space_url:
-        Override the Space base URL (skips repo → Space lookup).
+        Unused (kept for call-site compatibility).
     """
     _t0 = _time.monotonic()
 
@@ -133,114 +84,39 @@ def get_move(
 
     log.info("get_move: fen=%.60s player=%s repo=%s", fen, player, hf_repo_id)
 
-    # ── Priority 1: Gradio Space API ──
-    base_url = space_url or _space_url_for(hf_repo_id)
-    move = _try_space_api(base_url, fen, board, token=hf_token)
-    if move:
+    # ── Priority 1: Docker sandbox ──
+    from apps.games.local_inference import get_move_local
+
+    game_model = _game_model_for_repo(hf_repo_id)
+    user_id = game_model.user_id if game_model is not None else None
+    if user_id is not None:
+        move = get_move_local(user_id, "chess", fen, player, repo_id=hf_repo_id)
+        if move and is_legal_move(board, move):
+            latency = _time.monotonic() - _t0
+            log.info("[OK] Sandbox move: %s (%.2fs) repo=%s", move, latency, hf_repo_id)
+            return move, latency
+        if move:
+            log.warning(
+                "Sandbox returned illegal move %r for FEN=%s repo=%s",
+                move, fen, hf_repo_id,
+            )
+    else:
+        log.warning("No UserGameModel registered for repo=%s (chess)", hf_repo_id)
+
+    # A model whose contract check failed must not be quietly replaced by
+    # random moves — return None so the caller forfeits the game.
+    if game_model is not None and game_model.status == game_model.ContractStatus.FAILED:
         latency = _time.monotonic() - _t0
-        log.info("[OK] Space move: %s (%.2fs) repo=%s", move, latency, hf_repo_id)
-        return move, latency
+        log.warning(
+            "Model status=FAILED for repo=%s — refusing random fallback, forfeiting", hf_repo_id,
+        )
+        return None, latency
 
     # ── Priority 2: random legal move ──
     move = _random_legal_move(board)
     latency = _time.monotonic() - _t0
     log.warning("Random fallback move: %s (%.2fs) repo=%s", move, latency, hf_repo_id)
     return move, latency
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Gradio 4 two-step SSE call
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def _try_space_api(
-    base_url: str,
-    fen: str,
-    board: chess.Board,
-    *,
-    token: str | None = None,
-) -> str | None:
-    """Call the Gradio 4 Space API and return a validated legal UCI move, or None.
-
-    Gradio 4 uses a two-step pattern:
-      1. POST ``/gradio_api/call/{fn}``  → ``{"event_id": "..."}``
-      2. GET  ``/gradio_api/call/{fn}/{event_id}``  (SSE) → ``data: ["e2e4"]``
-
-    Payload for step 1: ``{"data": [fen]}``  (Space exposes a single FEN input)
-    """
-    base = base_url.rstrip("/")
-    submit_url = f"{base}/gradio_api/call/{_GRADIO_FN}"
-    headers: dict[str, str] = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-
-    try:
-        # Step 1 — submit
-        _t_submit0 = _time.monotonic()
-        resp = _session.post(
-            submit_url,
-            json={"data": [fen]},
-            headers=headers,
-            timeout=_SUBMIT_TIMEOUT,
-        )
-        resp.raise_for_status()
-        content_type = resp.headers.get("content-type", "")
-        if "application/json" not in content_type:
-            log.warning("Space appears asleep/booting (non-JSON response, url=%s)", submit_url)
-            return None
-        event_id = resp.json().get("event_id")
-        _t_submit = _time.monotonic() - _t_submit0
-        if not event_id:
-            log.warning("Space submit returned no event_id (url=%s)", submit_url)
-            return None
-
-        # Step 2 — stream result
-        result_url = f"{base}/gradio_api/call/{_GRADIO_FN}/{event_id}"
-        log.info("Calling: %s", submit_url)
-        _t_stream0 = _time.monotonic()
-        stream = _session.get(result_url, stream=True, timeout=_STREAM_TIMEOUT)
-        stream.raise_for_status()
-
-        move_str: str | None = None
-        complete_seen = False
-        error_seen = False
-        for raw_line in stream.iter_lines():
-            if not raw_line:
-                continue
-            line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else raw_line
-            if line.startswith("event: error"):
-                error_seen = True
-            elif line.startswith("event: complete"):
-                complete_seen = True
-            elif line.startswith("data:"):
-                payload = line[len("data:"):].strip()
-                try:
-                    data = __import__("json").loads(payload)
-                    if isinstance(data, list) and data:
-                        move_str = str(data[0]).strip()
-                except Exception:
-                    pass
-                # data line follows its event line — stop after reading it
-                if complete_seen or error_seen:
-                    break
-
-        _t_stream = _time.monotonic() - _t_stream0
-        log.info("[timing] submit=%.2fs stream=%.2fs url=%s", _t_submit, _t_stream, base_url)
-
-        if not move_str:
-            log.warning("Space SSE returned no move for FEN=%s url=%s", fen, base_url)
-            return None
-
-        if is_legal_move(board, move_str):
-            return move_str
-
-        log.warning(
-            "Space returned illegal move %r for FEN=%s url=%s",
-            move_str, fen, base_url,
-        )
-    except requests.exceptions.RequestException as exc:
-        log.warning("Space API call failed (url=%s): %s", base_url, exc)
-    except Exception:
-        log.exception("Unexpected error in _try_space_api (url=%s)", base_url)
-    return None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -255,3 +131,4 @@ def _random_legal_move(board: chess.Board) -> str:
     if captures:
         return random.choice(captures).uci()
     return random.choice(legal).uci()
+

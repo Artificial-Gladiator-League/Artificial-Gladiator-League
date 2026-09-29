@@ -192,31 +192,6 @@ class CustomUser(AbstractUser):
         help_text="False = model changed or needs re-validation. Blocks rated/tournament play.",
     )
 
-    # ── "Test My Space" self-service verification ──
-    class SpaceStatus(models.TextChoices):
-        UNVERIFIED = "unverified", "Unverified"
-        OK = "ok", "OK"
-        COLD_START = "cold_start", "Cold start"
-        UNREACHABLE = "unreachable", "Unreachable"
-        BAD_RESPONSE = "bad_response", "Bad response"
-
-    space_status = models.CharField(
-        max_length=20,
-        choices=SpaceStatus.choices,
-        default=SpaceStatus.UNVERIFIED,
-        help_text="Result of the user's last 'Test My Space' get_move probe.",
-    )
-    space_last_verified_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Timestamp of the last successful Space probe (status='ok').",
-    )
-    space_last_latency_ms = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Round-trip latency (ms) measured during the last Space probe.",
-    )
-
     # ── PayPal payout email ──────────────────────
     paypal_email = models.EmailField(
         max_length=254,
@@ -227,6 +202,8 @@ class CustomUser(AbstractUser):
             "Set by the user in their profile. Never used as a login credential."
         ),
     )
+
+    is_official_bot = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-elo"]
@@ -445,36 +422,6 @@ class UserGameModel(models.Model):
         help_text="Timestamp when the model was locked after reaching the game threshold.",
     )
 
-    # ── Inference Endpoint (deprecated — kept for migration compat) ──
-    hf_inference_endpoint_url = models.URLField(
-        max_length=500,
-        blank=True,
-        help_text="DEPRECATED. Kept for backwards compatibility.",
-    )
-    hf_inference_endpoint_name = models.CharField(
-        max_length=120,
-        blank=True,
-        help_text="DEPRECATED. Kept for backwards compatibility.",
-    )
-
-    # Add hf_inference_endpoint_id for compatibility with DB
-    hf_inference_endpoint_id = models.CharField(
-        max_length=120,
-        blank=True,
-        null=True,
-        default="",
-        help_text="HF Inference Endpoint ID (for compatibility with DB, can be blank)",
-    )
-
-    # Add hf_inference_endpoint_status to avoid DB IntegrityError when column exists
-    hf_inference_endpoint_status = models.CharField(
-        max_length=40,
-        blank=True,
-        null=True,
-        default="",
-        help_text="HF Inference Endpoint status (compatibility field, can be blank)",
-    )
-
     # ── Docker sandbox verification ────────────
     class VerificationStatus(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -517,6 +464,36 @@ class UserGameModel(models.Model):
         help_text="Commit SHA corresponding to the cached snapshot.",
     )
 
+    # ── User-code contract check (apps.games.model_check.check_model) ──
+    # Only a SHA whose check passes (status=ACTIVE) may be used in games.
+    class ContractStatus(models.TextChoices):
+        PENDING = "pending", "Pending"
+        ACTIVE = "active", "Active"
+        FAILED = "failed", "Failed"
+
+    status = models.CharField(
+        max_length=20,
+        choices=ContractStatus.choices,
+        default=ContractStatus.PENDING,
+        help_text="Result of the last model_check.check_model() contract check.",
+    )
+    last_error = models.TextField(
+        blank=True,
+        default="",
+        help_text="Human-readable problems from the last check_model() run.",
+    )
+
+    # ── Sandbox runtime errors (surfaced to the model owner) ────
+    last_sandbox_error = models.TextField(
+        blank=True, default="",
+        help_text="Most recent Docker sandbox error for this model (e.g. missing "
+                  "data file). Cleared automatically after a successful move.",
+    )
+    last_sandbox_error_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Timestamp of the most recent sandbox error.",
+    )
+
     # ── Submission identity ─────────────────────
     submission_repo_type = models.CharField(
         max_length=20, blank=True, default="model",
@@ -549,18 +526,6 @@ class UserGameModel(models.Model):
         max_length=64, blank=True, default="",
         help_text="SHA of the incoming data repo when a change is detected.",
     )
-    approved_space_sha = models.CharField(
-        max_length=64, blank=True, default="",
-        help_text="Exact immutable HF Space commit SHA approved at submission.",
-    )
-    current_space_sha = models.CharField(
-        max_length=64, blank=True, default="",
-        help_text="SHA of the HF Space repo at the time it was last verified/approved.",
-    )
-    new_space_sha = models.CharField(
-        max_length=64, blank=True, default="",
-        help_text="SHA of the incoming HF Space repo when a change is detected.",
-    )
     pinned_at = models.DateTimeField(null=True, blank=True)
 
     # ── Proof-of-Ownership verification ─────────
@@ -572,10 +537,6 @@ class UserGameModel(models.Model):
     model_repo_ownership_verified = models.BooleanField(
         default=False,
         help_text="True when AGL_VERIFY.txt in the model repo matches the verification code.",
-    )
-    space_ownership_verified = models.BooleanField(
-        default=False,
-        help_text="True when AGL_VERIFY.txt in the HF Space repo matches the verification code.",
     )
     data_repo_ownership_verified = models.BooleanField(
         default=False,

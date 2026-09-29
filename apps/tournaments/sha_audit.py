@@ -208,8 +208,8 @@ def capture_round_baseline(tournament, round_num: int) -> int:
             except Exception:
                 log.debug("Could not persist last_known_commit_id", exc_info=True)
 
-        # Pin live data-repo and HF Space SHAs too, so the registration-period
-        # audit compares against these registration-time baselines instead of a
+        # Pin live data-repo SHA too, so the registration-period
+        # audit compares against this registration-time baseline instead of a
         # potentially stale approved SHA.
         _token = _get_stored_token(p.user) or ""
         _ref = (gm.submitted_ref or "main").strip() or "main"
@@ -223,29 +223,12 @@ def capture_round_baseline(tournament, round_num: int) -> int:
                 data_live = None
             if data_live:
                 p.registered_data_repo_sha = data_live
-        from apps.users.ownership_verification import resolve_space_repo_sha
-        try:
-            _space_repo_id, space_live = resolve_space_repo_sha(
-                gm.hf_inference_endpoint_url, _token, ref=_ref,
-            )
-        except Exception:
-            space_live = None
-        if space_live:
-            p.registered_space_sha = space_live
-            # Backfill the model's approved Space baseline so the profile can
-            # show the Space Primary SHA and the audit always has a fallback.
-            if not (gm.approved_space_sha or "").strip():
-                try:
-                    gm.approved_space_sha = space_live
-                    gm.save(update_fields=["approved_space_sha"])
-                except Exception:
-                    log.debug("Could not persist approved_space_sha", exc_info=True)
 
         p.round_pinned_sha = baseline
         p.round_pinned_at = now
         p.save(update_fields=[
             "round_pinned_sha", "round_pinned_at",
-            "registered_data_repo_sha", "registered_space_sha",
+            "registered_data_repo_sha",
         ])
         count += 1
 
@@ -408,8 +391,8 @@ def perform_sha_check(
     # prior mismatch). The pinned SHA is the single source of truth
     # for whether the model changed during this round.
     if current == expected:
-        # Model repo is unchanged — now verify the HF Space and data repo
-        # against their round-registered baselines before declaring PASS.
+        # Model repo is unchanged — now verify the data repo
+        # against its round-registered baseline before declaring PASS.
         from apps.users.integrity import _get_stored_token
         _token = _get_stored_token(user) or ""
         _ref = (gm.submitted_ref or "main").strip() or "main"
@@ -503,7 +486,7 @@ def perform_sha_check(
 
 
 # ──────────────────────────────────────────────
-#  Space + data-repo runtime SHA check
+#  Data-repo runtime SHA check
 # ──────────────────────────────────────────────
 def _check_extra_repos(
     *,
@@ -516,12 +499,12 @@ def _check_extra_repos(
     token: str,
     ref: str,
 ):
-    """Verify the HF Space and data-repo SHAs against their round baselines.
+    """Verify the data-repo SHA against its round baseline.
 
     Mirrors the model-repo mismatch handling: on a mismatch a FAIL
     ``TournamentShaCheck`` row is created, the same banner/summary style
     is emitted, and ``_react_to_mismatch`` disqualifies the participant
-    with a reason containing the literal ``"space"`` / ``"data repo"``
+    with a reason containing the literal ``"data repo"``
     substring required by ``disqualify_for_repo_change``.
 
     HF-unreachable lookups are recorded as ERROR (fail-open) and never
@@ -530,17 +513,9 @@ def _check_extra_repos(
     """
     from apps.tournaments.models import TournamentShaCheck
     from apps.users.integrity import _resolve_ref_sha
-    from apps.users.ownership_verification import resolve_space_repo_id
 
     user = participant.user
     checks = (
-        (
-            resolve_space_repo_id(gm.hf_inference_endpoint_url),
-            "space",
-            (participant.registered_space_sha or "").strip(),
-            "Space",
-            "space",
-        ),
         (
             (gm.hf_data_repo_id or "").strip(),
             "dataset",
@@ -696,8 +671,8 @@ def _react_to_mismatch(
     is_qa = tournament.type == tournament.Type.QA
 
     # reason defaults to the model-repo wording; callers checking the
-    # Space or data repo pass a reason containing the literal "space" /
-    # "data repo" so disqualify_for_repo_change rolls the right SHA fields.
+    # data repo pass a reason containing the literal "data repo" so
+    # disqualify_for_repo_change rolls the right SHA fields.
     if reason is None:
         reason = (
             f"Anti-cheat SHA mismatch in round {round_num}: "

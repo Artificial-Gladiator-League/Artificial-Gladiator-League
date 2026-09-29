@@ -364,7 +364,6 @@ def validate_hf_repo(repo_id: str, repo_type: str = "model") -> None:
 
     - repo_type="model": must exist and be GATED (access-requests enabled).
     - repo_type="dataset": must exist and be PUBLIC (readable anonymously).
-    - repo_type="space": only existence is checked (Spaces are public by default).
 
     Raises ``django.core.exceptions.ValidationError`` with a single clean,
     user-facing message on failure. Returns ``None`` on success.
@@ -373,21 +372,14 @@ def validate_hf_repo(repo_id: str, repo_type: str = "model") -> None:
         log.warning("huggingface_hub not installed — skipping HF validation for %s", repo_id)
         return
 
-    if repo_type == "space":
-        not_found_hint = "make sure the Space exists"
-    elif repo_type == "dataset":
+    if repo_type == "dataset":
         not_found_hint = "make sure it is public"
     else:
         not_found_hint = "make sure it is gated"
 
     api = HfApi()
     try:
-        if repo_type in ("model", "dataset"):
-            info = api.repo_info(repo_id, repo_type=repo_type, expand=["gated"], token=False)
-        else:
-            # Spaces have no gating concept — expand=["gated"] causes HF's API
-            # to error out, so only existence is checked here.
-            info = api.repo_info(repo_id, repo_type=repo_type, token=False)
+        info = api.repo_info(repo_id, repo_type=repo_type, expand=["gated"], token=False)
     except RepositoryNotFoundError:
         raise ValidationError(
             f"Repository '{repo_id}' was not found on Hugging Face. "
@@ -399,7 +391,7 @@ def validate_hf_repo(repo_id: str, repo_type: str = "model") -> None:
                 f"Repository '{repo_id}' is gated. Your data repo must be set to "
                 "public on Hugging Face so it can be read anonymously."
             )
-        return  # model/space: anonymous call blocked → gated, as required
+        return  # model: anonymous call blocked → gated, as required
     except HfHubHTTPError as exc:
         response = getattr(exc, "response", None)
         log.warning(
@@ -492,48 +484,6 @@ def _check_data_repo(data_repo_id: str):
         return exc.messages[0]
     except Exception as exc:
         log.warning("Unexpected error validating data repo %s: %s", data_repo_id, exc)
-        return None  # fail open so a transient error doesn't permanently block submission
-
-
-_SPACE_PAGE_URL_RE = r'^https://huggingface\.co/spaces/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+)/?$'
-
-
-def _parse_space_page_url(raw: str) -> "tuple[str, str] | None":
-    """Parse the HF Space page URL into (owner, space_name).
-
-    Only accepts the form https://huggingface.co/spaces/{owner}/{space-name}
-    (the canonical HF page URL for a Space). Returns None if *raw* doesn't
-    match this shape.
-    """
-    import re
-
-    m = re.match(_SPACE_PAGE_URL_RE, raw.strip())
-    if not m:
-        return None
-    return m.group(1), m.group(2)
-
-
-def _derive_space_runtime_url(owner: str, space_name: str) -> str:
-    """Build the public runtime (Gradio) URL used to actually probe a Space.
-
-    HF subdomains are ``{owner}-{space_name}`` lowercased, with underscores
-    replaced by hyphens.
-    """
-    subdomain = f"{owner}-{space_name}".lower().replace('_', '-')
-    return f"https://{subdomain}.hf.space"
-
-
-def _check_space_exists(owner: str, space_name: str):
-    """Return an error string if the HF Space {owner}/{space_name} cannot be found. None on success."""
-    if not _HF_AVAILABLE:
-        return None
-    try:
-        validate_hf_repo(f"{owner}/{space_name}", repo_type="space")
-        return None
-    except ValidationError as exc:
-        return exc.messages[0]
-    except Exception as exc:
-        log.warning("Unexpected error validating Space %s/%s: %s", owner, space_name, exc)
         return None  # fail open so a transient error doesn't permanently block submission
 
 
@@ -1364,7 +1314,6 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         game_type = request.POST.get("game_type", "").strip()
         repo_id = request.POST.get("hf_model_repo_id", "").strip()
         data_repo_id = request.POST.get("hf_data_repo_id", "").strip()
-        hf_space_url = request.POST.get("hf_space_url", "").strip().rstrip("/")
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
@@ -1391,6 +1340,40 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 ok, msg = check_full_ownership(gm)
                 if ok:
                     messages.success(request, msg)
+
+                    # Run the real contract check now instead of waiting for a
+                    # tournament join, so the user gets pass/fail feedback right away.
+                    from apps.users.integrity import _get_stored_token, record_original_sha
+                    from apps.games.model_preloader import ensure_hf_snapshot
+
+                    label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
+                    token = _get_stored_token(request.user)
+                    if token:
+                        # Contract check runs against local files — make sure a
+                        # cache snapshot actually exists for a brand-new repo.
+                        ensure_hf_snapshot(gm)
+                        record_original_sha(gm, token)
+                        gm.refresh_from_db()
+                        if gm.status == UserGameModel.ContractStatus.ACTIVE:
+                            messages.success(
+                                request,
+                                f"{label} model check passed — your model is "
+                                "contract-compliant and active.",
+                            )
+                        elif gm.status == UserGameModel.ContractStatus.FAILED:
+                            messages.error(
+                                request,
+                                f"{label} model check FAILED: "
+                                f"{gm.last_error or 'see logs for details.'}",
+                            )
+                    else:
+                        messages.info(
+                            request,
+                            f"{label} ownership verified, but no Hugging Face token "
+                            "is available yet to run the automated model check. It "
+                            "will run automatically the first time you join a "
+                            "tournament, or during daily revalidation.",
+                        )
                 else:
                     messages.error(request, msg)
             return redirect("users:profile")
@@ -1402,18 +1385,10 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             messages.error(request, _shape_err)
         elif data_repo_id and not _re.match(r'^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$', data_repo_id):
             messages.error(request, "Invalid data repo ID format (e.g. 'YourName/breakthrough-data' or 'YourName/chess-data').")
-        elif hf_space_url and (_space_parts := _parse_space_page_url(hf_space_url)) is None:
-            messages.error(
-                request,
-                f"Invalid Space URL '{hf_space_url}'. Expected format: "
-                "https://huggingface.co/spaces/{owner}/{space-name}",
-            )
         elif (_gated_err := _check_repo_is_gated(repo_id)) is not None:
             messages.error(request, _gated_err)
         elif data_repo_id and (_data_err := _check_data_repo(data_repo_id)) is not None:
             messages.error(request, _data_err)
-        elif hf_space_url and (_space_err := _check_space_exists(*_space_parts)) is not None:
-            messages.error(request, _space_err)
         else:
             dup = UserGameModel.objects.filter(
                 hf_model_repo_id=repo_id,
@@ -1439,16 +1414,6 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         "is_verified", "verification_code",
                     ])
 
-                # ── HF Space URL: derive the runtime probe URL and save with pending status ──
-                if hf_space_url:
-                    hf_space_url = _derive_space_runtime_url(*_space_parts)
-                    UserGameModel.objects.filter(pk=gm.pk).update(
-                        hf_inference_endpoint_url=hf_space_url,
-                        hf_inference_endpoint_status="pending",
-                    )
-                    gm.hf_inference_endpoint_url = hf_space_url
-                    gm.hf_inference_endpoint_status = "pending"
-
                 label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
                 if gm.is_verified:
                     # Repo unchanged and already verified — just confirm, no code reset
@@ -1456,10 +1421,6 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 else:
                     # New repo or repo changed — issue a challenge code
                     code = generate_verification_code(gm)
-                    space_note = (
-                        f" Also add '{VERIFY_FILENAME}' to the root of your HF Space repo with the same code."
-                        if hf_space_url else ""
-                    )
                     data_note = (
                         f" And add '{VERIFY_FILENAME}' to the root of your data repo ({data_repo_id}) with the same code."
                         if data_repo_id else ""
@@ -1467,7 +1428,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                     messages.info(
                         request,
                         f"{label} repo saved. To prove ownership, create '{VERIFY_FILENAME}' "
-                        f"at the root of {repo_id} containing exactly: {code}.{space_note}{data_note} "
+                        f"at the root of {repo_id} containing exactly: {code}.{data_note} "
                         "Then click 'Verify Ownership'.",
                     )
 

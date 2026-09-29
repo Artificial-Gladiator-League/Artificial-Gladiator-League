@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Unprivileged user so untrusted code doesn't run as root
+RUN useradd --create-home --uid 10001 sandbox
+
+WORKDIR /sandbox
+
+# Libraries the submitted models are allowed to use.
+# Adjust this list to match what your models actually import.
+RUN pip install --no-cache-dir numpy python-chess \
+    && pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+USER sandbox
+
+# The host mounts the model code and passes the command to run
+CMD ["python", "--version"]

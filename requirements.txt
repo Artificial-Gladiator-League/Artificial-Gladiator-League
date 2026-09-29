@@ -21,6 +21,11 @@ python-chess>=1.10,<2.0
 # AI / deep learning — models run in Docker sandbox on the VPS.
 # torch is not required on the server.
 
+# Docker SDK for Python — launches the isolated sandbox containers
+# used to run user model inference. Requires Docker installed on the
+# host (or the Docker socket mounted, if this app itself runs in a container).
+docker>=7.0,<8.0
+
 # Hugging Face model hub (gated-repo validation & download)
 huggingface-hub>=0.20,<1.0
 

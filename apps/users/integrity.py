@@ -307,61 +307,102 @@ def record_original_sha(
 ) -> None:
     """Pin the model's approved revision at submission time.
 
-    Resolves *ref* to an exact SHA and stores the full submission
-    identity on the UserGameModel record.
+    Resolves *ref* to an exact SHA, runs the fixed contract check
+    (``apps.games.model_check.check_model``) against the model's committed
+    files, and only pins + activates the SHA if the check passes — "Only a
+    passing SHA becomes active." On failure, the previous pin (if any) is
+    left untouched and ``status``/``last_error`` are updated so the owner
+    can see what's wrong.
+
+    ``SandboxUnavailableError`` (Docker daemon down, image missing, etc.) is
+    an infrastructure fault, not a model-quality problem: it is logged and
+    the pin is skipped for this attempt, but ``status``/``last_error`` are
+    NOT changed, since we don't yet know whether the model itself is good.
     """
     repo_id = game_model.hf_model_repo_id
     sha = _resolve_ref_sha(repo_id, hf_token, ref=ref, repo_type=repo_type)
-    if sha:
-        now = timezone.now()
-        game_model.original_model_commit_sha = sha
-        game_model.last_known_commit_id = sha
-        game_model.last_model_validation_date = now.date()
-        game_model.model_integrity_ok = True
-        game_model.submission_repo_type = repo_type
-        game_model.submitted_ref = ref
-        game_model.approved_full_sha = sha
-        # Pin data-repo and HF Space baselines alongside the model repo so
-        # the registration-period audit has a baseline to compare against.
-        data_repo_id = (game_model.hf_data_repo_id or "").strip()
-        if data_repo_id:
-            data_sha = _resolve_ref_sha(data_repo_id, hf_token, ref=ref, repo_type="dataset")
-            if data_sha:
-                game_model.approved_data_repo_sha = data_sha
-        space_repo = (game_model.hf_inference_endpoint_url or "").strip()
-        if space_repo:
-            from apps.users.ownership_verification import resolve_space_repo_sha
-            _space_repo_id, space_sha = resolve_space_repo_sha(space_repo, hf_token, ref=ref)
-            if space_sha:
-                game_model.approved_space_sha = space_sha
-        game_model.pinned_at = now
-        game_model.rated_games_since_revalidation = 0
-        game_model.save(update_fields=[
-            "original_model_commit_sha",
-            "last_known_commit_id",
-            "last_model_validation_date",
-            "model_integrity_ok",
-            "submission_repo_type",
-            "submitted_ref",
-            "approved_full_sha",
-            "approved_data_repo_sha",
-            "approved_space_sha",
-            "pinned_at",
-            "rated_games_since_revalidation",
-        ])
-        log.info("Pinned approved revision for %s/%s: %s@%s → %s",
-                 game_model.user.username, game_model.game_type,
-                 repo_id, ref, sha[:12])
+    if not sha:
+        return
+
+    from apps.games.exceptions import SandboxUnavailableError
+    from apps.games.local_inference import resolve_model_path
+    from apps.games.model_check import check_model
+
+    model_dir, data_dir = resolve_model_path(
+        game_model.user_id, game_model.game_type, repo_id=repo_id,
+        data_repo_id=(game_model.hf_data_repo_id or "").strip() or None,
+    )
+    if model_dir is None:
+        problems = [
+            f"No local model files found for user={game_model.user_id} "
+            f"game={game_model.game_type}"
+        ]
+    else:
+        try:
+            problems = check_model(model_dir, data_dir, game_model.game_type)
+        except SandboxUnavailableError as exc:
+            log.error(
+                "Contract check unavailable while pinning %s/%s: %s",
+                game_model.user.username, game_model.game_type, exc,
+            )
+            return
+
+    if problems:
+        game_model.status = game_model.ContractStatus.FAILED
+        game_model.last_error = "; ".join(problems)
+        game_model.save(update_fields=["status", "last_error"])
+        log.warning(
+            "Contract check failed for %s/%s @ %s — not pinning: %s",
+            game_model.user.username, game_model.game_type, sha[:12], game_model.last_error,
+        )
+        return
+
+    now = timezone.now()
+    game_model.original_model_commit_sha = sha
+    game_model.last_known_commit_id = sha
+    game_model.last_model_validation_date = now.date()
+    game_model.model_integrity_ok = True
+    game_model.submission_repo_type = repo_type
+    game_model.submitted_ref = ref
+    game_model.approved_full_sha = sha
+    game_model.status = game_model.ContractStatus.ACTIVE
+    game_model.last_error = ""
+    # Pin data-repo baseline alongside the model repo so the
+    # registration-period audit has a baseline to compare against.
+    data_repo_id = (game_model.hf_data_repo_id or "").strip()
+    if data_repo_id:
+        data_sha = _resolve_ref_sha(data_repo_id, hf_token, ref=ref, repo_type="dataset")
+        if data_sha:
+            game_model.approved_data_repo_sha = data_sha
+    game_model.pinned_at = now
+    game_model.rated_games_since_revalidation = 0
+    game_model.save(update_fields=[
+        "original_model_commit_sha",
+        "last_known_commit_id",
+        "last_model_validation_date",
+        "model_integrity_ok",
+        "submission_repo_type",
+        "submitted_ref",
+        "approved_full_sha",
+        "approved_data_repo_sha",
+        "pinned_at",
+        "rated_games_since_revalidation",
+        "status",
+        "last_error",
+    ])
+    log.info("Pinned approved revision for %s/%s: %s@%s -> %s",
+             game_model.user.username, game_model.game_type,
+             repo_id, ref, sha[:12])
 
 
 def _sync_secondary_repo_shas(
     game_model: UserGameModel, fresh_token: str, ref: str = "main"
 ) -> None:
-    """Roll data-repo / HF-Space revision SHAs when their repos change.
+    """Roll data-repo revision SHAs when the data repo changes.
 
     Mirrors the model-repo revision tracking so the profile page can surface
-    "before change" / "new/pending" SHAs for the data and Space repos too,
-    for every game type. Best-effort: never raises.
+    "before change" / "new/pending" SHAs for the data repo too, for every
+    game type. Best-effort: never raises.
     """
     changed_fields: list[str] = []
 
@@ -384,30 +425,6 @@ def _sync_secondary_repo_shas(
                 game_model.current_data_repo_sha = ""
                 game_model.new_data_repo_sha = ""
                 changed_fields += ["current_data_repo_sha", "new_data_repo_sha"]
-
-    # ── HF Space repo ───────────────────────────
-    # hf_inference_endpoint_url stores a full URL; resolve it to a bare
-    # owner/name repo id (as the Space SHA backfill does) before querying HF.
-    space_url = (game_model.hf_inference_endpoint_url or "").strip()
-    approved_space = (game_model.approved_space_sha or "").strip()
-    if space_url and approved_space:
-        from apps.users.ownership_verification import resolve_space_repo_id
-        space_repo_id = resolve_space_repo_id(space_url)
-        current_space = _resolve_ref_sha(
-            space_repo_id, fresh_token, ref=ref, repo_type="space"
-        )
-        if current_space is not None:
-            if current_space != approved_space:
-                if game_model.current_space_sha != approved_space:
-                    game_model.current_space_sha = approved_space
-                    changed_fields.append("current_space_sha")
-                if game_model.new_space_sha != current_space:
-                    game_model.new_space_sha = current_space
-                    changed_fields.append("new_space_sha")
-            elif game_model.current_space_sha or game_model.new_space_sha:
-                game_model.current_space_sha = ""
-                game_model.new_space_sha = ""
-                changed_fields += ["current_space_sha", "new_space_sha"]
 
     if changed_fields:
         game_model.save(update_fields=list(set(changed_fields)))
@@ -451,8 +468,8 @@ def validate_model_integrity(
                  game_model.user.username, game_model.game_type, current_sha[:12])
         return True, "Model verified and pinned successfully. You're cleared for today."
 
-    # Track data-repo / HF-Space revision changes independently of the model
-    # repo so the profile surfaces "before change" / "new/pending" SHAs there.
+    # Track data-repo revision changes independently of the model repo so
+    # the profile surfaces "before change" / "new/pending" SHAs there.
     _sync_secondary_repo_shas(game_model, fresh_token, ref)
 
     # Revision changed → new revision available

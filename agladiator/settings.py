@@ -155,8 +155,11 @@ ALLOW_PER_MOVE_DOWNLOADS = os.environ.get("ALLOW_PER_MOVE_DOWNLOADS", "False").l
 
 # Python binary used for local (non-Docker) sandbox fallback.
 SANDBOX_PYTHON_BIN = os.environ.get("SANDBOX_PYTHON_BIN", sys.executable)
-# Enable safe local process fallback when Docker is unavailable (default True).
-SANDBOX_ENABLE_LOCAL_FALLBACK = os.environ.get("SANDBOX_ENABLE_LOCAL_FALLBACK", "True").lower() in ("true", "1", "yes")
+# Enable safe local process fallback when Docker is unavailable.
+# Default False: inference is Docker-sandbox-only. Docker being unreachable
+# raises SandboxUnavailableError instead of silently degrading to a
+# less-isolated local process.
+SANDBOX_ENABLE_LOCAL_FALLBACK = os.environ.get("SANDBOX_ENABLE_LOCAL_FALLBACK", "False").lower() in ("true", "1", "yes")
 
 CHANNEL_LAYERS = {
     "default": {
@@ -320,6 +323,15 @@ SANDBOX_MOVE_TIMEOUT = int(os.environ.get("SANDBOX_MOVE_TIMEOUT", "30"))
 # Timeout (seconds) for the full verification pipeline
 # (download + scan + sandbox test positions).
 SANDBOX_VERIFY_TIMEOUT = int(os.environ.get("SANDBOX_VERIFY_TIMEOUT", "300"))
+
+# Memory limit (MB) for each sandbox container.
+SANDBOX_MEMORY_LIMIT_MB = int(os.environ.get("SANDBOX_MEMORY_LIMIT_MB", "512"))
+
+# CPU limit (in CPUs, fractional allowed) for each sandbox container.
+SANDBOX_CPU_LIMIT = float(os.environ.get("SANDBOX_CPU_LIMIT", "1.0"))
+
+# Max number of processes/threads allowed inside a sandbox container.
+SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "128"))
 
 # ── Hugging Face OAuth / OpenID Connect ───────
 # Register your app at https://huggingface.co/settings/connected-applications

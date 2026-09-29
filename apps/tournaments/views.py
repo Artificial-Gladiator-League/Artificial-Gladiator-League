@@ -270,7 +270,6 @@ def tournament_detail(request, pk):
                 "fide_abbr": fide["abbr"],
                 "fide_css": fide["css"],
                 "fide_title": fide["title"],
-                "space_status": p.user.space_status,
             })
 
     # If the tournament is ongoing with a live match, get the match id
@@ -376,16 +375,6 @@ def tournament_detail(request, pk):
             else:
                 can_join = True
 
-    # Organizer/staff readiness summary: how many registrants have a verified
-    # ('ok') Space, so the round can be started with confidence.
-    space_summary = None
-    if request.user.is_authenticated and request.user.is_staff:
-        roster = tournament.participants.exclude(disqualified_for_sha_mismatch=True)
-        space_summary = {
-            "verified": roster.filter(user__space_status="ok").count(),
-            "total": roster.count(),
-        }
-
     return render(
         request,
         "tournaments/detail.html",
@@ -404,7 +393,6 @@ def tournament_detail(request, pk):
             "join_blocked_reason": join_blocked_reason,
             "games_remaining": games_remaining,
             "user_is_verified": user_is_verified,
-            "space_summary": space_summary,
             "REVALIDATION_GAMES_REQUIRED": 30,
         },
     )
@@ -644,7 +632,7 @@ def join_tournament(request, pk):
     sha_ok, db_sha, latest_sha = live_sha_check(game_model, context=sha_check_ctx)
     is_qa = tournament.type == Tournament.Type.QA
 
-    # ── Extend the integrity check to the data repo and HF Space repo ──
+    # ── Extend the integrity check to the data repo ──
     # Mirror live_sha_check's comparison: resolve the live SHA and compare
     # it against the approved baseline stored on the game model. Fail open
     # on a missing baseline/repo or a network error so honest users aren't
@@ -680,11 +668,7 @@ def join_tournament(request, pk):
         game_model.hf_data_repo_id, "dataset",
         game_model.approved_data_repo_sha, "data-repo",
     )
-    space_sha_ok = _extra_repo_sha_ok(
-        game_model.hf_inference_endpoint_url, "space",
-        game_model.approved_space_sha, "space-repo",
-    )
-    sha_ok = sha_ok and data_sha_ok and space_sha_ok
+    sha_ok = sha_ok and data_sha_ok
 
     if not sha_ok:
         # Highly visible terminal banner so the operator sees the

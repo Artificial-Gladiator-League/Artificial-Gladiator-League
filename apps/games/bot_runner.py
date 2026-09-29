@@ -53,30 +53,6 @@ def _get_repo_for_user(user, game_type: str) -> str | None:
     return repo
 
 
-def _prewarm_spaces(game_type: str, white_repo: str | None, black_repo: str | None) -> None:
-    """Fire-and-forget GET to each side's Space to kick off wake-up early.
-
-    Called right before the move loop starts so a sleeping HF Space has a
-    head start booting before the first real move is requested. Any
-    failure here is swallowed — this is purely a latency optimization.
-    """
-    import requests
-
-    if game_type == "breakthrough":
-        from apps.games.predict_breakthrough import _space_base_url as _resolve_url
-    else:
-        from apps.games.predict_chess import _space_url_for as _resolve_url
-
-    for repo in (white_repo, black_repo):
-        if not repo:
-            continue
-        try:
-            base_url = _resolve_url(repo)
-            requests.get(base_url, timeout=3)
-        except Exception:
-            log.debug("Pre-warm ping failed for repo=%s", repo, exc_info=True)
-
-
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Move dispatch — routes to the correct predict_*
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -109,14 +85,27 @@ def _get_bot_move(
                      move, elapsed, game_type, hf_repo_id)
             return move, elapsed
     except Exception as exc:
-        # Propagate pre-cache errors so callers fail loudly; otherwise
-        # log and return None for unexpected exceptions.
+        # Propagate pre-cache / sandbox-infra errors so callers fail loudly
+        # (Docker is mandatory — no silent fallback); otherwise log and
+        # return None for unexpected exceptions.
+        is_propagated_fault = False
         try:
-            from apps.games.exceptions import ModelNotPrecachedError
-            if isinstance(exc, ModelNotPrecachedError):
-                raise
+            from apps.games.exceptions import (
+                ModelNotPrecachedError,
+                SandboxDataMissingError,
+                SandboxUnavailableError,
+            )
+            is_propagated_fault = isinstance(
+                exc, (ModelNotPrecachedError, SandboxUnavailableError, SandboxDataMissingError),
+            )
         except Exception:
             pass
+        # NOTE: the `raise` below must be outside the inner try/except above —
+        # a bare `raise` nested inside that try would be re-caught by its own
+        # `except Exception: pass` and silently swallowed instead of
+        # propagating to this function's caller.
+        if is_propagated_fault:
+            raise
         log.exception(
             "[FAIL] _get_bot_move failed - game_type=%s repo=%s", game_type, hf_repo_id
         )
@@ -285,8 +274,6 @@ def _run_chess_game(game) -> None:
         _forfeit_game(game, "white" if not white_repo else "black")
         return
 
-    _prewarm_spaces("chess", white_repo, black_repo)
-
     while not game.is_finished:
         try:
             game.refresh_from_db()
@@ -425,8 +412,6 @@ def _run_breakthrough_game(game) -> None:
         log.error("[FAIL] run_bot_game: Missing HF repos for Breakthrough game %s", game.pk)
         _forfeit_game(game, "white")
         return
-
-    _prewarm_spaces("breakthrough", white_repo, black_repo)
 
     while not game.is_finished:
         try:
