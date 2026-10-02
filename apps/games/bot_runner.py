@@ -155,6 +155,51 @@ def get_bot_move(bot, fen: str, time_left: float = None,
         return None, 0.0
 
 
+# ── Anti-cheat SHA check, off the critical path ──────────────────────────
+# The HF/SHA check takes 1-4 s (network). Running it inline inside a turn ate the
+# player's thinking time (-> "overrun" warnings). It now runs in a background
+# thread: for the mover it overlaps with inference, and the OPPONENT's check is
+# started at the beginning of the current turn so it is finished before their turn.
+from concurrent.futures import ThreadPoolExecutor as _TPE
+
+_SHA_POOL = _TPE(max_workers=4, thread_name_prefix="agl-sha")
+
+
+def _sha_check_worker(game_pk: int, user_pk: int) -> bool:
+    """True = FAIL (forfeit). Fail-open on any error. Owns its DB connection."""
+    from django.db import connection
+    try:
+        from apps.games.models import Game
+        from apps.tournaments.sha_audit import check_player_for_tournament_game
+        g = Game.objects.select_related("white", "black").get(pk=game_pk)
+        user = g.white if g.white_id == user_pk else g.black
+        if user is None:
+            return False
+        return bool(check_player_for_tournament_game(game=g, user=user))
+    except Exception:
+        log.exception("[game %s] anti-cheat SHA check raised - continuing fail-open", game_pk)
+        return False
+    finally:
+        connection.close()
+
+
+def _start_sha_check(game, user):
+    """Start a background SHA check (tournament games only). Returns a Future or None."""
+    if user is None or not getattr(game, "is_tournament_game", False):
+        return None
+    return _SHA_POOL.submit(_sha_check_worker, game.pk, user.pk)
+
+
+def _sha_failed(fut) -> bool:
+    if fut is None:
+        return False
+    try:
+        return bool(fut.result())
+    except Exception:
+        log.exception("anti-cheat SHA future failed - continuing fail-open")
+        return False
+
+
 def compute_thinking_delay(
     elapsed: float,
     target_seconds: float,
@@ -274,7 +319,9 @@ def _run_chess_game(game) -> None:
         _forfeit_game(game, "white" if not white_repo else "black")
         return
 
+    sha_futs: dict = {}
     while not game.is_finished:
+        turn_started = time.monotonic()  # wall-clock start of this whole turn
         try:
             game.refresh_from_db()
         except Game.DoesNotExist:
@@ -297,30 +344,16 @@ def _run_chess_game(game) -> None:
             player = "b"
             current_user = game.black
 
-        # ── Anti-cheat SHA check (once per player per game) ──
-        # Verify the moving player's HF model SHA still matches the
-        # round-pinned baseline. On mismatch the helper prints the
-        # 🚨 TERMINAL banner, flips disqualified_for_sha_mismatch
-        # (so DisqualificationInterceptMiddleware traps the cheater
-        # on /tournaments/disqualified/), emails admins, and broadcasts
-        # the WS alert that redirects the cheater's browser. Returns
-        # True on FAIL (or already-DQ'd) — forfeit the current move.
-        if game.is_tournament_game and current_user is not None:
-            try:
-                from apps.tournaments.sha_audit import check_player_for_tournament_game
-                if check_player_for_tournament_game(game=game, user=current_user):
-                    log.warning(
-                        "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting.",
-                        game.pk, current_user.username, forfeit_color,
-                    )
-                    _forfeit_game(game, forfeit_color)
-                    _broadcast_game_over(group_name, game)
-                    break
-            except Exception:
-                log.exception(
-                    "[game %s] anti-cheat SHA check raised — continuing fail-open",
-                    game.pk,
-                )
+        # ── Anti-cheat SHA check — background, see _start_sha_check ──
+        # Mover: use the check prefetched last turn (or start now). Opponent:
+        # start theirs now so it is done before their turn begins.
+        sha_fut = sha_futs.pop(moving_color, None) or _start_sha_check(game, current_user)
+        opp_color = not moving_color
+        if opp_color not in sha_futs:
+            _opp = game.black if moving_color == chess.WHITE else game.white
+            _f = _start_sha_check(game, _opp)
+            if _f is not None:
+                sha_futs[opp_color] = _f
 
         # Apply elapsed time
         now = timezone.now()
@@ -334,6 +367,14 @@ def _run_chess_game(game) -> None:
 
         # Chess AI logic is in predict_chess.py (runs in Docker sandbox)
         uci, move_elapsed = _get_bot_move("chess", game.current_fen, player, repo)
+        if _sha_failed(sha_fut):
+            log.warning(
+                "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting.",
+                game.pk, current_user.username, forfeit_color,
+            )
+            _forfeit_game(game, forfeit_color)
+            _broadcast_game_over(group_name, game)
+            break
         if not uci:
             log.warning("[FAIL] Bot (%s) failed to produce a move in game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
@@ -366,7 +407,7 @@ def _run_chess_game(game) -> None:
         else:
             game.save()
             target_secs = game.white_thinking_seconds if moving_color == chess.WHITE else game.black_thinking_seconds
-            enforce_thinking_time(move_elapsed, max(target_secs, MOVE_DELAY), repo=repo)
+            enforce_thinking_time(time.monotonic() - turn_started, max(target_secs, MOVE_DELAY), repo=repo)
             _broadcast_state(group_name, game)
 
     log.info("[game %s] ===== CHESS GAME END - result=%s reason=%s =====",
@@ -413,7 +454,9 @@ def _run_breakthrough_game(game) -> None:
         _forfeit_game(game, "white")
         return
 
+    sha_futs: dict = {}
     while not game.is_finished:
+        turn_started = time.monotonic()  # wall-clock start of this whole turn
         try:
             game.refresh_from_db()
         except Game.DoesNotExist:
@@ -428,25 +471,14 @@ def _run_breakthrough_game(game) -> None:
         repo = white_repo if turn == bt.WHITE else black_repo
         current_user = game.white if turn == bt.WHITE else game.black
 
-        # ── Anti-cheat SHA check (once per player per Breakthrough game) ──
-        # Identical pipeline to the chess loop above — see
-        # ``check_player_for_tournament_game`` for the full DQ flow.
-        if game.is_tournament_game and current_user is not None:
-            try:
-                from apps.tournaments.sha_audit import check_player_for_tournament_game
-                if check_player_for_tournament_game(game=game, user=current_user):
-                    log.warning(
-                        "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting Breakthrough.",
-                        game.pk, current_user.username, forfeit_color,
-                    )
-                    _forfeit_game(game, forfeit_color)
-                    _broadcast_game_over(group_name, game)
-                    break
-            except Exception:
-                log.exception(
-                    "[game %s] anti-cheat SHA check raised in Breakthrough — continuing fail-open",
-                    game.pk,
-                )
+        # ── Anti-cheat SHA check — background, same as the chess loop ──
+        sha_fut = sha_futs.pop(forfeit_color, None) or _start_sha_check(game, current_user)
+        opp_key = "black" if forfeit_color == "white" else "white"
+        if opp_key not in sha_futs:
+            _opp = game.black if turn == bt.WHITE else game.white
+            _f = _start_sha_check(game, _opp)
+            if _f is not None:
+                sha_futs[opp_key] = _f
 
         # Apply elapsed time
         now = timezone.now()
@@ -460,6 +492,14 @@ def _run_breakthrough_game(game) -> None:
 
         # Breakthrough AI logic is in predict_breakthrough.py (runs in Docker sandbox)
         uci, move_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
+        if _sha_failed(sha_fut):
+            log.warning(
+                "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting Breakthrough.",
+                game.pk, current_user.username, forfeit_color,
+            )
+            _forfeit_game(game, forfeit_color)
+            _broadcast_game_over(group_name, game)
+            break
         if not uci:
             log.warning("[FAIL] Bot (%s) failed to produce a move in Breakthrough game %s", forfeit_color, game.pk)
             _forfeit_game(game, forfeit_color)
@@ -491,7 +531,7 @@ def _run_breakthrough_game(game) -> None:
         else:
             game.save()
             target_secs = game.white_thinking_seconds if turn == bt.WHITE else game.black_thinking_seconds
-            enforce_thinking_time(move_elapsed, max(target_secs, MOVE_DELAY), repo=repo)
+            enforce_thinking_time(time.monotonic() - turn_started, max(target_secs, MOVE_DELAY), repo=repo)
             _broadcast_state(group_name, game)
 
     log.info("[game %s] ===== BREAKTHROUGH GAME END - result=%s reason=%s =====",

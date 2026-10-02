@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import random
 import threading
+import time
 from typing import TYPE_CHECKING
 
 import chess
@@ -26,20 +27,67 @@ from .models import Match, Tournament, TournamentParticipant
 
 log = logging.getLogger(__name__)
 
+ARMAGEDDON_REDIRECT_DELAY_SECONDS = 5
 
-def _start_bot_game_thread(game_id: int) -> None:
+
+def _start_bot_game_thread(game_id: int, start_delay: float = 0) -> None:
     """Launch a background thread to run the AI bot game loop.
 
     Uses transaction.on_commit so the thread only starts after the
     current DB transaction has committed (ensuring the Game row exists).
+    The thread sleeps ``start_delay`` seconds before the first move.
     """
     from apps.games.bot_runner import run_bot_game
 
+    def _run():
+        if start_delay:
+            time.sleep(start_delay)
+        run_bot_game(game_id)
+
     def _launch():
-        t = threading.Thread(target=run_bot_game, args=(game_id,), daemon=True)
+        t = threading.Thread(target=_run, daemon=True)
         t.start()
 
     transaction.on_commit(_launch)
+
+
+def _broadcast_armageddon_countdown(game: Game, arm: Game) -> None:
+    """Tell every client on the match page and the drawn game's page to count down."""
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        from django.urls import reverse
+
+        channel_layer = get_channel_layer()
+        if channel_layer is None:
+            return
+        payload = {
+            "type": "armageddon",
+            "game_id": arm.pk,
+            "white": arm.white.username,
+            "black": arm.black.username,
+            "white_time": 120,
+            "black_time": 60,
+            "game_type": arm.game_type,
+            "delay_seconds": ARMAGEDDON_REDIRECT_DELAY_SECONDS,
+            "message": "Draw! Armageddon tiebreak starting.",
+            "redirect_url": reverse("games:game_detail", kwargs={"game_id": arm.pk}),
+        }
+        match_group = f"match_{game.tournament_match_id}"
+        game_group = f"game_{game.pk}"
+        async_to_sync(channel_layer.group_send)(
+            match_group, {"type": "armageddon_start", "data": payload},
+        )
+        async_to_sync(channel_layer.group_send)(
+            game_group, {"type": "broadcast_armageddon", "data": payload},
+        )
+        log.info(
+            "[armageddon] game=%s -> arm=%s broadcast to match_%s and game_%s (delay=%ss).",
+            game.pk, arm.pk, game.tournament_match_id, game.pk,
+            ARMAGEDDON_REDIRECT_DELAY_SECONDS,
+        )
+    except Exception:
+        log.exception("[armageddon] broadcast failed for game=%s", game.pk)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -395,8 +443,9 @@ def handle_game_result(game: Game) -> None:
             time_control="2+0",
         )
 
-        # Launch AI bots for the Armageddon game
-        _start_bot_game_thread(arm.pk)
+        # Launch AI bots for the Armageddon game after the client countdown
+        transaction.on_commit(lambda: _broadcast_armageddon_countdown(game, arm))
+        _start_bot_game_thread(arm.pk, ARMAGEDDON_REDIRECT_DELAY_SECONDS + 1)
 
         return  # wait for Armageddon to finish
 
@@ -424,6 +473,16 @@ def handle_game_result(game: Game) -> None:
             parent_match.winner = game.winner
             parent_match.match_status = Match.MatchStatus.COMPLETED
             parent_match.save(update_fields=["winner", "match_status"])
+        Match.objects.filter(
+            tournament=tournament,
+            round_num=match.round_num,
+            bracket_position=match.bracket_position,
+            is_armageddon=True,
+        ).update(
+            result=game.result,
+            winner=game.winner,
+            match_status=Match.MatchStatus.COMPLETED,
+        )
 
     # Check if the round is complete
     round_num = match.round_num
@@ -455,20 +514,54 @@ def _create_prize_claim(tournament: Tournament, champion) -> None:
 
     from apps.tournaments.models import PrizeClaim
 
+    if tournament.prize_on_hold:
+        log.warning(
+            "Prize on hold for tournament %s (pk=%s): no PrizeClaim created. Release the hold "
+            "and run backfill_prize_claim.", tournament.name, tournament.pk,
+        )
+        return
+
+    # Israel-only tournaments keep the historical "ILS" fallback; others must name a currency.
+    currency = tournament.prize_currency
+    if tournament.is_israel_only:
+        currency = currency or "ILS"
+    elif not currency or currency == "ILS":
+        log.error(
+            "Tournament %s (pk=%s) is open to other countries but has prize_currency=%r — "
+            "no PrizeClaim created.", tournament.name, tournament.pk, currency,
+        )
+        try:
+            from django.core.mail import mail_admins
+            mail_admins(
+                subject=f"[AGL] Prize currency missing \u2014 {tournament.name}",
+                message=(
+                    f"Tournament {tournament.name} (pk={tournament.pk}) has no explicit non-ILS "
+                    f"prize currency. Fix it in the admin, then run:\n"
+                    f"  python manage.py backfill_prize_claim {tournament.pk}"
+                ),
+                fail_silently=True,
+            )
+        except Exception:
+            log.debug("mail_admins failed for missing prize currency", exc_info=True)
+        return
+
     now = timezone.now()
     try:
         participant = tournament.participants.filter(user=champion).first()
         paypal_email = (participant.paypal_email or "") if participant else ""
+        if not tournament.uses_paypal:
+            paypal_email = ""
 
         claim, created = PrizeClaim.objects.get_or_create(
             tournament=tournament,
             defaults=dict(
                 winner=champion,
                 amount=tournament.prize_amount,
-                currency=tournament.prize_currency or "ILS",
+                currency=currency,
+                payout_method=tournament.payout_method,
                 paypal_email=paypal_email,
                 claim_code=secrets.token_urlsafe(24),
-                expires_at=now + timedelta(days=30),
+                expires_at=now + timedelta(days=tournament.claim_deadline_days or 30),
             ),
         )
         if not created:
@@ -490,8 +583,12 @@ def _create_prize_claim(tournament: Tournament, champion) -> None:
                         f"Congratulations {champion.username},\n\n"
                         f"You are the champion of {tournament.name}!\n\n"
                         f"Your prize of {claim.amount} {claim.currency} is waiting for you.\n"
-                        f"Click the link below to submit your payout details:\n\n"
-                        f"{claim_url}\n\n"
+                        + (
+                            "Click the link below to submit your payout details:\n\n"
+                            if tournament.uses_paypal else
+                            "Click the link below to claim your prize:\n\n"
+                        )
+                        + f"{claim_url}\n\n"
                         f"This link expires on {claim.expires_at.strftime('%B %d, %Y')}.\n\n"
                         f"\u2014 Artificial Gladiator League"
                     ),

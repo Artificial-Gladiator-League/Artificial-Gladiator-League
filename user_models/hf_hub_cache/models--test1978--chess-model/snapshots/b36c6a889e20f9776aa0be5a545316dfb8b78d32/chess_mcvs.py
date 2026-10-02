@@ -1,15 +1,15 @@
-﻿# chess_mcvs.py
+# chess_mcvs.py
 """
 chess_mcvs.py - Full implementation analogous to breakthrough_mcvs.py
 
 Features:
 - Chess game logic using python-chess (full rules)
-- Fixed 64×64 padded weighted adjacency matrix (Hilbert-ordered pieces)
+- Fixed 64�64 padded weighted adjacency matrix (Hilbert-ordered pieces)
 - Piece-specific kappa values
 - Queen-only promotions for flat 4096 policy head compatibility
 - Policy and Value CNNs (lightweight with pooling for feasibility)
 - HilbertOrderedZoneDatabase with add methods and proper k-NN zone score
-- MCVSSearcher (guided λ-PUCT with policy/value/zone)
+- MCVSSearcher (guided ?-PUCT with policy/value/zone)
 - UCTSearcher (baseline)
 - train_networks function
 - Ready for chess_mcvs_vs_uct.py tournament
@@ -97,13 +97,13 @@ class ABCModelDynamic:
         
         Moves MB by (dx, dy) displacement.
         
-        B · current_MB = new_MB
+        B � current_MB = new_MB
         
         B = [1 0 dx]
             [0 1 dy]
             [0 0 1]
         
-        Right column: (dx, dy, 1)ᵀ
+        Right column: (dx, dy, 1)?
         """
         B = np.array([
             [1.0, 0.0, dx],
@@ -118,7 +118,7 @@ class ABCModelDynamic:
         
         Args:
             position: (x, y) tuple
-            delta_values: (Δ₁, Δ₂, Δ₃) tuple
+            delta_values: (??, ??, ??) tuple
             kappa_vector: Tokenized feature vector (optional, defaults to delta_values)
         """
         x, y = position
@@ -138,7 +138,7 @@ class ABCModelDynamic:
         self.B_blocks.append(B_i)
         self.piece_positions.append((x, y))
         
-        # Update accumulated product: a_t = a_{t-1} · B_t
+        # Update accumulated product: a_t = a_{t-1} � B_t
         self.a_product = self.a_product @ B_i
         
         # Track MB positions
@@ -175,7 +175,7 @@ class ABCModelDynamic:
         
         Args:
             x, y: Position coordinates
-            player: 1 for X (Δ₂=1.0), 2 for O (Δ₂=1.1)
+            player: 1 for X (??=1.0), 2 for O (??=1.1)
         """
         delta_1 = 1.0  # Occupied
         delta_2 = 1.0 if player == 1 else 1.1  # Player color
@@ -220,10 +220,10 @@ class ABCModelDynamic:
         desc += f"Mobile Board (MB) movement:\n"
         desc += f" Previous MB: {move['MB_prev']}\n"
         desc += f" Target (SB): {move['SB_position']}\n"
-        desc += f" Displacement: Δ = {move['displacement']}\n"
+        desc += f" Displacement: ? = {move['displacement']}\n"
         desc += f" New MB: {move['MB_curr']}\n\n"
         desc += f"Displacement matrix B_{stage}:\n{B_i}\n"
-        desc += f"Right column: {B_i[:, 2]} = (Δx={move['displacement'][0]}, Δy={move['displacement'][1]}, 1)\n\n"
+        desc += f"Right column: {B_i[:, 2]} = (?x={move['displacement'][0]}, ?y={move['displacement'][1]}, 1)\n\n"
         
         desc += f"Accumulated product a_{stage}:\n{move['a_t']}\n"
         desc += f"Right column: {move['a_t'][:, 2]}\n\n"
@@ -232,7 +232,7 @@ class ABCModelDynamic:
         desc += f"Kappa vector: {move['kappa']}\n\n"
         
         desc += f"Verification:\n"
-        desc += f" a_{stage} · c₀ = {move['a_t'] @ self.c0}\n"
+        desc += f" a_{stage} � c? = {move['a_t'] @ self.c0}\n"
         desc += f" Should equal: {np.array([move['SB_position'][0], move['SB_position'][1], 1.0])}\n\n"
         
         desc += "Board state:\n"
@@ -249,7 +249,7 @@ class WeightedMatrixABC:
     to match algebraic structure of B matrices from abc_model.py
     
     Implements Definition from Section 6:
-        W[i,j](t) = A[i,j](t) ⊙ S[i,j](t) ⊙ F[i,j](t)
+        W[i,j](t) = A[i,j](t) ? S[i,j](t) ? F[i,j](t)
     """
     
     def __init__(self, abc_model: ABCModelDynamic, sigma: float = 1.0):
@@ -300,7 +300,7 @@ class WeightedMatrixABC:
         Compute pairwise Euclidean distances using 2D components only.
         
         Even though positions are [x, y, 1], we compute distance using only [x, y]
-        D[i,j] = ||[x_i, y_i] - [x_j, y_j]||₂
+        D[i,j] = ||[x_i, y_i] - [x_j, y_j]||?
         """
         if self.positions is None:
             self.compute_piece_positions()
@@ -323,7 +323,7 @@ class WeightedMatrixABC:
         Compute Adjacency Matrix (Definition 6.2).
         
         A[i,j] = 1 if:
-            - k ≤ D[i,j] ≤ K (grid-adjacent)
+            - k ? D[i,j] ? K (grid-adjacent)
             - i == j AND i is isolated (no neighbors in [k,K])
         
         A[i,j] = 0 otherwise
@@ -362,7 +362,7 @@ class WeightedMatrixABC:
         """
         Compute Spatial Matrix (Definition 6.3).
         
-        S[i,j](t) = exp(-||c_i(t) - c_j(t)||² / (2σ²))
+        S[i,j](t) = exp(-||c_i(t) - c_j(t)||� / (2?�))
         
         Gaussian kernel based on Euclidean distance.
         """
@@ -383,7 +383,7 @@ class WeightedMatrixABC:
         """
         Compute Feature Matrix (Definition 6.4).
         
-        F[i,j](t) = <κ(B_i), κ(B_j)> / (||κ(B_i)|| · ||κ(B_j)||)
+        F[i,j](t) = <?(B_i), ?(B_j)> / (||?(B_i)|| � ||?(B_j)||)
         
         Cosine similarity between tokenized vectors.
         """
@@ -424,7 +424,7 @@ class WeightedMatrixABC:
         """
         Compute Weighted Matrix (Definition from Section 6).
         
-        W[i,j](t) = A[i,j](t) ⊙ S[i,j](t) ⊙ F[i,j](t)
+        W[i,j](t) = A[i,j](t) ? S[i,j](t) ? F[i,j](t)
         
         Returns: W - the full weighted matrix
         """
@@ -445,7 +445,7 @@ class WeightedMatrixABC:
         """
         Compute Manhattan distance between two weighted matrices.
         
-        distance = ||W_1 - W_2||₁
+        distance = ||W_1 - W_2||?
         """
         if self.W is None:
             self.compute_weighted_matrix()
@@ -753,10 +753,10 @@ class HilbertOrderedZoneDatabase:
         )
         
         new_sizes = (len(self.winning_matrices), len(self.losing_matrices), len(self.draw_matrices))
-        print(f"Pruned: W {old_sizes}→{new_sizes}, L {old_sizes}→{new_sizes}, D {old_sizes}→{new_sizes}")
+        print(f"Pruned: W {old_sizes}?{new_sizes}, L {old_sizes}?{new_sizes}, D {old_sizes}?{new_sizes}")
     
     def compute_zone_score(self, W: np.ndarray, k: int = 5, beta: float = 0.5) -> float:
-        """Compute zone guidance score Z(x(t), a) ∈ [-1, 1]."""
+        """Compute zone guidance score Z(x(t), a) ? [-1, 1]."""
         if W.shape != (64, 64):
             return 0.0
         
@@ -1134,3 +1134,52 @@ class UCTSearcher:
 
 if __name__ == "__main__":
     print("chess_mcvs.py loaded successfully")
+
+
+def load(ctx):
+    """Platform contract: read the zone db from ctx.data_dir ourselves."""
+    from pathlib import Path
+
+    search_dirs = [d for d in (ctx.data_dir, ctx.model_dir) if d is not None]
+    npz_path = None
+    for d in search_dirs:
+        candidates = sorted(Path(d).rglob("*.npz"))
+        if candidates:
+            npz_path = candidates[0]
+            break
+    if npz_path is None:
+        raise FileNotFoundError(
+            "no zone-db .npz file found under data_dir or model_dir — "
+            "this model requires one to function"
+        )
+    return HilbertOrderedZoneDatabase(filepath=str(npz_path))
+
+
+def get_move(state, fen: str, player: str, time_budget: float = 2.0) -> str:
+    import chess as _chess
+    import json
+    from pathlib import Path
+
+    config_path = Path(__file__).parent / "config_model.json"
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+
+    game = Chess()
+    game.board = _chess.Board(fen)
+    zone_db = state
+    searcher = MCVSSearcher(
+        policy_net=None,
+        value_net=None,
+        zone_db=zone_db,
+        use_nets=False,
+        lambda_zone=0.0 if zone_db is None else float(config.get("lambda_zone", 1.0)),
+        k_zone=int(config.get("k_zone", 5)),
+        cpuct=float(config.get("cpuct", 1.5)),
+        dirichlet_alpha=float(config.get("dirichlet_alpha", 0.3)),
+    )
+    time_budget = float(config.get("time_per_move", 2.0))
+    visit_counts, _ = searcher.search_with_time_budget(game, time_budget)
+    if not visit_counts:
+        legal = game.get_legal_moves()
+        return legal[0].uci() if legal else ""
+    best_move = max(visit_counts, key=visit_counts.get)
+    return best_move.uci()

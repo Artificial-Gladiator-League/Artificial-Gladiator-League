@@ -995,13 +995,26 @@ def expire_stale_prize_claims() -> str:
     from django.utils import timezone
 
     from apps.tournaments.models import PrizeClaim, Tournament
+    from apps.tournaments.payouts import sync_expiry_clock
 
     now = timezone.now()
+
+    # Safety net: stop/restart the clock for any claim whose state changed without a
+    # staff or winner action noticing (the clock is also synced at each such action).
+    for claim in PrizeClaim.objects.filter(
+        status__in=[PrizeClaim.Status.PENDING, PrizeClaim.Status.CLAIMED, PrizeClaim.Status.BLOCKED],
+    ).select_related("tournament"):
+        try:
+            sync_expiry_clock(claim, now)
+        except Exception:
+            log.exception("Failed to sync the expiry clock for claim %s", claim.pk)
+
     to_expire = list(
         PrizeClaim.objects
         .filter(
             status__in=[PrizeClaim.Status.PENDING, PrizeClaim.Status.CLAIMED],
             expires_at__lt=now,
+            expiry_paused_at__isnull=True,
         )
         .select_related("tournament", "winner")
     )
@@ -1139,7 +1152,9 @@ def send_registration_confirmation(self, tournament_id: int, user_id: int, ai_th
 def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
     """Generate a PDF of the T&C for *tournament* and return raw bytes.
 
-    Uses reportlab. The content mirrors the key points in money_terms.html.
+    Uses reportlab. With a terms record (the one the participant accepted, else the
+    tournament's) the text comes from that record; otherwise the built-in Gauntlet
+    text below is used unchanged.
     """
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -1147,6 +1162,15 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
     from reportlab.lib import colors
     import io
+    from xml.sax.saxutils import escape
+
+    from apps.tournaments.terms import accepted_terms
+    from apps.tournaments.terms_pdf import pdf_safe_markup, pdf_safe_text, terms_pdf_blocks
+
+    terms = accepted_terms(tournament, user)
+    # Helvetica has no Devanagari/Hebrew glyphs: such names print as a placeholder, not black squares.
+    tournament_label = escape(pdf_safe_text(tournament.name, f"Tournament #{tournament.pk}"))
+    participant_label = escape(pdf_safe_text(user.username, f"Account #{user.pk}"))
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -1156,7 +1180,7 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
         leftMargin=2 * cm,
         topMargin=2 * cm,
         bottomMargin=2 * cm,
-        title=f"AGL Terms & Conditions — {tournament.name}",
+        title=f"AGL Terms & Conditions — {pdf_safe_text(tournament.name, f'Tournament #{tournament.pk}')}",
     )
 
     styles = getSampleStyleSheet()
@@ -1183,13 +1207,19 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
 
     story = []
 
-    story.append(Paragraph("The Gladiator Gauntlet &mdash; Terms &amp; Conditions", title_style))
-    story.append(Paragraph(f"Tournament: {tournament.name}", body_style))
+    if terms is None:
+        title_text = "The Gladiator Gauntlet &mdash; Terms &amp; Conditions"
+    else:
+        title_text = f"{escape(pdf_safe_text(terms.title, 'Tournament'))} &mdash; Terms &amp; Conditions"
+    story.append(Paragraph(title_text, title_style))
+    story.append(Paragraph(f"Tournament: {tournament_label}", body_style))
+    if terms is not None:
+        story.append(Paragraph(f"Version: {escape(pdf_safe_text(terms.version, '?'))}", body_style))
     story.append(Spacer(1, 0.3 * cm))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
     story.append(Spacer(1, 0.3 * cm))
 
-    if getattr(tournament, "prize_amount", None):
+    if getattr(tournament, "prize_amount", None) and (terms is None or terms.has_prize):
         prize_line = (
             f"<b>Prize:</b> {tournament.prize_amount} "
             f"{getattr(tournament, 'prize_currency', 'NIS')} &mdash; "
@@ -1198,11 +1228,12 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
         story.append(Paragraph(prize_line, body_style))
         story.append(Spacer(1, 0.3 * cm))
 
-    story.append(Paragraph(
-        "<b>Organizer:</b> Artificial Gladiator League (AGL), Rishon LeZion, Israel",
-        body_style,
-    ))
-    story.append(Spacer(1, 0.2 * cm))
+    if terms is None:
+        story.append(Paragraph(
+            "<b>Organizer:</b> Artificial Gladiator League (AGL), Rishon LeZion, Israel",
+            body_style,
+        ))
+        story.append(Spacer(1, 0.2 * cm))
 
     # Each block: ("h", heading) | ("p", body paragraph) | ("s", indented sub-clause)
     blocks = [
@@ -1410,6 +1441,9 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
               "published on the Platform."),
     ]
 
+    if terms is not None:
+        blocks = [(kind, pdf_safe_markup(text)) for kind, text in terms_pdf_blocks(terms, tournament)]
+
     for kind, text in blocks:
         if kind == "h":
             story.append(Paragraph(text, heading_style))
@@ -1427,7 +1461,7 @@ def _build_tc_pdf(tournament, user, ai_thinking_seconds) -> bytes:
         body_style,
     ))
     story.append(Paragraph(
-        f"Participant: {user.username} | Accepted at registration for {tournament.name}.",
+        f"Participant: {participant_label} | Accepted at registration for {tournament_label}.",
         body_style,
     ))
 

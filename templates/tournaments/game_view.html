@@ -42,9 +42,9 @@
     <div class="lg:col-span-2 flex flex-col items-center gap-3">
 
       <!-- Top player bar (opponent for participants, black for spectators) -->
-      <div class="w-full max-w-[560px] flex items-center justify-between">
+      <div class="w-full max-w-[560px] flex items-center justify-between" id="topPlayerBar">
         {% if is_black %}
-          <div class="flex items-center gap-2 text-sm">
+          <div class="player-info flex items-center gap-2 text-sm" data-username="{{ match.player1.username }}">
             {{ match.player1.country_flag|safe }}
             {% fide_badge match.player1 %}
             <span class="font-semibold">{{ match.player1.username }}</span>
@@ -55,7 +55,7 @@
             <span id="clockWhiteTime">--:--</span>
           </div>
         {% else %}
-          <div class="flex items-center gap-2 text-sm">
+          <div class="player-info flex items-center gap-2 text-sm" data-username="{{ match.player2.username }}">
             {{ match.player2.country_flag|safe }}
             {% fide_badge match.player2 %}
             <span class="font-semibold">{{ match.player2.username }}</span>
@@ -76,6 +76,7 @@
           <div class="text-center">
             <p class="result-text" id="resultText"></p>
             <p class="text-sm text-gray-300 mt-1" id="resultDetail"></p>
+            <p class="text-lg font-bold text-red-400 mt-3" id="armageddonCountdown"></p>
           </div>
         </div>
       </div>
@@ -84,9 +85,9 @@
       <div id="turnBanner" class="hidden w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg transition-all"></div>
 
       <!-- Bottom player bar (current user for participants, white for spectators) -->
-      <div class="w-full max-w-[560px] flex items-center justify-between">
+      <div class="w-full max-w-[560px] flex items-center justify-between" id="bottomPlayerBar">
         {% if is_black %}
-          <div class="flex items-center gap-2 text-sm">
+          <div class="player-info flex items-center gap-2 text-sm" data-username="{{ match.player2.username }}">
             {{ match.player2.country_flag|safe }}
             {% fide_badge match.player2 %}
             <span class="font-semibold">{{ match.player2.username }}</span>
@@ -97,7 +98,7 @@
             <span id="clockBlackTime">--:--</span>
           </div>
         {% else %}
-          <div class="flex items-center gap-2 text-sm">
+          <div class="player-info flex items-center gap-2 text-sm" data-username="{{ match.player1.username }}">
             {{ match.player1.country_flag|safe }}
             {% fide_badge match.player1 %}
             <span class="font-semibold">{{ match.player1.username }}</span>
@@ -129,7 +130,7 @@
             </tr>
             <tr>
               <td class="text-gray-500 py-0.5 pr-3">Time Control</td>
-              <td class="font-medium">{{ match.time_control }}</td>
+              <td class="font-medium" id="matchTimeControl">{{ match.time_control }}</td>
             </tr>
             <tr>
               <td class="text-gray-500 py-0.5 pr-3">Game</td>
@@ -137,7 +138,7 @@
             </tr>
             <tr>
               <td class="text-gray-500 py-0.5 pr-3">Format</td>
-              <td class="font-medium">
+              <td class="font-medium" id="matchFormat">
                 {% if match.is_armageddon %}
                   Armageddon (W 2min / B 1min, draw=Black wins)
                 {% else %}
@@ -235,14 +236,19 @@ window.addEventListener('cg-ready', function () {
   const wsDot       = document.getElementById('wsDot');
   const wsLabel     = document.getElementById('wsLabel');
   const turnBanner  = document.getElementById('turnBanner');
+  const armageddonCountdownEl = document.getElementById('armageddonCountdown');
 
   const matchId     = {{ match.pk }};
   const baseSec     = {{ base_seconds }};
-  const increment   = {{ increment }};
+  let increment     = {{ increment }};
   const isCompleted = {{ match.is_completed|yesno:"true,false" }};
-  const isBlack     = {{ is_black|yesno:"true,false" }};
+  let isBlack        = {{ is_black|yesno:"true,false" }};
   const isParticipant = {{ is_match_participant|yesno:"true,false" }};
+  const currentUsername = "{{ request.user.username|escapejs }}";
   const gameType    = '{{ game_type|escapejs }}';
+  let armageddonPending = false;
+  let armageddonStarted = false;
+  let armageddonSwitched = false;
 
   /* ── Breakthrough board renderer ─────────────── */
   const BT_STARTING_FEN = 'BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w';
@@ -422,6 +428,96 @@ window.addEventListener('cg-ready', function () {
     showGameOver('{{ match.result }}', '{{ match.winner.username|default:"" }}');
   }
 
+  /* ── Armageddon: countdown, then switch the page in place ── */
+  function layoutPlayerBars(bottomColor, data) {
+    const infos = {};
+    document.querySelectorAll('.player-info').forEach(el => { infos[el.dataset.username] = el; });
+    const bottomUser = bottomColor === 'white' ? data.white : data.black;
+    const topUser = bottomColor === 'white' ? data.black : data.white;
+    if (!infos[bottomUser] || !infos[topUser]) return;
+    document.getElementById('topPlayerBar').replaceChildren(
+      infos[topUser], bottomColor === 'white' ? clockBlack : clockWhite);
+    document.getElementById('bottomPlayerBar').replaceChildren(
+      infos[bottomUser], bottomColor === 'white' ? clockWhite : clockBlack);
+  }
+
+  function switchToArmageddon(data) {
+    overlayEl.classList.add('hidden');
+    armageddonCountdownEl.textContent = '';
+    isGameOver = false;
+    armageddonPending = false;
+    armageddonSwitched = true;
+    stopClock();
+    if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+    if (turnBanner) turnBanner.classList.add('hidden');
+
+    moveNum = 0;
+    moves = [];
+    moveCountEl.textContent = '0';
+    moveListEl.innerHTML = '<div class="text-center text-xs text-red-400 py-3 font-semibold">⚡ Armageddon Tiebreak — Black has draw odds</div>';
+
+    /* Colours were re-shuffled: put the logged-in participant at the bottom. */
+    const bottomColor = (isParticipant && currentUsername && currentUsername === data.black) ? 'black' : 'white';
+    isBlack = bottomColor === 'black';
+    if (gameType === 'breakthrough') {
+      renderBtBoard(BT_STARTING_FEN, null);
+    } else if (ground) {
+      ground.set({
+        orientation: bottomColor,
+        fen: 'start',
+        lastMove: [],
+        check: false,
+        turnColor: 'white',
+      });
+    }
+    layoutPlayerBars(bottomColor, data);
+
+    whiteTime = data.white_time;
+    blackTime = data.black_time;
+    increment = 0;
+    activeSide = 'white';
+    renderClocks();
+
+    const h1 = document.querySelector('h1');
+    if (h1 && !h1.querySelector('.armageddon-badge')) {
+      const badge = document.createElement('span');
+      badge.className = 'armageddon-badge';
+      badge.textContent = '⚡ Armageddon';
+      h1.appendChild(badge);
+    }
+    const tcEl = document.getElementById('matchTimeControl');
+    if (tcEl) tcEl.textContent = '2+0 / 1+0';
+    const fmtEl = document.getElementById('matchFormat');
+    if (fmtEl) fmtEl.textContent = 'Armageddon (W 2min / B 1min, draw=Black wins)';
+    const resignBtn = document.getElementById('resignBtn');
+    if (resignBtn) resignBtn.closest('form').style.display = '';
+  }
+
+  function startArmageddonCountdown(data) {
+    if (armageddonStarted) return;
+    armageddonStarted = true;
+    armageddonPending = true;
+    isGameOver = true;  /* ignore stray moves from the drawn game */
+    stopClock();
+    if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+    if (turnBanner) turnBanner.classList.add('hidden');
+    /* The draw's game_over may not have arrived yet. */
+    if (overlayEl.classList.contains('hidden')) showGameOver('1/2-1/2', '');
+
+    let remaining = parseInt(data.delay_seconds, 10) || 5;
+    const tick = () => {
+      if (remaining <= 0) {
+        clearInterval(timer);
+        switchToArmageddon(data);
+        return;
+      }
+      armageddonCountdownEl.textContent = 'Draw! Armageddon starts in ' + remaining + '…';
+      remaining--;
+    };
+    const timer = setInterval(tick, 1000);
+    tick();
+  }
+
   /* ── WebSocket ───────────────────────────────── */
   let ws = null;
   function connectWS() {
@@ -516,6 +612,8 @@ window.addEventListener('cg-ready', function () {
         break;
 
       case 'game_over':
+        /* The drawn game's own game_over can arrive late; the Armageddon never ends in a plain draw. */
+        if (armageddonSwitched && data.result === '1/2-1/2') break;
         isGameOver = true;
         showGameOver(data.result || '', data.winner || '');
         break;
@@ -525,19 +623,7 @@ window.addEventListener('cg-ready', function () {
         break;
 
       case 'armageddon':
-        /* Reset board for Armageddon tiebreak */
-        if (gameType === 'breakthrough') {
-          renderBtBoard(BT_STARTING_FEN, null);
-        } else if (ground) {
-          ground.set({ fen: 'start', lastMove: [], check: false });
-        }
-        whiteTime = 120;  /* 2 min */
-        blackTime = 60;   /* 1 min */
-        activeSide = null;
-        moveNum = 0;
-        moves = [];
-        moveListEl.innerHTML = '<div class="text-center text-xs text-red-400 py-3 font-semibold">⚡ Armageddon Tiebreak — Black has draw odds</div>';        if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
-        if (turnBanner) turnBanner.classList.add('hidden');        renderClocks();
+        startArmageddonCountdown(data);
         break;
     }
   }

@@ -16,11 +16,12 @@ Design
 
 Django settings
 ---------------
-    MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES  list[str]  ISO 3166-1 alpha-2 codes
-                                                     default: ["IL"]
     MONEY_TOURNAMENT_GEO_ENABLED         bool        default: True
-                                                     set False to bypass in dev
+                                                     master switch; False bypasses the gate
     GEOIP_CACHE_TIMEOUT                  int         seconds, default 86400
+    MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES  list[str]   only a fallback for callers that pass no
+                                                     country list; tournaments use their own
+                                                     ``allowed_countries``
 """
 from __future__ import annotations
 
@@ -31,7 +32,36 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
+from .countries import ISRAEL_ONLY, countries_phrase, normalize_country_codes
+
 log = logging.getLogger(__name__)
+
+ISRAEL_ONLY_BLOCK_MESSAGE = (
+    "This tournament is open to Israeli residents only. "
+    "Your location does not qualify. "
+    "If you believe this is an error, please contact support."
+)
+UNVERIFIED_LOCATION_MESSAGE = (
+    "We could not verify your location. Please try again later or contact us."
+)
+
+
+def geo_block_message(allowed_countries, country) -> str:
+    """Message for a player the geo gate turned away.
+
+    *country* is the detected code, or None when it could not be determined.
+    Israel-only tournaments keep their original wording in both cases.
+    """
+    codes = normalize_country_codes(allowed_countries)
+    if codes == ISRAEL_ONLY:
+        return ISRAEL_ONLY_BLOCK_MESSAGE
+    if country is None:
+        return UNVERIFIED_LOCATION_MESSAGE
+    return (
+        f"This tournament is open to residents of {countries_phrase(codes)} only. "
+        "Your location does not qualify. "
+        "If you believe this is an error, please contact support."
+    )
 
 # ── Configuration ──────────────────────────────────────────────────
 # Read from settings at *call time* so that @override_settings works in tests.
@@ -106,19 +136,27 @@ def lookup_country(ip: str) -> str | None:
 # ── Public API ─────────────────────────────────────────────────────
 
 def check_geo_eligibility(
-    request,
+    request, allowed_countries=None,
 ) -> tuple[str, str | None, bool | None]:
     """Check whether the request originates from an eligible country.
+
+    *allowed_countries* is the tournament's list of ISO codes; when omitted the
+    global ``MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES`` fallback is used.
 
     Returns
     -------
     (ip, country_code, eligible)
 
-    * ``eligible = True``  — country is in ``ELIGIBLE_COUNTRIES``
-    * ``eligible = False`` — country is NOT eligible, or lookup failed
+    * ``eligible = True``  — country is in the allowed list
+    * ``eligible = False`` — country is NOT allowed, or the lookup failed
+      (``country_code`` is then ``None``)
     * ``eligible = None``  — geo check was skipped (private IP, or
       ``MONEY_TOURNAMENT_GEO_ENABLED = False``); treat as allowed in dev
     """
+    allowed = (
+        _eligible_countries() if allowed_countries is None
+        else normalize_country_codes(allowed_countries)
+    )
     ip = get_client_ip(request)
 
     if not _geo_enabled():
@@ -135,6 +173,6 @@ def check_geo_eligibility(
         log.warning("geoip: closing gate for %s (lookup failed)", ip)
         return ip, None, False
 
-    eligible = country in _eligible_countries()
+    eligible = country in allowed
     log.info("geoip: ip=%s country=%s eligible=%s", ip, country, eligible)
     return ip, country, eligible

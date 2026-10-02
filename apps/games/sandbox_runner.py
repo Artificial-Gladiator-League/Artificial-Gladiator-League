@@ -59,9 +59,14 @@
 # ──────────────────────────────────────────────
 from __future__ import annotations
 
+import atexit
 import json
 import logging
+import os
+import shutil
 import tempfile
+import threading
+import time
 from pathlib import Path
 
 from django.conf import settings
@@ -194,6 +199,8 @@ def _fail(msg: str) -> None:
 
 
 def main() -> None:
+    import time as _tm
+    _t_start = _tm.monotonic()
     fen = os.environ.get("AGL_FEN", "")
     player = os.environ.get("AGL_PLAYER", "w")
     game_type = os.environ.get("AGL_GAME_TYPE", "chess")
@@ -223,9 +230,12 @@ def main() -> None:
 
     move = None
     try:
+        _t_imported = _tm.monotonic()
         ctx = _Context(MODEL_DIR, DATA_DIR, game_type)
         state = module.load(ctx)
+        _t_loaded = _tm.monotonic()
         move = module.get_move(state, fen, player)
+        _t_moved = _tm.monotonic()
     except Exception as exc:
         _fail(f"prediction failed: {exc}")
         return
@@ -234,7 +244,12 @@ def main() -> None:
         _fail("model returned no move")
         return
 
-    print(json.dumps({"move": move, "warnings": _NOTES}))
+    _timing = {
+        "import_model_s": round(_t_imported - _t_start, 3),
+        "load_s": round(_t_loaded - _t_imported, 3),
+        "get_move_s": round(_t_moved - _t_loaded, 3),
+    }
+    print(json.dumps({"move": move, "warnings": _NOTES, "timing": _timing}))
 
 
 if __name__ == "__main__":
@@ -242,6 +257,78 @@ if __name__ == "__main__":
 '''
 
 _RUNNER_SCRIPT = _COMMON_PRELUDE + _MOVE_MAIN
+
+# Written into the container as /runner/run_worker.py by _start_worker().
+# Loads the model ONCE, then answers many moves over a tiny file-based protocol
+# on the /ipc bind-mount (the container has no network, so no sockets):
+#   host writes  /ipc/request.json   {"seq": n, "fen": ..., "player": ...}
+#   worker writes /ipc/response.json {"seq": n, "move": ...} or {"seq": n, "error": ...}
+# /ipc/ready.json is written once after load() finished (or failed).
+_WORKER_MAIN = '''
+
+def main() -> None:
+    import time as _tm
+    game_type = os.environ.get("AGL_GAME_TYPE", "chess")
+    ipc = Path(os.environ.get("AGL_IPC_DIR", "/ipc"))
+    idle_limit = float(os.environ.get("AGL_WORKER_IDLE_SECONDS", "300"))
+
+    def write(name, obj):
+        tmp = ipc / (name + ".tmp")
+        tmp.write_text(json.dumps(obj), encoding="utf-8")
+        os.replace(str(tmp), str(ipc / name))
+
+    t0 = _tm.monotonic()
+    _install_import_hook()
+    sys.path.insert(0, str(MODEL_DIR))
+    try:
+        manifest = _load_manifest()
+        module = _load_modules(manifest, game_type)
+        if module is None:
+            raise RuntimeError("no model module found in /model")
+        if not hasattr(module, "load"):
+            raise RuntimeError("module has no load(ctx) entrypoint")
+        state = module.load(_Context(MODEL_DIR, DATA_DIR, game_type))
+    except BaseException as exc:
+        write("ready.json", {"error": "worker init failed: " + str(exc), "warnings": _NOTES})
+        sys.exit(1)
+    write("ready.json", {"ok": True, "warnings": _NOTES, "init_s": round(_tm.monotonic() - t0, 3)})
+
+    last_activity = _tm.monotonic()
+    req_path = ipc / "request.json"
+    while True:
+        if not req_path.exists():
+            if _tm.monotonic() - last_activity > idle_limit:
+                sys.exit(0)
+            _tm.sleep(0.005)
+            continue
+        try:
+            data = json.loads(req_path.read_text(encoding="utf-8"))
+            req_path.unlink()
+        except Exception:
+            _tm.sleep(0.005)
+            continue
+        last_activity = _tm.monotonic()
+        seq = data.get("seq")
+        t1 = _tm.monotonic()
+        try:
+            move = module.get_move(state, data.get("fen", ""), data.get("player", "w"))
+            if not move or not isinstance(move, str):
+                resp = {"seq": seq, "error": "model returned no move"}
+            else:
+                resp = {"seq": seq, "move": move, "get_move_s": round(_tm.monotonic() - t1, 3)}
+        except Exception as exc:
+            resp = {"seq": seq, "error": "prediction failed: " + str(exc)}
+        resp["warnings"] = _NOTES
+        write("response.json", resp)
+        last_activity = _tm.monotonic()
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+_WORKER_SCRIPT = _COMMON_PRELUDE + _WORKER_MAIN
+
 
 
 # Written into the container as /runner/run_check.py by run_check_in_sandbox().
@@ -445,7 +532,7 @@ def _docker_client():
     return client
 
 
-def run_predict_in_sandbox(
+def _run_predict_one_shot(
     model_dir: Path,
     data_dir: Path | None,
     fen: str,
@@ -473,7 +560,10 @@ def run_predict_in_sandbox(
     nano_cpus = int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000)
     pids_limit = int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128))
 
+    _t_begin = time.monotonic()
     client = _docker_client()
+    _t_client = time.monotonic()
+    _t_created = _t_waited = None
 
     exit_code = 1
     logs = ""
@@ -520,9 +610,11 @@ def run_predict_in_sandbox(
             except APIError as exc:
                 raise SandboxUnavailableError(f"Docker API error: {exc}") from exc
 
+            _t_created = time.monotonic()
             container.start()
             try:
                 result = container.wait(timeout=timeout)
+                _t_waited = time.monotonic()
                 exit_code = result.get("StatusCode", 1)
             except (_requests.exceptions.ReadTimeout, _requests.exceptions.ConnectionError):
                 log.warning(
@@ -543,6 +635,8 @@ def run_predict_in_sandbox(
                     container.remove(force=True)
                 except Exception:
                     log.debug("Could not remove sandbox container", exc_info=True)
+
+    _t_removed = time.monotonic()
 
     if exit_code != 0:
         log.warning(
@@ -569,8 +663,478 @@ def run_predict_in_sandbox(
         log.warning("Sandbox model error for game_type=%s: %s", game_type, data["error"])
         return None
 
+    # ── Timing breakdown: shows WHERE the per-move seconds go ──
+    try:
+        _ct = data.get("timing") or {}
+        _created = _t_created if _t_created is not None else _t_client
+        _waited = _t_waited if _t_waited is not None else _t_removed
+        _run = _waited - _created
+        _inside = sum(_ct.get(k, 0.0) for k in ("import_model_s", "load_s", "get_move_s"))
+        log.info(
+            "[sandbox-timing] game_type=%s total=%.2fs | docker_client=%.2fs create=%.2fs "
+            "container_run=%.2fs (python+docker start-up=%.2fs, import model/torch=%.2fs, "
+            "load()=%.2fs, get_move()=%.2fs) | cleanup=%.2fs",
+            game_type, _t_removed - _t_begin,
+            _t_client - _t_begin, _created - _t_client,
+            _run, max(0.0, _run - _inside),
+            _ct.get("import_model_s", -1.0), _ct.get("load_s", -1.0), _ct.get("get_move_s", -1.0),
+            _t_removed - _waited,
+        )
+    except Exception:
+        log.debug("could not log sandbox timing", exc_info=True)
+
     move = data.get("move")
     return move if isinstance(move, str) and move.strip() else None
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Warm worker pool
+#
+#  Starting a fresh container per move costs ~4-5 s (container start +
+#  importing torch + model load()), which is far more than the model's real
+#  thinking time. Instead we keep ONE container per model (same hardening as
+#  the one-shot path) running a worker that load()s once and then answers
+#  moves. Workers are reaped after SANDBOX_WORKER_IDLE_SECONDS of inactivity
+#  and restarted automatically if the model files change, the container dies,
+#  or a move times out.
+#
+#  Settings (all optional):
+#    SANDBOX_REUSE_CONTAINERS      bool  default True  (False = old one-container-per-move)
+#    SANDBOX_WORKER_IDLE_SECONDS   float default 900
+#    SANDBOX_WORKER_START_TIMEOUT  int   default 120   (cold start: import + load)
+#    SANDBOX_MAX_WORKERS           int   default 8
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_workers: dict = {}
+_key_locks: dict = {}
+_pool_lock = threading.Lock()
+_reaper_started = False
+
+
+def _key_lock(base) -> threading.Lock:
+    with _pool_lock:
+        lock = _key_locks.get(base)
+        if lock is None:
+            lock = _key_locks[base] = threading.Lock()
+        return lock
+
+
+def _fingerprint(path) -> int | None:
+    """Cheap change detector for a model/data dir (relative name + size + mtime)."""
+    if path is None:
+        return None
+    items = []
+    for dirpath, _dirs, files in os.walk(str(path)):
+        for fname in files:
+            p = os.path.join(dirpath, fname)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            items.append((os.path.relpath(p, str(path)), st.st_size, st.st_mtime_ns))
+        if len(items) > 5000:
+            break
+    return hash(tuple(sorted(items)))
+
+
+class _Worker:
+    def __init__(self, base, fp, container, root: Path):
+        self.base = base
+        self.fp = fp
+        self.container = container
+        self.root = root
+        self.ipc_dir = root / "ipc"
+        self.seq = 0
+        self.last_used = time.monotonic()
+
+    def alive(self) -> bool:
+        try:
+            self.container.reload()
+            return self.container.status == "running"
+        except Exception:
+            return False
+
+    def stop(self) -> None:
+        try:
+            self.container.kill()
+        except Exception:
+            pass
+        try:
+            self.container.remove(force=True)
+        except Exception:
+            log.debug("Could not remove sandbox worker container", exc_info=True)
+        shutil.rmtree(str(self.root), ignore_errors=True)
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _wait_for_json(path: Path, timeout: float, container):
+    """Poll for *path*. Returns (data, reason) where reason is 'ok'|'timeout'|'died'."""
+    deadline = time.monotonic() + timeout
+    next_alive_check = time.monotonic() + 0.5
+    while True:
+        if path.exists():
+            data = _read_json(path)
+            if data is not None:
+                return data, "ok"
+        now = time.monotonic()
+        if now > deadline:
+            return None, "timeout"
+        if now >= next_alive_check:
+            try:
+                container.reload()
+                if container.status != "running":
+                    # one last look: it may have written the file just before exiting
+                    data = _read_json(path) if path.exists() else None
+                    return (data, "ok") if data is not None else (None, "died")
+            except Exception:
+                return None, "died"
+            next_alive_check = now + 0.5
+        time.sleep(0.005)
+
+
+def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: str):
+    """Create + start a worker container and wait until load() finished.
+
+    Returns a ready _Worker, or None if the model failed to initialise.
+    Raises SandboxUnavailableError on infrastructure faults.
+    """
+    from docker.errors import APIError, ImageNotFound, NotFound
+
+    image = getattr(settings, "SANDBOX_DOCKER_IMAGE", "python:3.11-slim")
+    mem_limit_mb = int(getattr(settings, "SANDBOX_MEMORY_LIMIT_MB", 512))
+    nano_cpus = int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000)
+    pids_limit = int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128))
+    idle_s = float(getattr(settings, "SANDBOX_WORKER_IDLE_SECONDS", 900))
+    start_timeout = float(getattr(settings, "SANDBOX_WORKER_START_TIMEOUT", 120))
+
+    t0 = time.monotonic()
+    client = _docker_client()
+    t_client = time.monotonic()
+
+    root = Path(tempfile.mkdtemp(prefix="agl_sandbox_worker_"))
+    runner_dir = root / "runner"
+    ipc_dir = root / "ipc"
+    runner_dir.mkdir()
+    ipc_dir.mkdir()
+    try:
+        os.chmod(str(ipc_dir), 0o777)  # the container runs as 'nobody'
+    except OSError:
+        pass
+    (runner_dir / "run_worker.py").write_text(_WORKER_SCRIPT, encoding="utf-8")
+    t_prep = time.monotonic()
+
+    volumes = {
+        str(model_dir.resolve()): {"bind": "/model", "mode": "ro"},
+        str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
+        str(ipc_dir.resolve()): {"bind": "/ipc", "mode": "rw"},
+    }
+    if data_dir is not None:
+        volumes[str(data_dir.resolve())] = {"bind": "/data", "mode": "ro"}
+
+    container = None
+    try:
+        try:
+            container = client.containers.create(
+                image=image,
+                command=["python", "/runner/run_worker.py"],
+                environment={
+                    "AGL_GAME_TYPE": game_type,
+                    "AGL_IPC_DIR": "/ipc",
+                    "AGL_WORKER_IDLE_SECONDS": str(int(idle_s) + 180),  # self-exit if host vanished
+                    "PYTHONUTF8": "1",
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                },
+                labels={"agl.sandbox.worker": "1"},
+                volumes=volumes,
+                network_disabled=True,
+                mem_limit=f"{mem_limit_mb}m",
+                nano_cpus=nano_cpus,
+                pids_limit=pids_limit,
+                read_only=True,
+                tmpfs={"/tmp": "size=64m"},
+                user="nobody",
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"],
+            )
+        except (ImageNotFound, NotFound) as exc:
+            raise SandboxUnavailableError(f"Sandbox image '{image}' not found: {exc}") from exc
+        except APIError as exc:
+            raise SandboxUnavailableError(f"Docker API error: {exc}") from exc
+
+        t_created = time.monotonic()
+        try:
+            container.start()
+        except APIError as exc:
+            raise SandboxUnavailableError(f"Docker daemon error: {exc}") from exc
+
+        t_started = time.monotonic()
+        ready, reason = _wait_for_json(ipc_dir / "ready.json", start_timeout, container)
+        t_ready = time.monotonic()
+    except BaseException:
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception:
+                pass
+        shutil.rmtree(str(root), ignore_errors=True)
+        raise
+
+    worker = _Worker(base, fp, container, root)
+    if ready is None or "error" in ready:
+        logs = ""
+        try:
+            logs = container.logs(stdout=True, stderr=True).decode("utf-8", errors="replace")[-1500:]
+        except Exception:
+            pass
+        log.warning(
+            "Sandbox worker failed to start (game_type=%s, %s): %s %s",
+            game_type, reason, (ready or {}).get("error", ""), logs.strip(),
+        )
+        worker.stop()
+        return None
+
+    for note in ready.get("warnings") or []:
+        log.warning("Sandbox encoding notice (game_type=%s): %s", game_type, note)
+    init_s = ready.get("init_s", -1.0)
+    wait_s = t_ready - t_started
+    log.info(
+        "[sandbox-timing] worker started game_type=%s in %.2fs | docker_client=%.2fs prep=%.2fs "
+        "create=%.2fs start()=%.2fs wait_for_ready=%.2fs (of which model init inside container=%.2fs, "
+        "interpreter start-up + file-sync lag=%.2fs)",
+        game_type, time.monotonic() - t0,
+        t_client - t0, t_prep - t_client, t_created - t_prep, t_started - t_created,
+        wait_s, init_s, max(0.0, wait_s - init_s),
+    )
+    return worker
+
+
+def _worker_request(worker: _Worker, fen: str, player: str, timeout: float):
+    """Send one move request. Returns (response_dict | None, reason)."""
+    worker.seq += 1
+    seq = worker.seq
+    resp_path = worker.ipc_dir / "response.json"
+    try:
+        resp_path.unlink()
+    except OSError:
+        pass
+    tmp = worker.ipc_dir / "request.tmp"
+    tmp.write_text(json.dumps({"seq": seq, "fen": fen, "player": player}), encoding="utf-8")
+    os.replace(str(tmp), str(worker.ipc_dir / "request.json"))
+
+    deadline = time.monotonic() + timeout
+    next_alive_check = time.monotonic() + 0.5
+    while True:
+        if resp_path.exists():
+            data = _read_json(resp_path)
+            if data is not None and data.get("seq") == seq:
+                return data, "ok"
+        now = time.monotonic()
+        if now > deadline:
+            return None, "timeout"
+        if now >= next_alive_check:
+            if not worker.alive():
+                return None, "died"
+            next_alive_check = now + 0.5
+        time.sleep(0.005)
+
+
+def _evict_one(exclude_base) -> None:
+    """Free a slot by stopping the least-recently-used idle worker."""
+    with _pool_lock:
+        candidates = sorted(
+            (w for b, w in _workers.items() if b != exclude_base),
+            key=lambda w: w.last_used,
+        )
+    for w in candidates:
+        lock = _key_lock(w.base)
+        if lock.acquire(blocking=False):
+            try:
+                with _pool_lock:
+                    if _workers.get(w.base) is w:
+                        _workers.pop(w.base, None)
+                    else:
+                        continue
+                w.stop()
+                return
+            finally:
+                lock.release()
+
+
+def _reaper_loop() -> None:
+    while True:
+        time.sleep(15)
+        try:
+            idle = float(getattr(settings, "SANDBOX_WORKER_IDLE_SECONDS", 900))
+            now = time.monotonic()
+            with _pool_lock:
+                items = list(_workers.items())
+            for base, w in items:
+                if now - w.last_used <= idle:
+                    continue
+                lock = _key_lock(base)
+                if lock.acquire(blocking=False):
+                    try:
+                        if time.monotonic() - w.last_used > idle:
+                            with _pool_lock:
+                                if _workers.get(base) is w:
+                                    _workers.pop(base, None)
+                                else:
+                                    continue
+                            log.info("[sandbox-timing] stopping idle worker for %s", base[0])
+                            w.stop()
+                    finally:
+                        lock.release()
+        except Exception:
+            log.debug("sandbox worker reaper error", exc_info=True)
+
+
+def _ensure_reaper() -> None:
+    global _reaper_started
+    with _pool_lock:
+        if _reaper_started:
+            return
+        _reaper_started = True
+    threading.Thread(target=_reaper_loop, name="agl-sandbox-reaper", daemon=True).start()
+    atexit.register(_stop_all_workers)
+
+
+def _stop_all_workers() -> None:
+    with _pool_lock:
+        workers = list(_workers.values())
+        _workers.clear()
+    for w in workers:
+        try:
+            w.stop()
+        except Exception:
+            pass
+
+
+def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type):
+    """Return ``(worker | None, cold)``. The caller MUST hold ``_key_lock(base)``.
+
+    Reuses the running worker when it is alive and the model files are unchanged;
+    otherwise (re)starts it. ``None`` means the model failed to initialise.
+    """
+    with _pool_lock:
+        worker = _workers.get(base)
+    if worker is not None and (worker.fp != fp or not worker.alive()):
+        log.info("[sandbox-timing] restarting worker (model changed or container died)")
+        with _pool_lock:
+            _workers.pop(base, None)
+        worker.stop()
+        worker = None
+    if worker is not None:
+        return worker, False
+
+    max_workers = int(getattr(settings, "SANDBOX_MAX_WORKERS", 8))
+    with _pool_lock:
+        full = len(_workers) >= max_workers
+    if full:
+        _evict_one(base)
+    worker = _start_worker(base, fp, model_dir, data_dir, game_type)
+    if worker is None:
+        return None, True
+    with _pool_lock:
+        _workers[base] = worker
+    return worker, True
+
+
+def prewarm_worker(model_dir: Path, data_dir: Path | None, game_type: str) -> bool:
+    """Start (or confirm) the warm worker for this model WITHOUT asking for a move.
+
+    Call this before a game starts so the first move does not pay the cold start
+    (container start + torch import + model load()). Returns True when a warm
+    worker is ready. Never raises for model problems; a real move request will
+    surface those properly. No-op (False) when container reuse is disabled.
+    """
+    if not getattr(settings, "SANDBOX_REUSE_CONTAINERS", True):
+        return False
+    base = (
+        str(model_dir.resolve()),
+        str(data_dir.resolve()) if data_dir is not None else None,
+        game_type,
+    )
+    fp = (_fingerprint(model_dir), _fingerprint(data_dir))
+    _ensure_reaper()
+    with _key_lock(base):
+        worker, _cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type)
+        if worker is None:
+            return False
+        worker.last_used = time.monotonic()  # restart the idle timer
+        return True
+
+
+def _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout) -> str | None:
+    t_begin = time.monotonic()
+    base = (
+        str(model_dir.resolve()),
+        str(data_dir.resolve()) if data_dir is not None else None,
+        game_type,
+    )
+    fp = (_fingerprint(model_dir), _fingerprint(data_dir))
+    _ensure_reaper()
+
+    with _key_lock(base):
+        worker, cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type)
+        if worker is None:
+            return None
+
+        resp, reason = _worker_request(worker, fen, player, timeout)
+        worker.last_used = time.monotonic()
+
+        if resp is None:
+            log.warning(
+                "Sandbox worker %s for game_type=%s (timeout=%ss) - restarting it next move",
+                reason, game_type, timeout,
+            )
+            with _pool_lock:
+                if _workers.get(base) is worker:
+                    _workers.pop(base, None)
+            worker.stop()
+            return None
+
+    for note in resp.get("warnings") or []:
+        log.warning("Sandbox encoding notice (game_type=%s): %s", game_type, note)
+    if "error" in resp:
+        log.warning("Sandbox model error for game_type=%s: %s", game_type, resp["error"])
+        return None
+
+    log.info(
+        "[sandbox-timing] game_type=%s %s total=%.2fs | get_move()=%.2fs",
+        game_type, "COLD" if cold else "warm",
+        time.monotonic() - t_begin, resp.get("get_move_s", -1.0),
+    )
+    move = resp.get("move")
+    return move if isinstance(move, str) and move.strip() else None
+
+
+def run_predict_in_sandbox(
+    model_dir: Path,
+    data_dir: Path | None,
+    fen: str,
+    player: str,
+    game_type: str,
+    *,
+    timeout: int | None = None,
+) -> str | None:
+    """Return a move from the user's model, running it inside the Docker sandbox.
+
+    By default a warm per-model worker container is reused between moves (the
+    model is loaded once). Set ``SANDBOX_REUSE_CONTAINERS = False`` to get the
+    old behaviour of one fresh container per move.
+
+    Raises ``SandboxUnavailableError`` on infrastructure faults. Returns ``None``
+    if the model produced no valid move (timeout, crash, bad output).
+    """
+    if not getattr(settings, "SANDBOX_REUSE_CONTAINERS", True):
+        return _run_predict_one_shot(model_dir, data_dir, fen, player, game_type, timeout=timeout)
+    timeout = timeout or int(getattr(settings, "SANDBOX_MOVE_TIMEOUT", 30))
+    return _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout)
 
 
 def run_check_in_sandbox(

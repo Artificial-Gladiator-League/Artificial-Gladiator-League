@@ -47,6 +47,8 @@ python-dotenv
 
 # ISO country dataset (registration country list)
 pycountry>=24.6.1,<25.0
+# Flag images for the profile page (bundled GIFs; the app is used for its static files only)
+django-countries>=7.6,<10
 
 # WhiteNoise for static files in production
 whitenoise>=6.5,<7.0

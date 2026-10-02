@@ -18,13 +18,18 @@
     <p class="text-sm text-gray-300">
       Your claim for
       <strong class="text-white">{{ claim.amount }} {{ claim.currency }}</strong>
-      has been recorded and is pending review. Payment will be sent to
-      <strong class="text-white">{{ claim.paypal_email }}</strong> via PayPal once approved.
+      has been recorded and is pending review.
+      {% if non_paypal %}We will contact you at <strong class="text-white">{{ request.user.email }}</strong> about the payment once your eligibility has been verified.{% else %}Payment will be sent to
+      <strong class="text-white">{{ claim.paypal_email }}</strong> via PayPal once approved.{% endif %}
     </p>
+    {% if progress_notice %}<p class="text-sm text-yellow-300 mt-3">{{ progress_notice }}</p>{% endif %}
+    {% if show_confirm_link %}
+    <p class="text-sm mt-3"><a href="{% url 'tournaments:payout_confirm' tournament.pk %}" class="text-brand hover:underline">Confirm your prize details</a></p>
+    {% endif %}
     <p class="text-sm text-gray-400 mt-3">
       Payouts are processed manually by our team. Please allow a few business days —
-      you will receive the funds at the address above once your claim has been verified.
-      No further action is required.
+      {% if non_paypal %}we will be in touch by email.{% else %}you will receive the funds at the address above once your claim has been verified.{% endif %}
+      {% if not non_paypal and not progress_notice and not show_confirm_link %}No further action is required.{% endif %}
     </p>
   </div>
   <a href="{% url 'games:lobby' %}" class="btn-brand inline-block py-2.5 px-8 text-sm font-semibold mt-2">
@@ -52,14 +57,24 @@
   </div>
   {% endif %}
 
-  {% if claim.status == claim.Status.CLAIMED %}
+  {% if hold_notice %}
+  <div class="rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-4 mb-6">
+    <p class="text-sm font-semibold text-yellow-300">{{ hold_notice }}</p>
+    <p class="text-sm text-gray-300 mt-1">We will contact you at your account email when there is something for you to do.</p>
+  </div>
+
+  {% elif claim.status == claim.Status.CLAIMED %}
   <div class="rounded-lg border border-blue-600/40 bg-blue-900/20 p-4 mb-6">
     <p class="text-sm font-semibold text-blue-300 mb-1">Claim submitted.</p>
     <p class="text-sm text-gray-300">
       Your claim for {{ tournament.name }} was recorded on {{ claim.claimed_at|date:"N j, Y" }}
       and is currently pending review.
-      Payment will be sent to <strong class="text-white">{{ claim.paypal_email }}</strong> once approved.
+      {% if non_paypal %}We will contact you at <strong class="text-white">{{ request.user.email }}</strong> about the payment.{% else %}Payment will be sent to <strong class="text-white">{{ claim.paypal_email }}</strong> once approved.{% endif %}
     </p>
+    {% if progress_notice %}<p class="text-sm text-yellow-300 mt-2">{{ progress_notice }}</p>{% endif %}
+    {% if show_confirm_link %}
+    <p class="text-sm mt-2"><a href="{% url 'tournaments:payout_confirm' tournament.pk %}" class="text-brand hover:underline">Confirm your prize details</a></p>
+    {% endif %}
   </div>
   <a href="{% url 'games:lobby' %}" class="btn-brand inline-block py-2.5 px-8 text-sm font-semibold mt-2">
     Return to Lobby
@@ -91,6 +106,21 @@
     <form method="post">
       {% csrf_token %}
 
+      {% if needs_email %}
+      <p class="text-sm text-yellow-300 mb-3">
+        Add and confirm an email address on your account first, so we can contact you about the payment.
+      </p>
+      <a href="{% url 'users:profile' %}?tab=edit&next={% url 'tournaments:prize_claim' tournament.pk %}"
+         class="btn-brand inline-block py-2.5 px-6 text-sm font-semibold">Update my email</a>
+      {% else %}
+      {% if non_paypal %}
+      <div class="mb-5 text-sm text-gray-300">
+        <p>Payout method: <strong class="text-white">{{ claim.get_payout_method_display }}</strong></p>
+        <p class="text-xs text-gray-500 mt-2">
+          {% if tournament.payout_instructions %}{{ tournament.payout_instructions|linebreaksbr }}{% else %}We will contact you at your account email ({{ request.user.email }}) after verification. Never send bank or UPI details through this site.{% endif %}
+        </p>
+      </div>
+      {% else %}
       <!-- PayPal email (editable snapshot) -->
       <div class="mb-5">
         <label for="paypal_email" class="block text-xs font-semibold text-gray-400 mb-1 uppercase tracking-wider">
@@ -108,11 +138,13 @@
           class="w-full rounded border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-brand focus:outline-none"
         />
       </div>
+      {% endif %}
 
       <button type="submit"
               class="btn-brand w-full py-2.5 text-sm font-semibold">
         Claim Your Prize
       </button>
+      {% endif %}
     </form>
 
     <p class="text-xs text-gray-500 mt-4">

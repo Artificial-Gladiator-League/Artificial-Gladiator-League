@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static core_tags %}
 {% block title %}
-  {% if tournament %}Gladiator Gauntlet Week {{ tournament.week_number|default:"?" }}{% else %}Gladiator Gauntlet{% endif %}
+  {% if tournament %}{{ tournament.name }}{% else %}Tournaments{% endif %}
   — Artificial Gladiator
 {% endblock %}
 
@@ -9,8 +9,8 @@
 {% if not tournament %}
 <!-- ═══ No Gauntlet Yet ═══ -->
 <div class="text-center py-20 animate-fade-in">
-  <h1 class="text-3xl font-extrabold mb-3">Gladiator Gauntlet</h1>
-  <p class="text-gray-400 text-lg mb-6">No gauntlet has been run yet. Stay tuned!</p>
+  <h1 class="text-3xl font-extrabold mb-3">Tournaments</h1>
+  <p class="text-gray-400 text-lg mb-6">No tournament has been run yet. Stay tuned!</p>
   <a href="{% url 'core:home' %}" class="btn-gold">← Back to Home</a>
 </div>
 
@@ -289,7 +289,7 @@
           {% for g in past_gauntlets %}
           <a href="{% url 'tournaments:gauntlet_by_pk' g.pk %}"
              class="flex items-center justify-between text-sm hover:text-brand transition py-1">
-            <span>Week {{ g.week_number }}</span>
+            <span>{{ g.name }}</span>
             <span class="text-xs text-gray-500">🏆 {% fide_badge g.champion %} {{ g.champion.username|default:"—" }}</span>
           </a>
           {% endfor %}

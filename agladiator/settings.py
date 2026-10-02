@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     # Chat app removed
     # Third‑party
     "channels",
+    "django_countries",             # only for its bundled flag images (static/flags/*.gif)
     # django_recaptcha removed — native reCAPTCHA v3 via Google siteverify API
     # (no package needed; reinstall with fix_recaptcha.bat if you revert)
 ]
@@ -403,7 +404,7 @@ LOGGING = {
             "formatter": "colored" if DEBUG else "plain",
         },
         "file": {
-            "class": "logging.handlers.RotatingFileHandler",
+            "class": "agladiator.log_handlers.SafeRotatingFileHandler",
             "filename": str(_LOG_DIR / "django.log"),
             "maxBytes": 10 * 1024 * 1024,  # 10 MB
             "backupCount": 5,

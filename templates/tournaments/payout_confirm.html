@@ -23,7 +23,48 @@
   </div>
   {% endif %}
 
+  {% if notice %}
+  <div class="rounded-lg border border-yellow-600/40 bg-yellow-900/20 p-5 mb-6">
+    <p class="text-sm font-semibold text-yellow-300">{{ notice }}</p>
+    <p class="text-sm text-gray-300 mt-1">We will contact you at your account email when there is something for you to do.</p>
+  </div>
+
+  {% elif non_paypal %}
   {% if confirmation and confirmation.confirmed_by_user %}
+  <div class="rounded-lg border border-green-700/40 bg-green-900/15 p-5 mb-6">
+    <p class="font-semibold text-green-300 mb-1">✓ Prize terms already confirmed</p>
+    <p class="text-sm text-gray-300 mt-1">
+      We will contact you at <strong class="text-white">{{ confirmation.contact_email_snapshot }}</strong> about the payment.
+    </p>
+    <p class="text-xs text-gray-500 mt-1">Confirmed on {{ confirmation.confirmed_at|date:"N j, Y, P" }}</p>
+  </div>
+  {% else %}
+  <div class="rounded-lg border border-gray-700 bg-gray-800 p-5 mb-6">
+    <p class="text-sm text-gray-300">
+      Prize: <strong class="text-white">{{ claim.amount|default:tournament.prize_amount }} {{ claim.currency|default:tournament.prize_currency }}</strong>
+    </p>
+    <p class="text-sm text-gray-300 mt-1">Payout method: <strong class="text-white">{% if claim %}{{ claim.get_payout_method_display }}{% else %}{{ tournament.get_payout_method_display }}{% endif %}</strong></p>
+    {% if claim %}<p class="text-sm text-gray-300 mt-1">Claim deadline: {{ claim.expires_at|date:"N j, Y" }}</p>{% endif %}
+    <p class="text-sm text-gray-300 mt-3">
+      {% if tournament.payout_instructions %}{{ tournament.payout_instructions|linebreaksbr }}{% else %}After you confirm, we will contact you by email to arrange the payment.{% endif %}
+      Never send bank or UPI details through this site.
+    </p>
+    {% if request.user.email %}
+    <p class="text-xs text-gray-500 mt-3">Contact email: <span class="text-gray-300">{{ request.user.email }}</span></p>
+    <form method="post" class="mt-4">
+      {% csrf_token %}
+      <button type="submit" class="btn-outline px-6 py-2 text-sm font-semibold">Confirm the prize terms</button>
+    </form>
+    {% else %}
+    <p class="text-sm text-red-400 mt-3">
+      No confirmed email on file.
+      <a href="{% url 'users:profile' %}?tab=edit&next={% url 'tournaments:payout_confirm' tournament.pk %}" class="text-brand hover:underline">Add and confirm one in your profile</a> first.
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% elif confirmation and confirmation.confirmed_by_user %}
   <div class="rounded-lg border border-green-700/40 bg-green-900/15 p-5 mb-6">
     <p class="font-semibold text-green-300 mb-1">✓ Payout address already confirmed</p>
     <p class="text-sm text-gray-300 mt-1">

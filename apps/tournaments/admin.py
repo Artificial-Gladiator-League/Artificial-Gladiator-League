@@ -1,16 +1,85 @@
+from django import forms
 from django.contrib import admin, messages
+from django.db.models import Q
+from django.forms import Textarea
+from django.template.response import TemplateResponse
 from django.utils import timezone
+from django.utils.html import format_html
+from . import payouts
+from .forms import CountryCodesField
+from .profile_country import AGREE, MISMATCH, country_agreement
 from .models import (
     Badge, EligibilityVerification, GauntletStanding, Match, PayoutConfirmation,
-    PrizeClaim, Tournament, TournamentChatMessage,
-    TournamentParticipant, TournamentShaCheck,
+    PrizeClaim, PrizeClaimEvent, Tournament, TournamentChatMessage,
+    TournamentParticipant, TournamentShaCheck, TournamentTerms,
 )
+from .sensitive import validate_no_sensitive_data
+
+
+@admin.register(TournamentTerms)
+class TournamentTermsAdmin(admin.ModelAdmin):
+    list_display = (
+        "title", "slug", "version", "is_active", "requires_age_18",
+        "requires_israeli_residency", "has_prize", "acceptances_display", "created_at",
+    )
+    list_filter = ("is_active", "has_prize", "requires_age_18", "requires_israeli_residency")
+    search_fields = ("title", "slug", "version")
+    readonly_fields = ("created_at",)
+    # "Save as new" is the intended way to publish a new version.
+    save_as = True
+    fieldsets = (
+        (None, {"fields": ("slug", "title", "version", "is_active", "created_at")}),
+        ("Requirements", {"fields": ("requires_age_18", "requires_israeli_residency", "has_prize")}),
+        ("Body", {"fields": ("body",)}),
+    )
+    _CONTENT_FIELDS = ("title", "body", "requires_age_18", "requires_israeli_residency", "has_prize")
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "body":
+            kwargs["widget"] = Textarea(attrs={
+                "rows": 40, "cols": 140,
+                "style": "width:100%;font-family:monospace;",
+            })
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    @admin.display(description="Acceptances")
+    def acceptances_display(self, obj):
+        return obj.acceptance_count()
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        if request.method == "GET":
+            obj = self.get_object(request, object_id)
+            count = obj.acceptance_count() if obj else 0
+            if count:
+                self.message_user(
+                    request,
+                    f"{count} player(s) have already accepted {obj}. Do not change its "
+                    f"wording: change the version number and use \"Save as new\" to "
+                    f"publish a new version instead.",
+                    level=messages.WARNING,
+                )
+        return super().change_view(request, object_id, form_url, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        # form.initial holds the saved slug/version; obj already carries the edited ones.
+        accepted = change and TournamentParticipant.objects.filter(
+            accepted_terms_slug=form.initial.get("slug"),
+            terms_version_accepted=form.initial.get("version"),
+        ).exists()
+        if accepted and any(f in form.changed_data for f in self._CONTENT_FIELDS):
+            self.message_user(
+                request,
+                f"Edited the wording of {obj}, which players have already accepted. "
+                f"Prefer publishing a new version.",
+                level=messages.WARNING,
+            )
+        super().save_model(request, obj, form, change)
 
 
 class ParticipantInline(admin.TabularInline):
     model = TournamentParticipant
     extra = 0
-    readonly_fields = ("seed", "current_round", "eliminated", "eliminated_in_round")
+    readonly_fields = ("seed", "current_round", "eliminated", "eliminated_in_round", "profile_country_code")
 
 
 @admin.register(Tournament)
@@ -19,11 +88,16 @@ class TournamentAdmin(admin.ModelAdmin):
         "name", "type", "game_type", "category", "time_control",
         "status", "current_round",
         "participant_count", "capacity", "rounds_total",
-        "entry_display", "start_time",
+        "countries_display", "prize_display", "start_time",
     )
     list_filter = ("status", "type", "game_type", "category", "time_control", "is_money_tournament")
     search_fields = ("name",)
     inlines = [ParticipantInline]
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if change and "prize_on_hold" in form.changed_data:
+            payouts.sync_for_tournament(obj)
 
     fieldsets = (
         (None, {
@@ -46,16 +120,25 @@ class TournamentAdmin(admin.ModelAdmin):
         ("Prize / Money Tournament", {
             "fields": (
                 "is_money_tournament",
+                "allowed_countries",
                 "prize_amount",
                 "prize_currency",
                 "prize_structure",
                 "payout_status",
+                "payout_method",
+                "payout_instructions",
+                "claim_deadline_days",
+                "prize_on_hold",
+                "prize_hold_reason",
+                "verification_documents",
+                "terms",
                 "terms_text",
                 "terms_version",
             ),
             "description": (
                 "Enable \"is_money_tournament\" to activate prize-pool mode. "
-                "Entry will be restricted to Israeli residents (IP-based). "
+                "Entry is restricted to residents of the countries in allowed_countries "
+                "(IP-based; Israel only by default). "
                 "Set terms_version to a non-empty string (e.g. \"1.0\") to "
                 "require participants to accept terms before joining. "
                 "prize_structure is an optional JSON list defining per-place payouts, e.g. "
@@ -70,11 +153,31 @@ class TournamentAdmin(admin.ModelAdmin):
     class Media:
         js = ("admin/js/tournament_type_fields.js",)
 
-    @admin.display(description="Entry")
-    def entry_display(self, obj):
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        if db_field.name == "allowed_countries":
+            return CountryCodesField(label=db_field.verbose_name.capitalize(), help_text=db_field.help_text)
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+    @admin.display(description="Countries")
+    def countries_display(self, obj):
+        return ", ".join(obj.allowed_country_codes)
+
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+        # Active records only, plus the one already linked so the tournament still saves.
+        field = form.base_fields.get("terms")
+        if field is not None:
+            active = Q(is_active=True)
+            if obj is not None and obj.terms_id:
+                active |= Q(pk=obj.terms_id)
+            field.queryset = TournamentTerms.objects.filter(active)
+        return form
+
+    @admin.display(description="Prize")
+    def prize_display(self, obj):
         if obj.is_money_tournament and obj.prize_amount:
             return f"{obj.prize_amount} {obj.prize_currency}"
-        return "Free"
+        return "\u2014"
 
 
 @admin.register(Match)
@@ -90,25 +193,55 @@ class MatchAdmin(admin.ModelAdmin):
     readonly_fields = ("elo_change_p1", "elo_change_p2")
 
 
+class CountryAgreementFilter(admin.SimpleListFilter):
+    """Profile country vs join IP vs declared residency: staff-visible signal only."""
+
+    title = "profile / IP / declared countries"
+    parameter_name = "country_agreement"
+
+    def lookups(self, request, model_admin):
+        return (("mismatch", "Disagree"), ("ok", "Agree"), ("n/a", "Not enough data"))
+
+    def queryset(self, request, queryset):
+        wanted = self.value()
+        if wanted not in ("mismatch", "ok", "n/a"):
+            return queryset
+        ids = [p.pk for p in queryset.only(
+            "profile_country_code", "join_country_code", "declared_residency_countries",
+        ) if country_agreement(p)[0] == wanted]
+        return queryset.filter(pk__in=ids)
+
+
 @admin.register(TournamentParticipant)
 class TournamentParticipantAdmin(admin.ModelAdmin):
     list_display = (
         "user", "tournament", "seed", "current_round",
         "eliminated", "disqualified_for_sha_mismatch",
         "round_pinned_sha_short", "round_pinned_at",
-        "join_country_code", "geo_eligible", "terms_accepted_at",
+        "profile_country_code", "join_country_code", "declared_residency_countries", "country_check",
+        "geo_eligible", "terms_accepted_at",
         "paypal_email_display",
     )
     list_filter = (
         "tournament", "eliminated", "disqualified_for_sha_mismatch",
-        "geo_eligible",
+        "geo_eligible", CountryAgreementFilter,
     )
     readonly_fields = (
-        "join_ip", "join_country_code", "geo_eligible",
-        "terms_accepted_at", "terms_version_accepted",
+        "join_ip", "join_country_code", "declared_residency_countries", "profile_country_code",
+        "country_check", "geo_eligible",
+        "terms_accepted_at", "terms_version_accepted", "accepted_terms_slug",
     )
     search_fields = ("user__username", "tournament__name")
     actions = ["run_manual_sha_check", "clear_paypal_email"]
+
+    @admin.display(description="Countries (profile / IP / declared)")
+    def country_check(self, obj):
+        state, detail = country_agreement(obj)
+        if state == MISMATCH:
+            return format_html('<strong style="color:#b02a2a">MISMATCH</strong> ({})', detail)
+        if state == AGREE:
+            return format_html("agree ({})", detail)
+        return format_html("\u2014 ({})", detail)
 
     @admin.display(description="PayPal email")
     def paypal_email_display(self, obj):
@@ -206,35 +339,92 @@ class TournamentShaCheckAdmin(admin.ModelAdmin):
         return (obj.current_sha[:12] + "...") if obj.current_sha else "—"
 
 
+class ReasonForm(forms.Form):
+    reason = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 4, "cols": 70}),
+        validators=[validate_no_sensitive_data],
+        help_text="Required. Recorded with your name and the time. Never enter document numbers.",
+    )
+
+
+class NoteForm(forms.Form):
+    note = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 4, "cols": 70}),
+        validators=[validate_no_sensitive_data],
+    )
+
+
+class PaymentRecordForm(forms.Form):
+    amount_paid = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False)
+    tax_withheld = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0, required=False)
+    payment_reference = forms.CharField(
+        max_length=100, required=False, validators=[validate_no_sensitive_data],
+        help_text="Free text, e.g. a transfer reference. Never an account or UPI number.",
+    )
+
+
+class PrizeClaimEventInline(admin.TabularInline):
+    model = PrizeClaimEvent
+    extra = 0
+    can_delete = False
+    fields = ("at", "kind", "by", "reason")
+    readonly_fields = ("at", "kind", "by", "reason")
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(PrizeClaim)
 class PrizeClaimAdmin(admin.ModelAdmin):
     list_display = (
         "tournament", "winner", "amount", "currency",
         "status", "created_at", "expires_at",
     )
-    list_filter = ("status",)
+    list_filter = ("status", "payout_method")
     readonly_fields = ("claim_code", "created_at", "claimed_at", "paid_at", "paid_by_admin")
     search_fields = ("tournament__name", "winner__username")
     ordering = ("-created_at",)
-    actions = ["mark_as_paid"]
+    inlines = [PrizeClaimEventInline]
+    actions = [
+        "mark_as_paid", "block_claims", "unblock_claims",
+        "record_contact", "record_payment_details", "add_note",
+    ]
 
     @admin.action(description="Mark selected as Paid")
     def mark_as_paid(self, request, queryset):
         now = timezone.now()
         paid = skipped = blocked = 0
-        for claim in queryset:
+        refused = []
+        for claim in queryset.select_related("tournament", "winner"):
             if claim.status != PrizeClaim.Status.CLAIMED:
                 skipped += 1
                 continue
-            # Require winner's payout confirmation before marking paid.
-            has_confirmation = PayoutConfirmation.objects.filter(
-                tournament_entry__tournament=claim.tournament,
-                tournament_entry__user=claim.winner,
-                confirmed_by_user=True,
-            ).exists()
-            if not has_confirmation:
-                blocked += 1
-                continue
+            tournament = claim.tournament
+            label = f"Claim #{claim.pk} ({tournament.name})"
+            if tournament.requires_legal_check:
+                # Not Israel-only: every step must be done, in order.
+                blocker = payouts.payout_blocker(claim)
+                if blocker:
+                    refused.append(f"{label}: {blocker.admin_message}.")
+                    continue
+            else:
+                # Israel-only: the original check, plus the opt-in hold and non-PayPal contact step.
+                blocker = payouts.payout_blocker(claim)
+                if blocker and blocker.code in ("hold", "contacted"):
+                    refused.append(f"{label}: {blocker.admin_message}.")
+                    continue
+                # Require winner's payout confirmation before marking paid.
+                has_confirmation = PayoutConfirmation.objects.filter(
+                    tournament_entry__tournament=claim.tournament,
+                    tournament_entry__user=claim.winner,
+                    confirmed_by_user=True,
+                ).exists()
+                if not has_confirmation:
+                    blocked += 1
+                    continue
             claim.status = PrizeClaim.Status.PAID
             claim.paid_at = now
             claim.paid_by_admin = request.user
@@ -259,6 +449,93 @@ class PrizeClaimAdmin(admin.ModelAdmin):
                 f"{blocked} claim(s) blocked — winner has not confirmed their payout address yet.",
                 level=messages.ERROR,
             )
+        for line in refused:
+            self.message_user(request, line, level=messages.ERROR)
+
+    # ── Actions with an intermediate form ────────────────────────────────────
+
+    def _form_action(self, request, queryset, *, action, title, form_class, apply, intro=""):
+        """Show *form_class* for the selected claims; on a valid POST run apply(claim, cleaned) on each.
+
+        apply() raises payouts.ActionRefused to refuse one claim; the reason is shown to staff.
+        """
+        if "apply" in request.POST:
+            form = form_class(request.POST)
+            if form.is_valid():
+                done = 0
+                for claim in queryset:
+                    try:
+                        apply(claim, form.cleaned_data)
+                        done += 1
+                    except payouts.ActionRefused as exc:
+                        self.message_user(
+                            request, f"Claim #{claim.pk} ({claim.tournament.name}): {exc}.",
+                            level=messages.ERROR,
+                        )
+                if done:
+                    self.message_user(request, f"{title}: {done} claim(s) updated.", level=messages.SUCCESS)
+                return None
+        else:
+            form = form_class()
+        return TemplateResponse(request, "admin/tournaments/claim_action_form.html", {
+            **self.admin_site.each_context(request),
+            "opts": self.model._meta,
+            "title": title,
+            "intro": intro,
+            "form": form,
+            "action": action,
+            "claims": queryset,
+            "selected": request.POST.getlist(admin.helpers.ACTION_CHECKBOX_NAME),
+        })
+
+    @admin.action(description="Block selected (reason required)")
+    def block_claims(self, request, queryset):
+        return self._form_action(
+            request, queryset, action="block_claims", title="Block claims", form_class=ReasonForm,
+            intro="Blocking stops the claim and the payout and pauses its expiry clock. "
+                  "The winner only sees that the prize is on hold.",
+            apply=lambda claim, data: payouts.block_claim(claim, request.user, data["reason"]),
+        )
+
+    @admin.action(description="Unblock selected (reason required)")
+    def unblock_claims(self, request, queryset):
+        return self._form_action(
+            request, queryset, action="unblock_claims", title="Unblock claims", form_class=ReasonForm,
+            apply=lambda claim, data: payouts.unblock_claim(claim, request.user, data["reason"]),
+        )
+
+    @admin.action(description="Record: payment details requested")
+    def record_contact(self, request, queryset):
+        done = 0
+        for claim in queryset.select_related("tournament"):
+            try:
+                payouts.record_contact(claim, request.user)
+                done += 1
+            except payouts.ActionRefused as exc:
+                self.message_user(
+                    request, f"Claim #{claim.pk} ({claim.tournament.name}): {exc}.", level=messages.ERROR,
+                )
+        if done:
+            self.message_user(request, f"Recorded the contact step for {done} claim(s).", level=messages.SUCCESS)
+
+    @admin.action(description="Record payment details (amount, tax, reference)")
+    def record_payment_details(self, request, queryset):
+        return self._form_action(
+            request, queryset, action="record_payment_details", title="Record payment details",
+            form_class=PaymentRecordForm,
+            intro="Record only; nothing is calculated. Never enter bank, UPI or document numbers.",
+            apply=lambda claim, data: payouts.record_payment(
+                claim, request.user, data["amount_paid"], data["tax_withheld"], data["payment_reference"],
+            ),
+        )
+
+    @admin.action(description="Add a note")
+    def add_note(self, request, queryset):
+        return self._form_action(
+            request, queryset, action="add_note", title="Add a note", form_class=NoteForm,
+            intro="Never enter bank, UPI, PAN or document numbers.",
+            apply=lambda claim, data: payouts.add_note(claim, request.user, data["note"]),
+        )
 
     @admin.display(description="Current")
     def current_short(self, obj):
@@ -283,7 +560,7 @@ class EligibilityVerificationAdmin(admin.ModelAdmin):
         "tournament_entry__tournament__name",
     )
     ordering = ("-tournament_entry__joined_at",)
-    readonly_fields = ("tournament_entry",)
+    readonly_fields = ("tournament_entry", "verified_at", "verified_by")
     # No FileField or file upload widget anywhere in this admin.
     fields = (
         "tournament_entry",
@@ -294,35 +571,51 @@ class EligibilityVerificationAdmin(admin.ModelAdmin):
         "notes",
     )
 
+    def get_form(self, request, obj=None, **kwargs):
+        base = super().get_form(request, obj, **kwargs)
+        reviewer = request.user
+
+        class StampedForm(base):
+            """Stamp who and when before model validation, so 'verified' is always attributable."""
+
+            def clean(self):
+                cleaned = super().clean()
+                status = cleaned.get("status")
+                inst = self.instance
+                decided = (EligibilityVerification.Status.VERIFIED, EligibilityVerification.Status.REJECTED)
+                if status in decided:
+                    if "status" in self.changed_data or not inst.verified_by_id or not inst.verified_at:
+                        inst.verified_by = reviewer
+                        inst.verified_at = timezone.now()
+                elif status == EligibilityVerification.Status.PENDING:
+                    inst.verified_by = None
+                    inst.verified_at = None
+                return cleaned
+
+        return StampedForm
+
     def save_model(self, request, obj, form, change):
-        if obj.status in (
-            EligibilityVerification.Status.VERIFIED,
-            EligibilityVerification.Status.REJECTED,
-        ) and not obj.verified_by:
-            obj.verified_by = request.user
-        if obj.status in (
-            EligibilityVerification.Status.VERIFIED,
-            EligibilityVerification.Status.REJECTED,
-        ) and not obj.verified_at:
-            obj.verified_at = timezone.now()
         super().save_model(request, obj, form, change)
+        payouts.sync_for_entry(obj.tournament_entry)
 
 
 @admin.register(PayoutConfirmation)
 class PayoutConfirmationAdmin(admin.ModelAdmin):
     list_display = (
-        "tournament_entry", "paypal_email_snapshot",
-        "confirmed_by_user", "confirmed_at",
+        "tournament_entry", "payout_method", "paypal_email_snapshot",
+        "confirmed_by_user", "confirmed_at", "contacted_at",
     )
-    list_filter = ("confirmed_by_user",)
+    list_filter = ("confirmed_by_user", "payout_method")
     search_fields = (
         "tournament_entry__user__username",
         "tournament_entry__tournament__name",
         "paypal_email_snapshot",
+        "contact_email_snapshot",
     )
     ordering = ("-confirmed_at",)
     readonly_fields = (
-        "tournament_entry", "paypal_email_snapshot",
+        "tournament_entry", "paypal_email_snapshot", "payout_method", "contact_email_snapshot",
+        "terms_slug", "terms_version", "contacted_at", "contacted_by",
         "confirmed_by_user", "confirmed_at",
     )
 

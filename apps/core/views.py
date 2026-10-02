@@ -164,7 +164,7 @@ def home(request):
     gauntlet_champions = (
         Tournament.objects
         .filter(
-            type=Tournament.Type.GAUNTLET,
+            type__in=Tournament.MONEY_LIKE_TYPES,
             status=Tournament.Status.COMPLETED,
             champion__isnull=False,
         )

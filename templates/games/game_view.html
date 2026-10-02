@@ -168,48 +168,6 @@
 </div>
 {% endblock %}
 
-{% block extra_css %}
-<style>
-
-html, body, .animate-fade-in {
-  background-color: #ffffff !important;
-  color: #111111 !important;
-}
-
-.card, .chess-clock { background-color: #f9f9f9 !important; border-color: #e5e5e5 !important; }
-.text-gray-500 { color: #6b7280 !important; } /* Adjust grays for light */
-.bg-gray-800 { background-color: #f3f4f6 !important; }
-
-.live-dot,
-.finished-dot {
-  width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px;
-  animation: pulse 1.5s infinite;
-}
-
-.live-dot {
-  background: #10b981;  /* Green */
-  box-shadow: 0 0 8px #10b98188;
-}
-
-.finished-dot {
-  background: #ef4444;  /* Red */
-  box-shadow: 0 0 12px #ef444488;  /* Stronger glow */
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.6; transform: scale(1.1); }
-}
-
-.ws-dot {  /* Fallback for other states */
-  width: 8px; height: 8px; border-radius: 50%; background: #6b7280;
-}
-
-.ws-dot.connecting { background: #3b82f6; }
-.ws-dot.disconnected { background: #eab308; }
-</style>
-{% endblock %}
-
 {% block extra_js %}
 <script>
 (function () {
@@ -804,11 +762,22 @@ html, body, .animate-fade-in {
         }
 
       } else if (data.type === 'armageddon') {
-        var msg = data.message || 'Armageddon tiebreak!';
-        if (resultDetail) resultDetail.textContent = msg;
-        setTimeout(function () {
-          window.location.href = '/games/' + data.game_id + '/';
-        }, 2000);
+        if (window.__armageddonRedirecting) return;
+        window.__armageddonRedirecting = true;
+        var armTarget = data.redirect_url || ('/games/' + data.game_id + '/');
+        var armRemaining = data.delay_seconds || 5;
+        var armBase = data.message || 'Armageddon tiebreak!';
+        var armTick = function () {
+          if (armRemaining <= 0) {
+            clearInterval(armTimer);
+            window.location.href = armTarget;
+            return;
+          }
+          if (resultDetail) resultDetail.textContent = armBase + ' Starts in ' + armRemaining + '\u2026';
+          armRemaining--;
+        };
+        var armTimer = setInterval(armTick, 1000);
+        armTick();
 
       } else if (data.type === 'error') {
         console.warn('Server error:', data.message);

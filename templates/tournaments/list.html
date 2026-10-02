@@ -30,7 +30,7 @@
           <span class="text-xs text-gray-500 uppercase font-semibold">
             {{ tournament.get_type_display }}
           </span>
-          <span class="text-xs font-semibold px-2 py-0.5 rounded {% if tournament.game_type == 'breakthrough' %}bg-orange-900/40 text-orange-300{% else %}bg-blue-900/40 text-blue-300{% endif %}">
+          <span class="text-xs font-semibold px-2 py-0.5 rounded {% if tournament.game_type == 'breakthrough' %}bg-blue-900/40 text-blue-300{% else %}bg-green-900/40 text-green-300{% endif %}">
             {{ tournament.get_game_type_display }}
           </span>
         </div>
@@ -39,6 +39,10 @@
 
         {% if tournament.description %}
           <p class="text-gray-400 text-sm mb-3 line-clamp-2">{{ tournament.description }}</p>
+        {% endif %}
+
+        {% if tournament.is_money_tournament or not tournament.is_israel_only %}
+          <p class="text-xs text-gray-500 mb-2">Open to residents of {{ tournament.allowed_countries_text }}</p>
         {% endif %}
 
         <div class="flex items-center gap-4 text-sm text-gray-400">
@@ -61,7 +65,7 @@
       {% if tournament.active_game %}
         <div class="px-5 pb-3">
           <a href="{% url 'games:spectate' tournament.active_game.pk %}"
-             class="flex items-center justify-center gap-2 text-xs py-1.5 w-full text-center rounded-lg bg-purple-900/30 border border-purple-700 text-purple-300 hover:bg-purple-900/50 transition font-semibold">
+             class="btn-outline flex items-center justify-center gap-2 text-xs py-1.5 w-full text-center">
             Spectate Live Game
           </a>
         </div>

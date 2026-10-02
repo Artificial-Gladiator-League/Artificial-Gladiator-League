@@ -45,6 +45,12 @@ def validate_min_age(value):
     pass
 
 
+COUNTRY_LOCKED_MESSAGE = (
+    "The country of residence cannot be changed once it is saved. "
+    "To correct it, contact support."
+)
+
+
 class CustomUser(AbstractUser):
     """Extended user model with AI bot info, ELO, and aggregated stats.
 
@@ -59,6 +65,23 @@ class CustomUser(AbstractUser):
         null=True,
         help_text="Unconfirmed new email awaiting confirmation from the user.",
     )
+
+    # ── Gladiator character sheet ───────────────
+    class FightingStyle(models.TextChoices):
+        UNHINGED_RAGE = "Unhinged Rage", "Unhinged Rage"
+        SILENT_ASSASSIN = "Silent Assassin", "Silent Assassin"
+        RAGE_PHILOSOPHER = "The Rage Philosopher", "The Rage Philosopher"
+        CHAOTIC_GENIUS = "Chaotic Genius", "Chaotic Genius"
+
+    MOODS = ("😈", "🔥", "🧠", "😎", "💀", "🤡")
+
+    origin_story = models.TextField(max_length=1000, blank=True, default="")
+    fighting_style = models.CharField(
+        max_length=40,
+        choices=FightingStyle.choices,
+        default=FightingStyle.UNHINGED_RAGE,
+    )
+    current_mood = models.CharField(max_length=8, default="😈")
 
     # ── AI Bot ──────────────────────────────────
     ai_name = models.CharField(
@@ -205,12 +228,113 @@ class CustomUser(AbstractUser):
 
     is_official_bot = models.BooleanField(default=False)
 
+    # ── Country of residence (convenience layer) ─────────────
+    # Set once (registration, or once from profile settings for older accounts) and
+    # then locked. It never replaces the IP geo gate, the per-tournament residency
+    # declaration or winner verification; it only powers an early filter and the
+    # profile flag. Changed only by staff, with a reason (see change_country_by_staff).
+    country = models.CharField(
+        max_length=2,
+        blank=True,
+        default="",
+        help_text="ISO 3166-1 alpha-2 country of residence. Blank = not set yet.",
+    )
+    country_set_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the country was saved (and locked).",
+    )
+    country_locked = models.BooleanField(
+        default=False,
+        help_text="True once the country has been saved; users cannot change it afterwards.",
+    )
+    show_flag = models.BooleanField(
+        default=True,
+        help_text="Show the country flag next to the username on the user's profile page.",
+    )
+
+    COUNTRY_FIELDS = ("country", "country_set_at", "country_locked")
+
     class Meta:
         ordering = ["-elo"]
         db_table = "users_user"
 
     def __str__(self):
         return f"{self.username} (ELO {self.elo})"
+
+    # ── Country lock ───────────────────────────────────────
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        if "country" in field_names:
+            instance._country_snapshot = instance.country
+        return instance
+
+    def save(self, *args, **kwargs):
+        """Plain saves can never write the country fields on an existing user.
+
+        * An explicit ``update_fields`` naming a country field raises.
+        * A full save whose in-memory country differs from what was loaded raises.
+        * Otherwise the country fields are left out of the UPDATE, so a stale copy of
+          the user can never overwrite a country saved in the meantime.
+        Legitimate writers use ``claim_country`` or ``change_country_by_staff``
+        (queryset updates), which do not go through this method.
+        """
+        if not self._state.adding and self.pk:
+            fields = kwargs.get("update_fields")
+            if fields is not None:
+                if any(f in self.COUNTRY_FIELDS for f in fields):
+                    raise ValidationError(COUNTRY_LOCKED_MESSAGE)
+            else:
+                loaded = getattr(self, "_country_snapshot", None)
+                if loaded is not None and loaded != self.country:
+                    raise ValidationError(COUNTRY_LOCKED_MESSAGE)
+                deferred = self.get_deferred_fields()
+                kwargs["update_fields"] = [
+                    f.name for f in self._meta.concrete_fields
+                    if not f.primary_key and f.name not in self.COUNTRY_FIELDS
+                    and f.attname not in deferred
+                ]
+        super().save(*args, **kwargs)
+
+    def claim_country(self, code: str) -> bool:
+        """Set the country exactly once and lock it. True if this call set it.
+
+        The conditional UPDATE is atomic, so two concurrent requests cannot both win.
+        """
+        from django.utils import timezone
+
+        code = (code or "").upper()
+        now = timezone.now()
+        updated = type(self).objects.filter(pk=self.pk, country="").update(
+            country=code, country_set_at=now, country_locked=True,
+        )
+        if updated:
+            self.country, self.country_set_at, self.country_locked = code, now, True
+            self._country_snapshot = code
+        return bool(updated)
+
+    def change_country_by_staff(self, new_code: str, by, reason: str):
+        """The only way to change a saved country: needs a reason and is logged."""
+        from django.db import transaction
+        from django.utils import timezone
+
+        reason = (reason or "").strip()
+        if not reason:
+            raise ValidationError("A reason is required to change a locked country.")
+        new_code = (new_code or "").upper()
+        with transaction.atomic():
+            old = type(self).objects.select_for_update().get(pk=self.pk).country
+            now = timezone.now()
+            type(self).objects.filter(pk=self.pk).update(
+                country=new_code, country_set_at=now, country_locked=bool(new_code),
+            )
+            log = CountryChangeLog.objects.create(
+                user=self, changed_by=by, old_country=old, new_country=new_code, reason=reason,
+            )
+        self.country, self.country_set_at, self.country_locked = new_code, now, bool(new_code)
+        self._country_snapshot = new_code
+        return log
 
     # ── Computed properties ─────────────────────
     def get_game_model(self, game_type: str):
@@ -606,6 +730,28 @@ class UserGameModel(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — {self.get_game_type_display()} ({self.hf_model_repo_id})"
+
+
+class CountryChangeLog(models.Model):
+    """Audit trail of staff changes to a user's locked country."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="country_changes",
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+    old_country = models.CharField(max_length=2, blank=True)
+    new_country = models.CharField(max_length=2, blank=True)
+    reason = models.TextField()
+
+    class Meta:
+        ordering = ["-changed_at"]
+
+    def __str__(self):
+        return f"{self.user_id}: {self.old_country or '-'} -> {self.new_country or '-'} ({self.changed_at:%Y-%m-%d})"
 
 
 class GDPRRequest(models.Model):

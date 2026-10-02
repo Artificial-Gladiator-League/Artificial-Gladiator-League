@@ -18,19 +18,28 @@
       darkMode: 'class',
       theme: {
         extend: {
+          // Flat Lichess-style palette (dark). gold/brand -> green, purple -> blue, grays -> warm neutrals.
           colors: {
-            brand:       '#48BB78',
-            brandHover:  '#38A169',
-            gold:        '#FFD700',
-            goldDim:     '#B8860B',
-            purple:      '#9F7AEA',
-            purpleDim:   '#805AD5',
-            navy:        '#0B0E1A',
-            navyLight:   '#111631',
-            surface:     '#161B33',
-            surfaceLight:'#1E2446',
-            borderDark:  '#2D3561',
+            brand:       '#629924',
+            brandHover:  '#527e1d',
+            gold:        '#8bc34a',
+            goldDim:     '#629924',
+            purple: {
+              DEFAULT: '#3893e8', 300: '#8cc2f5', 400: '#62aaf0', 500: '#3893e8',
+              600: '#2f7fd0', 700: '#2a6db0', 800: '#22507f', 900: '#1d3a5e',
+            },
+            purpleDim:   '#2a6db0',
+            navy:        '#161512',
+            navyLight:   '#1c1b18',
+            surface:     '#1f1e1b',
+            surfaceLight:'#2d2b28',
+            borderDark:  '#3c3a37',
+            gray: {
+              50: '#f7f6f5', 100: '#e8e8e8', 200: '#d4d3d1', 300: '#bababa', 400: '#a09e9a',
+              500: '#94928d', 600: '#6e6c68', 700: '#3c3a37', 800: '#2d2b28', 900: '#262421', 950: '#1c1b18',
+            },
           },
+          borderColor: { DEFAULT: '#3c3a37' },
           fontFamily: {
             sans: ['Inter', 'Roboto', 'ui-sans-serif', 'system-ui'],
             mono: ['JetBrains Mono', 'Roboto Mono', 'ui-monospace', 'monospace'],
@@ -79,6 +88,8 @@
 
   <!-- Gladiator Theme CSS -->
   <link rel="stylesheet" href="{% static 'css/gladiator.css' %}">
+  <!-- Flat Lichess-style theme (must stay after gladiator.css) -->
+  <link rel="stylesheet" href="{% static 'css/lichess.css' %}">
 
   <!-- HTMX (lightweight AJAX for comments, forms, etc.) -->
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
@@ -86,39 +97,38 @@
   {% block extra_head %}{% endblock %}
 </head>
 
-<body class="bg-black text-gray-200 font-sans antialiased min-h-screen flex flex-col">
+<body class="lp-body font-sans antialiased min-h-screen flex flex-col">
   <!-- ─── Sticky Top Navbar ────────────────────── -->
-  <nav class="bg-white/95 dark:bg-navy/95 backdrop-blur-md border-b border-gray-200 dark:border-borderDark sticky top-0 z-50 transition-colors" role="navigation" aria-label="Main navigation">
+  <nav class="lp-nav sticky top-0 z-50" role="navigation" aria-label="Main navigation">
     <div class="max-w-[120rem] whitespace-nowrap mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex items-center justify-between h-16">
+      <div class="flex items-center justify-between h-14">
 
         <!-- Logo -->
-        <a href="{% url 'core:home' %}" class="flex items-center gap-5 group no-underline" aria-label="Artificial Gladiator League home">
-          <img src="{% static 'favicon.svg' %}" alt="agladiator" class="h-8 w-8 group-hover:scale-110 transition-transform rounded">
-          <div class="leading-tight flex items-center">
-            <div class="text-center">
-              <span class="text-brand glow-brand font-black">Artificial</span><br />
-              <span class="text-gold glow-gold font-black">Gladiator</span>
-              <span class="text-white font-black"> League</span>
+        <a href="{% url 'core:home' %}" class="brand-link flex items-center gap-5 group no-underline" aria-label="Artificial Gladiator League home">
+          <img src="{% static 'favicon.svg' %}" alt="agladiator" class="h-8 w-8 rounded">
+          <div class="flex items-center">
+            <div class="brand-logo font-black">
+              <span class="brand-artificial text-brand">Artificial</span>
+              <span class="brand-line2"><span class="brand-gladiator">Gladiator</span> <span class="brand-league">League</span></span>
             </div>
           </div>
         </a>
 
         <!-- Center Nav Links -->
-        <div class="hidden md:flex items-center gap-5 text-sm font-medium">
-          <a href="{% url 'core:home' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Home</a>
-          <a href="{% url 'news:list' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">News</a>
-          <a href="{% url 'core:how_to_upload' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How to Register</a>
-          <a href="{% url 'core:how_it_works' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How it Works</a>
+        <div class="hidden xl:flex items-center gap-1 text-sm font-medium">
+          <a href="{% url 'core:home' %}" class="nav-link{% if request.resolver_match.view_name == 'core:home' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Home</a>
+          <a href="{% url 'news:list' %}" class="nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">News</a>
+          <a href="{% url 'core:how_to_upload' %}" class="nav-link{% if request.resolver_match.view_name == 'core:how_to_upload' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How to Register</a>
+          <a href="{% url 'core:how_it_works' %}" class="nav-link{% if request.resolver_match.view_name == 'core:how_it_works' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How it Works</a>
           <!-- Play dropdown -->
           <div class="relative" id="playDropdownWrap">
             <div class="flex items-center">
-              <a href="{% url 'games:lobby' %}" class="nav-link px-2 py-2 rounded-l-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Hatzar Grutaot</a>
+              <a href="{% url 'games:lobby' %}" class="nav-link{% if request.resolver_match.app_name == 'games' %} active{% endif %} px-2 py-2 rounded-l-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Hatzar Grutaot</a>
               <button type="button" id="playDropdownBtn" class="nav-link px-1 py-2 rounded-r-lg hover:bg-gray-100 dark:hover:bg-surfaceLight cursor-pointer">
                 <svg class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
               </button>
             </div>
-            <div id="playDropdownMenu" class="hidden absolute left-0 mt-1 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
+            <div id="playDropdownMenu" class="lp-menu hidden absolute left-0 mt-1 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
               <button type="button" id="navCreateLobbyBtn" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition w-full text-left cursor-pointer">
                 <span></span> Gladiate in Lobby Game
               </button>
@@ -127,10 +137,10 @@
               </a>
             </div>
           </div>
-          <a href="{% url 'core:leaderboard' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
-          <a href="{% url 'forum:category_list' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Forum</a>
-          <a href="{% url 'core:about' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
-          <a href="{% url 'core:contact' %}" class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Contact</a>
+          <a href="{% url 'core:leaderboard' %}" class="nav-link{% if request.resolver_match.view_name == 'core:leaderboard' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
+          <a href="{% url 'forum:category_list' %}" class="nav-link{% if request.resolver_match.app_name == 'forum' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Forum</a>
+          <a href="{% url 'core:about' %}" class="nav-link{% if request.resolver_match.view_name == 'core:about' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">About</a>
+          <a href="{% url 'core:contact' %}" class="nav-link{% if request.resolver_match.view_name == 'core:contact' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Contact</a>
           {% if active_play %}
             <a href="{{ active_play.url }}"
                class="nav-link px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight flex items-center gap-1.5 text-red-400 font-semibold animate-pulse">
@@ -155,7 +165,7 @@
         <div class="flex items-center gap-2 text-sm">
 
           <!-- Online players count (visible to everyone) -->
-          <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-surfaceLight text-sm">
+          <div class="lp-pill hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-surfaceLight text-sm">
             <span id="onlineCount" class="font-semibold text-brand">0</span>
             <span id="onlineLabel" class="text-gray-400 text-xs">Online. Be the first</span>
           </div>
@@ -169,7 +179,7 @@
                 <span class="hidden sm:inline font-medium text-sm">{% if user.ai_name %}{{ user.ai_name }}{% else %}{% fide_badge user %} {{ user.username }}{% endif %}</span>
                 <svg class="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M19 9l-7 7-7-7"/></svg>
               </button>
-              <div id="userDropdownMenu" class="hidden absolute right-0 mt-2 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
+              <div id="userDropdownMenu" class="lp-menu hidden absolute right-0 mt-2 w-52 bg-white dark:bg-surfaceLight border border-gray-200 dark:border-borderDark rounded-xl shadow-xl py-1.5 z-50">
                 <a href="{% url 'users:profile' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
                   <svg class="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                   Profile
@@ -200,7 +210,7 @@
         </div>
 
         <!-- Mobile hamburger -->
-        <button id="mobileMenuBtn" class="md:hidden text-gray-500 dark:text-gray-400 hover:text-gold transition" aria-label="Open menu">
+        <button id="mobileMenuBtn" class="xl:hidden text-gray-500 dark:text-gray-400 hover:text-gold transition" aria-label="Open menu">
           <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
           </svg>
@@ -209,15 +219,19 @@
     </div>
 
     <!-- Mobile drawer menu -->
-    <div id="mobileMenu" class="hidden md:hidden bg-white dark:bg-surface border-t border-gray-200 dark:border-borderDark px-4 pb-4 space-y-1 text-sm transition-colors">
-      <a href="{% url 'core:home' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Home</a>
-      <a href="{% url 'news:list' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">News</a>
+    <div id="mobileMenu" class="lp-drawer hidden xl:hidden bg-white dark:bg-surface border-t border-gray-200 dark:border-borderDark px-4 pb-4 space-y-1 text-sm">
+      <a href="{% url 'core:home' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:home' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Home</a>
+      <a href="{% url 'news:list' %}" class="block nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">News</a>
       <span class="block text-xs uppercase tracking-widest text-gray-500 font-semibold pt-2 px-3">Play</span>
-      <a href="{% url 'games:lobby' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Lobby</a>
+      <a href="{% url 'games:lobby' %}" class="block nav-link{% if request.resolver_match.app_name == 'games' %} active{% endif %} py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Lobby</a>
       <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">Create Lobby Game</button>
       <a href="{% url 'tournaments:list' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Arena Tournament</a>
-      <a href="{% url 'core:leaderboard' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Leaderboards</a>
-      <a href="{% url 'forum:category_list' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Forum</a>
+      <a href="{% url 'core:leaderboard' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:leaderboard' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Leaderboards</a>
+      <a href="{% url 'forum:category_list' %}" class="block nav-link{% if request.resolver_match.app_name == 'forum' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Forum</a>
+      <a href="{% url 'core:how_to_upload' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:how_to_upload' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">How to Register</a>
+      <a href="{% url 'core:how_it_works' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:how_it_works' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">How it Works</a>
+      <a href="{% url 'core:about' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:about' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">About</a>
+      <a href="{% url 'core:contact' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:contact' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Contact</a>
       <hr class="border-gray-200 dark:border-borderDark">
       {% if user.is_authenticated %}
         <a href="{% url 'users:profile' %}" class="block nav-link py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">{% fide_badge user %} {{ user.username }}</a>
@@ -235,13 +249,14 @@
 
   <!-- ─── Flash messages ──────────────────────── -->
   {% if messages %}
-  <div class="max-w-7xl mx-auto px-4 mt-3 space-y-2">
+  <div class="lp-flash w-full mx-auto px-4 sm:px-6 lg:px-8 mt-3 space-y-2">
     {% for message in messages %}
-      <div class="rounded-lg px-4 py-2.5 text-sm flex items-start gap-2
-        {% if 'activation' in message.tags %}bg-green-900/60 text-green-200 border border-green-800
-        {% elif 'error' in message.tags or 'warning' in message.tags %}bg-red-900/60 text-red-200 border border-red-800
-        {% elif 'success' in message.tags %}bg-green-900/60 text-green-200 border border-green-800
-        {% else %}bg-gray-200 dark:bg-surfaceLight text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-borderDark{% endif %}">
+      <div class="lp-msg px-4 py-2.5 text-sm flex items-start gap-2
+        {% if 'activation' in message.tags %}lp-msg--success
+        {% elif 'error' in message.tags %}lp-msg--error
+        {% elif 'warning' in message.tags %}lp-msg--warn
+        {% elif 'success' in message.tags %}lp-msg--success
+        {% else %}lp-msg--info{% endif %}">
         <span class="flex-shrink-0 mt-0.5">{% if 'activation' in message.tags %}✅{% elif 'error' in message.tags or 'warning' in message.tags %}⚠️{% elif 'success' in message.tags %}✅{% else %}ℹ️{% endif %}</span>
         <span>{{ message|safe }}</span>
       </div>
@@ -250,12 +265,12 @@
   {% endif %}
 
   <!-- ─── Main content ────────────────────────── -->
-  <main class="flex-1 {% block main_class %}max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8{% endblock %}">
+  <main class="flex-1 {% block main_class %}lp-main w-full mx-auto px-4 sm:px-6 lg:px-8 py-6{% endblock %}">
     {% block content %}{% endblock %}
   </main>
 
   <!-- ─── Footer ──────────────────────────────── -->
-  <footer class="bg-white dark:bg-navy border-t border-gray-200 dark:border-borderDark py-8 transition-colors">
+  <footer class="lp-footer bg-white dark:bg-navy border-t border-gray-200 dark:border-borderDark py-6">
     <div class="max-w-7xl mx-auto px-4">
       <div class="flex flex-col md:flex-row items-center justify-between gap-4">
         <!-- Footer logo -->
@@ -264,7 +279,7 @@
           <!-- <span class="text-sm font-semibold"><span class="text-white">a</span>gladiator</span> -->
         <!-- </div> -->
         <div class="text-xs text-gray-500 dark:text-gray-500">
-          Copyright &copy; {{ "now"|date:"Y" }} 2026 Artificial Gladiator League&trade;<sup class="tm"></sup>. All rights reserved.
+          Copyright &copy; {{ "now"|date:"Y" }} 2026 Artificial <span class="brand-gladiator">Gladiator</span> <span class="brand-league">League</span>&trade;<sup class="tm"></sup>. All rights reserved.
         </div>
         <div class="flex gap-4 text-xs">
           <a href="{% url 'core:privacy' %}" class="text-gray-500 hover:text-gold transition">Privacy</a>
@@ -307,7 +322,7 @@
   <div id="createLobbyModal" class="fixed inset-0 z-[100] hidden">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="createLobbyOverlay"></div>
     <div class="relative flex items-center justify-center min-h-full p-4">
-      <div class="relative w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-6 space-y-5 animate-fade-in">
+      <div class="lp-modal relative w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-6 space-y-5 animate-fade-in">
         <div class="flex items-center justify-between">
           <h3 class="text-lg font-bold">Create Lobby Game</h3>
           <button id="closeCreateLobby" class="text-gray-500 hover:text-gray-300 transition text-xl leading-none cursor-pointer">&times;</button>

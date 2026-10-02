@@ -1,7 +1,68 @@
 import secrets
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
+from django.template import TemplateSyntaxError
+
+from .countries import (
+    ISRAEL_ONLY, countries_phrase, default_allowed_countries, normalize_country_codes,
+    unknown_country_codes, unknown_currency_code,
+)
+from .sensitive import validate_no_sensitive_data
+
+
+class TournamentTerms(models.Model):
+    """A versioned Terms & Conditions record that tournaments can point at.
+
+    Records are never edited once players have accepted them: publish a new
+    version (same slug, new version string) instead.
+    """
+
+    slug = models.SlugField(max_length=80)
+    title = models.CharField(max_length=200)
+    version = models.CharField(max_length=20, help_text="e.g. 1.0")
+    body = models.TextField(
+        help_text=(
+            "HTML. May use {{ tournament.prize_amount }}, "
+            "{{ tournament.prize_currency }}, {{ tournament.name }} and {{ terms.title }}."
+        ),
+    )
+    requires_age_18 = models.BooleanField(default=False)
+    requires_israeli_residency = models.BooleanField(default=False)
+    has_prize = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["slug", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug", "version"], name="uniq_tournamentterms_slug_version",
+            ),
+        ]
+        verbose_name = "tournament terms"
+        verbose_name_plural = "tournament terms"
+
+    def __str__(self):
+        return f"{self.title} v{self.version}"
+
+    def clean(self):
+        from .terms import compile_body
+        try:
+            compile_body(self.body)
+        except TemplateSyntaxError as exc:
+            raise ValidationError({"body": f"Template syntax error: {exc}"})
+
+    def acceptances(self):
+        """Participants who accepted exactly this slug and version."""
+        return TournamentParticipant.objects.filter(
+            accepted_terms_slug=self.slug, terms_version_accepted=self.version,
+        )
+
+    def acceptance_count(self):
+        return self.acceptances().count()
 
 
 class Tournament(models.Model):
@@ -10,6 +71,7 @@ class Tournament(models.Model):
     class Type(models.TextChoices):
         QA = "qa", "QA (2 players)"
         GAUNTLET = "gauntlet", "Gladiator Gauntlet"
+        GLADIATORMANIA = "gladiatormania", "The Gladiatormania"
 
     class Category(models.TextChoices):
         BEGINNER = "beginner", "Beginner (≤1200)"
@@ -58,7 +120,7 @@ class Tournament(models.Model):
 
     description = models.TextField(blank=True)
     type = models.CharField(
-        max_length=10, choices=Type.choices, default=Type.GAUNTLET
+        max_length=20, choices=Type.choices, default=Type.GAUNTLET
     )
     game_type = models.CharField(
         max_length=20,
@@ -135,6 +197,13 @@ class Tournament(models.Model):
         default=False,
         help_text="Whether this tournament has a cash prize. Restricts entry to eligible regions.",
     )
+    allowed_countries = models.JSONField(
+        default=default_allowed_countries,
+        help_text=(
+            "ISO 3166-1 alpha-2 country codes whose residents may enter, e.g. IL or IN. "
+            "Israel only by default; only The Gladiatormania can use other countries."
+        ),
+    )
     prize_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -172,6 +241,60 @@ class Tournament(models.Model):
         blank=True,
         help_text="Payout status — only relevant for money tournaments.",
     )
+
+    class PayoutMethod(models.TextChoices):
+        PAYPAL = "paypal", "PayPal"
+        BANK_TRANSFER = "bank_transfer", "Bank transfer"
+        UPI = "upi", "UPI"
+        OTHER = "other", "Other"
+
+    payout_method = models.CharField(
+        max_length=20,
+        choices=PayoutMethod.choices,
+        default=PayoutMethod.PAYPAL,
+        help_text=(
+            "How the prize is paid. PayPal asks the winner for a PayPal email; the other "
+            "methods are arranged by AGL by email. Bank or UPI details are never stored."
+        ),
+    )
+    payout_instructions = models.TextField(
+        blank=True,
+        help_text="Shown on the terms page. Never put bank or UPI details here.",
+    )
+    claim_deadline_days = models.PositiveIntegerField(
+        default=30,
+        validators=[MinValueValidator(1)],
+        help_text="Days the winner has to complete the prize claim, counted while the next step is theirs.",
+    )
+    prize_on_hold = models.BooleanField(
+        default=False,
+        help_text=(
+            "Stops new prize claims and payouts. Nothing is deleted. To release: untick, then "
+            "run backfill_prize_claim if no claim was created."
+        ),
+    )
+    prize_hold_reason = models.TextField(
+        blank=True, validators=[validate_no_sensitive_data],
+        help_text="Internal note. Never shown to players.",
+    )
+    verification_documents = models.TextField(
+        blank=True,
+        help_text=(
+            "Documents the winner may be asked to show, one per line. Terms can print them with "
+            "{{ tournament.verification_documents_list }}. Aadhaar must not be requested."
+        ),
+    )
+    terms = models.ForeignKey(
+        TournamentTerms,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="tournaments",
+        help_text=(
+            "Terms & Conditions record shown on the join page. Leave empty to use "
+            "the legacy Gauntlet terms. Only for Gauntlet / Gladiatormania."
+        ),
+    )
     terms_text = models.TextField(
         blank=True,
         help_text="Legal terms text participants must accept before joining a money tournament.",
@@ -194,19 +317,155 @@ class Tournament(models.Model):
     def __str__(self):
         return self.name
 
+    def clean(self):
+        super().clean()
+        errors = {}
+
+        codes = normalize_country_codes(self.allowed_countries)
+        problems = []
+        if not codes:
+            problems.append("Enter at least one country code.")
+        elif unknown_country_codes(codes):
+            problems.append(
+                f"Unknown ISO 3166-1 country code(s): {', '.join(unknown_country_codes(codes))}."
+            )
+        elif codes != ISRAEL_ONLY and self.type != self.Type.GLADIATORMANIA:
+            problems.append(
+                "Only The Gladiatormania can be opened to countries other than Israel; "
+                "the Gladiator Gauntlet and QA tournaments stay Israel-only."
+            )
+        if problems:
+            errors["allowed_countries"] = problems
+        else:
+            self.allowed_countries = codes
+
+        if "IN" in codes and self.game_type != self.GameType.CHESS:
+            errors["game_type"] = ["Tournaments open to India are chess only."]
+
+        has_prize_config = bool(self.prize_amount and self.prize_amount > 0)
+        if codes and codes != ISRAEL_ONLY and (
+            (self.is_money_tournament and has_prize_config) or (self.terms_id and self.terms.has_prize)
+        ):
+            currency_errors = self._currency_errors()
+            if currency_errors:
+                errors["prize_currency"] = currency_errors
+
+        if "aadhaar" in self.verification_documents.lower() or "aadhar" in self.verification_documents.lower():
+            errors["verification_documents"] = ["Aadhaar must not be requested."]
+
+        if self.terms_id:
+            terms_errors = self._terms_errors(codes)
+            if terms_errors:
+                errors["terms"] = terms_errors
+        elif self.is_money_tournament and codes and codes != ISRAEL_ONLY:
+            errors["terms"] = [
+                "A money tournament open to other countries needs a terms record: "
+                "the built-in terms are written for Israel only."
+            ]
+        if errors:
+            raise ValidationError(errors)
+
+    def _currency_errors(self):
+        """A tournament open to other countries must name its prize currency explicitly."""
+        currency = (self.prize_currency or "").strip().upper()
+        if not currency:
+            return ["Set the prize currency explicitly (for example INR) for a tournament open to other countries."]
+        if currency == "ILS":
+            return [
+                "ILS is the Israeli default and cannot be used for a tournament open to other "
+                "countries. Set the prize currency explicitly (for example INR)."
+            ]
+        if unknown_currency_code(currency):
+            return [f"Unknown ISO 4217 currency code: {currency}."]
+        self.prize_currency = currency
+        return []
+
+    @property
+    def verification_documents_list(self):
+        return [line.strip() for line in self.verification_documents.splitlines() if line.strip()]
+
+    @property
+    def uses_paypal(self):
+        return self.payout_method == self.PayoutMethod.PAYPAL
+
+    @property
+    def requires_legal_check(self):
+        """Winners of tournaments open beyond Israel need an approved eligibility check before payout."""
+        return not self.is_israel_only
+
+    def _terms_errors(self, codes):
+        terms = self.terms
+        errors = []
+        if self.type not in self.MONEY_LIKE_TYPES:
+            errors.append("Terms can only be attached to Gauntlet / Gladiatormania tournaments.")
+        if not terms.requires_israeli_residency:
+            if codes == ISRAEL_ONLY:
+                errors.append(
+                    "Not supported yet: the geo check and eligibility verification still "
+                    "require Israeli residency, so these terms (requires_israeli_residency=False) "
+                    "cannot be used."
+                )
+            else:
+                errors.append(
+                    "These terms do not require a residency declaration "
+                    "(requires_israeli_residency=False), but this tournament is restricted to "
+                    f"{', '.join(codes)}. The country check always applies, so the terms must "
+                    "require a residency declaration."
+                )
+        has_prize = bool(self.prize_amount and self.prize_amount > 0)
+        if has_prize and not terms.has_prize:
+            errors.append(
+                "These terms say there is no prize (has_prize=False), but this tournament "
+                "has a prize amount."
+            )
+        if terms.has_prize and not has_prize:
+            errors.append(
+                "These terms describe a prize (has_prize=True), but this tournament has "
+                "no prize amount."
+            )
+        return errors
+
+    @property
+    def allowed_country_codes(self):
+        return normalize_country_codes(self.allowed_countries)
+
+    @property
+    def is_israel_only(self):
+        return self.allowed_country_codes == ISRAEL_ONLY
+
+    @property
+    def allowed_countries_text(self):
+        """Country NAMES (never flags), e.g. "India and Israel"."""
+        return countries_phrase(self.allowed_country_codes)
+
+    @property
+    def residents_only_label(self):
+        """Banner title: "Israeli Residents Only" for Israel, else "Residents of India only"."""
+        if self.is_israel_only:
+            return "Israeli Residents Only"
+        return f"Residents of {countries_phrase(self.allowed_country_codes)} only"
+
     TYPE_DEFAULTS = {
         Type.QA:       {"capacity": 2,  "rounds_total": 1},
         Type.GAUNTLET: {"capacity": 16, "rounds_total": 5},
+        Type.GLADIATORMANIA: {"capacity": 16, "rounds_total": 5},
     }
+
+    # Types that share the Gauntlet format, lifecycle and prize/terms flow.
+    MONEY_LIKE_TYPES = (Type.GAUNTLET, Type.GLADIATORMANIA)
+
+    @property
+    def is_money_like_type(self):
+        return self.type in self.MONEY_LIKE_TYPES
 
     def save(self, *args, **kwargs):
         # QA tournaments are always locked to 2 players / 1 round.
         if self.type == self.Type.QA:
             self.capacity = 2
             self.rounds_total = 1
-        elif self.type == self.Type.GAUNTLET:
+        elif self.type in self.MONEY_LIKE_TYPES:
             if not self.pk:
-                defaults = self.TYPE_DEFAULTS[self.Type.GAUNTLET]
+                defaults = self.TYPE_DEFAULTS[self.type]
                 self.capacity = self.capacity or defaults["capacity"]
                 self.rounds_total = self.rounds_total or defaults["rounds_total"]
         super().save(*args, **kwargs)
@@ -377,6 +636,12 @@ class TournamentParticipant(models.Model):
         blank=True,
         help_text="Version of tournament terms the participant accepted.",
     )
+    accepted_terms_slug = models.SlugField(
+        max_length=80,
+        blank=True,
+        default="",
+        help_text="Slug of the TournamentTerms record the participant accepted.",
+    )
     paypal_email = models.EmailField(
         max_length=254,
         blank=True,
@@ -397,10 +662,29 @@ class TournamentParticipant(models.Model):
         default=False,
         help_text="Participant self-declared Israeli residency at the time of joining.",
     )
+    declared_residency_countries = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text=(
+            "Countries named in the residency declaration the participant ticked at joining, "
+            "comma-separated ISO codes. Compare with join_country_code (derived from the IP)."
+        ),
+    )
     eligibility_confirmed_at = models.DateTimeField(
         null=True,
         blank=True,
         help_text="Timestamp when the participant submitted the eligibility self-declarations.",
+    )
+    profile_country_code = models.CharField(
+        max_length=2,
+        blank=True,
+        default="",
+        help_text=(
+            "Country on the user's profile at the moment of joining (ISO 3166-1 alpha-2). "
+            "A staff-visible signal to compare with join_country_code (IP) and "
+            "declared_residency_countries; a disagreement never blocks anything."
+        ),
     )
 
     THINKING_TIME_CHOICES = [
@@ -450,9 +734,10 @@ class EligibilityVerification(models.Model):
     verification_method = models.CharField(
         max_length=200,
         blank=True,
+        validators=[validate_no_sensitive_data],
         help_text=(
             "How the check was performed, e.g. 'video call' or "
-            "'live ID review, not retained'. No file upload."
+            "'live ID review, not retained'. No file upload. Never enter document numbers."
         ),
     )
     verified_at = models.DateTimeField(null=True, blank=True)
@@ -464,7 +749,13 @@ class EligibilityVerification(models.Model):
         related_name="+",
         limit_choices_to={"is_staff": True},
     )
-    notes = models.TextField(blank=True, default="")
+    notes = models.TextField(
+        blank=True, default="", validators=[validate_no_sensitive_data],
+        help_text=(
+            "Record who checked and when, never document numbers (passport, PAN, bank, UPI). "
+            "Required when rejecting."
+        ),
+    )
 
     class Meta:
         verbose_name = "Eligibility Verification"
@@ -478,13 +769,32 @@ class EligibilityVerification(models.Model):
             f"EligibilityVerification({self.tournament_entry}, {self.status})"
         )
 
+    @property
+    def is_approved(self):
+        """Approved means verified by a named staff member at a recorded time."""
+        return (
+            self.status == self.Status.VERIFIED
+            and self.verified_by_id is not None
+            and self.verified_at is not None
+        )
+
+    def clean(self):
+        errors = {}
+        if self.status == self.Status.VERIFIED and (not self.verified_by_id or not self.verified_at):
+            errors["status"] = ["A verified check needs who verified it and when."]
+        if self.status == self.Status.REJECTED and not (self.notes or "").strip():
+            errors["notes"] = ["Say why the check was rejected (no document numbers)."]
+        if errors:
+            raise ValidationError(errors)
+
 
 class PayoutConfirmation(models.Model):
-    """Winner's explicit confirmation of the PayPal address for prize payout.
+    """Winner's explicit confirmation before a prize can be paid out.
 
-    The winner must confirm before a prize can be marked as paid.
-    paypal_email_snapshot is a point-in-time copy so later profile
-    changes cannot silently alter the payout destination.
+    For PayPal payouts, paypal_email_snapshot is a point-in-time copy so later profile
+    changes cannot silently alter the payout destination. For other methods no bank or
+    UPI details are stored: the winner confirms the prize terms and AGL arranges the
+    payment by email (contacted_at / contacted_by record that step).
     """
 
     tournament_entry = models.OneToOneField(
@@ -493,7 +803,19 @@ class PayoutConfirmation(models.Model):
         related_name="payout_confirmation",
     )
     paypal_email_snapshot = models.EmailField(
-        help_text="Copy of the user's PayPal email at the moment they confirmed.",
+        blank=True,
+        help_text="Copy of the user's PayPal email at the moment they confirmed (PayPal payouts only).",
+    )
+    payout_method = models.CharField(max_length=20, blank=True)
+    contact_email_snapshot = models.EmailField(
+        blank=True, help_text="Account email AGL will use for non-PayPal payouts.",
+    )
+    terms_slug = models.CharField(max_length=80, blank=True)
+    terms_version = models.CharField(max_length=20, blank=True)
+    contacted_at = models.DateTimeField(null=True, blank=True)
+    contacted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
     )
     confirmed_at = models.DateTimeField(null=True, blank=True)
     confirmed_by_user = models.BooleanField(default=False)
@@ -788,6 +1110,7 @@ class PrizeClaim(models.Model):
         CLAIMED = "claimed", "Claimed"    # winner submitted code, awaiting admin
         PAID = "paid", "Paid"
         EXPIRED = "expired", "Expired"
+        BLOCKED = "blocked", "Blocked"    # staff stopped the claim; see blocked_reason
 
     tournament = models.OneToOneField(
         Tournament,
@@ -801,11 +1124,17 @@ class PrizeClaim(models.Model):
     )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3)
+    payout_method = models.CharField(
+        max_length=20, choices=Tournament.PayoutMethod.choices,
+        default=Tournament.PayoutMethod.PAYPAL,
+        help_text="Snapshot of the tournament's payout method when the claim was created.",
+    )
     paypal_email = models.EmailField(
+        blank=True,
         help_text=(
             "Snapshotted from TournamentParticipant.paypal_email at claim-creation "
             "time — do NOT live-reference the participant row, so later profile edits "
-            "can't silently change payout destination."
+            "can't silently change payout destination. Empty for non-PayPal payouts."
         )
     )
     claim_code = models.CharField(max_length=48, unique=True, db_index=True)
@@ -823,7 +1152,30 @@ class PrizeClaim(models.Model):
         on_delete=models.SET_NULL,
         related_name="+",
     )
-    admin_notes = models.TextField(blank=True, default="")
+    admin_notes = models.TextField(
+        blank=True, default="", validators=[validate_no_sensitive_data],
+        help_text="Never enter bank, UPI, PAN or document numbers.",
+    )
+
+    # Payment record (record only; no tax calculation).
+    amount_paid = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tax_withheld = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    payment_reference = models.CharField(
+        max_length=100, blank=True, validators=[validate_no_sensitive_data],
+        help_text="Free text, e.g. a transfer reference. Never an account or UPI number.",
+    )
+
+    # Block / unblock (who, when and why are kept in PrizeClaimEvent).
+    blocked_reason = models.TextField(blank=True, validators=[validate_no_sensitive_data])
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    status_before_block = models.CharField(max_length=10, blank=True)
+
+    # Set while the expiry clock is stopped (see payouts.sync_expiry_clock).
+    expiry_paused_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         verbose_name = "Prize Claim"
@@ -831,3 +1183,33 @@ class PrizeClaim(models.Model):
 
     def __str__(self):
         return f"PrizeClaim({self.tournament}, {self.winner}, {self.status})"
+
+
+class PrizeClaimEvent(models.Model):
+    """Append-only audit trail for staff actions on a prize claim: who, when and why."""
+
+    class Kind(models.TextChoices):
+        BLOCKED = "blocked", "Blocked"
+        UNBLOCKED = "unblocked", "Unblocked"
+        CONTACTED = "contacted", "Payment details requested"
+        PAYMENT_RECORDED = "payment_recorded", "Payment details recorded"
+        NOTE = "note", "Note"
+        EXPIRY_PAUSED = "expiry_paused", "Expiry clock paused"
+        EXPIRY_RESUMED = "expiry_resumed", "Expiry clock resumed"
+
+    claim = models.ForeignKey(PrizeClaim, on_delete=models.CASCADE, related_name="events")
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    at = models.DateTimeField(auto_now_add=True)
+    by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="+",
+    )
+    reason = models.TextField(blank=True, validators=[validate_no_sensitive_data])
+
+    class Meta:
+        ordering = ["at", "pk"]
+        verbose_name = "Prize Claim Event"
+        verbose_name_plural = "Prize Claim Events"
+
+    def __str__(self):
+        return f"{self.get_kind_display()} ({self.claim_id}) {self.at:%Y-%m-%d %H:%M}"

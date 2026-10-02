@@ -351,6 +351,7 @@ class JoinMoneyTournamentGeoTest(TestCase):
     def _join(self, ip="1.2.3.4"):
         return self.client.post(
             f"/tournaments/{self.tournament.pk}/join/",
+            data={"confirmed_age_18_plus": "1", "confirmed_israeli_resident": "1"},
             HTTP_X_FORWARDED_FOR=ip,
             follow=False,
         )
@@ -394,6 +395,8 @@ class JoinMoneyTournamentGeoTest(TestCase):
 class PayPalEmailRegistrationTest(TestCase):
     """Verify that paypal_email is stored on the participant at registration."""
 
+    CONFIRMATIONS = {"confirmed_age_18_plus": "1", "confirmed_israeli_resident": "1"}
+
     def setUp(self):
         self.user = _user("eve")
         self.client.force_login(self.user)
@@ -410,7 +413,8 @@ class PayPalEmailRegistrationTest(TestCase):
             mock.patch("apps.users.integrity.can_join_tournament", return_value=(True, "")),
         ):
             resp = self.client.post(
-                f"/tournaments/{self.tournament.pk}/join/", follow=False
+                f"/tournaments/{self.tournament.pk}/join/",
+                data=self.CONFIRMATIONS, follow=False,
             )
         self.assertEqual(resp.status_code, 302)
         self.assertIn(self.user, self.tournament.players.all())
@@ -425,7 +429,8 @@ class PayPalEmailRegistrationTest(TestCase):
             mock.patch("apps.users.integrity.can_join_tournament", return_value=(True, "")),
         ):
             resp = self.client.post(
-                f"/tournaments/{self.tournament.pk}/join/", follow=False
+                f"/tournaments/{self.tournament.pk}/join/",
+                data=self.CONFIRMATIONS, follow=False,
             )
         self.assertEqual(resp.status_code, 302)
         self.assertIn("/terms/", resp["Location"])

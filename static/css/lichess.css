@@ -1,0 +1,468 @@
+/* ══════════════════════════════════════════════════════════════
+   lichess.css — flat, Lichess-inspired theme (no Lichess assets).
+   Loaded after gladiator.css. The site is dark-only; the
+   html:not(.dark) values are kept ready but nothing switches to them.
+
+   Cascade notes
+   - Tailwind (CDN) injects its <style> after every <link>, so at equal
+     specificity a Tailwind utility beats this file. Rules here that must
+     beat a utility use an extra class or `html` prefix.
+   - Tailwind's palette (surface, gold, purple, gray...) is remapped in the
+     tailwind.config of base.html; this file covers what a static palette
+     cannot (variables, light mode, contrast, structure).
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── 1. Theme variables ───────────────────────── */
+html.dark {
+  color-scheme: dark;
+  --lp-page: #161512; --lp-box: #262421; --lp-box-head: #2d2b28; --lp-border: #3c3a37;
+  --lp-text: #bababa; --lp-head: #e8e8e8; --lp-muted: #94928d;
+  --lp-input: #1f1e1b; --lp-hover: rgba(255,255,255,.05);
+  --lp-green: #629924; --lp-green-dk: #527e1d; --lp-link: #3893e8;
+  --lp-win: #8bc34a; --lp-loss: #e06060; --lp-draw: #94928d;
+  --lp-warn: #e0b030;
+  --lp-btn: #527e1d; --lp-btn-hover: #466b19; --lp-avatar-bg: #4a4845; --lp-danger: #b03a3a;
+  --lp-shadow: 0 6px 24px rgba(0,0,0,.35);
+
+  /* gladiator.css variables, remapped so its classes follow the new palette */
+  --color-gold: #8bc34a;      --color-gold-dim: #629924;
+  --color-purple: #3893e8;    --color-purple-dim: #2a6db0;
+  --color-green: #629924;     --color-green-dim: #527e1d;
+  --color-red: #e06060;
+  --color-navy: #161512;      --color-navy-light: #1c1b18;
+  --color-surface: #1f1e1b;   --color-surface-lt: #262421;
+  --color-border: #3c3a37;
+  --color-text: #e8e8e8;      --color-text-dim: #bababa;      --color-text-muted: #94928d;
+}
+html:not(.dark) {
+  color-scheme: light;
+  --lp-page: #f7f6f5; --lp-box: #ffffff; --lp-box-head: #f1f0ee; --lp-border: #d9d9d9;
+  --lp-text: #4d4d4d; --lp-head: #2b2b2b; --lp-muted: #707070;
+  --lp-input: #ffffff; --lp-hover: rgba(0,0,0,.04);
+  --lp-green: #4f7d1c; --lp-green-dk: #3f6516; --lp-link: #1f6fc0;
+  --lp-win: #3f7a0a; --lp-loss: #b02a2a; --lp-draw: #707070;
+  --lp-warn: #8a6100;
+  --lp-btn: #4f7d1c; --lp-btn-hover: #3f6516; --lp-avatar-bg: #707070; --lp-danger: #b02a2a;
+  --lp-shadow: 0 6px 24px rgba(0,0,0,.15);
+
+  --color-gold: #3f7a0a;      --color-gold-dim: #4f7d1c;
+  --color-purple: #1f6fc0;    --color-purple-dim: #17538f;
+  --color-green: #4f7d1c;     --color-green-dim: #3f6516;
+  --color-red: #b02a2a;
+  --color-navy: #f7f6f5;      --color-navy-light: #f1f0ee;
+  --color-surface: #ffffff;   --color-surface-lt: #ffffff;
+  --color-border: #d9d9d9;
+  --color-text: #2b2b2b;      --color-text-dim: #4d4d4d;      --color-text-muted: #707070;
+}
+
+/* ── 2. Page, text, links, focus ──────────────── */
+html { background-color: var(--lp-page); }
+/* 14px lives on <body> only so rem-based Tailwind sizes are unaffected */
+.lp-body {
+  background-color: var(--lp-page);
+  color: var(--lp-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+:where(h1, h2, h3, h4, h5, h6) { color: var(--lp-head); }
+.lp-main a:not([class]) { color: var(--lp-link); }
+.lp-main a:not([class]):hover { text-decoration: underline; }
+::placeholder { color: var(--lp-muted); opacity: 1; }
+::selection { background: rgba(98,153,36,.35); }
+hr { border-color: var(--lp-border); }
+
+html :focus-visible { outline: 2px solid var(--lp-link) !important; outline-offset: 2px !important; }
+html input:focus-visible, html select:focus-visible, html textarea:focus-visible {
+  outline-color: var(--lp-green) !important; outline-offset: 0 !important;
+}
+
+/* Page container: centered, ~1200px, consistent padding */
+.lp-main, .lp-flash, .lp-footer > div { max-width: 1200px; }
+.lp-main { margin-left: auto; margin-right: auto; }
+
+/* Flat look for rounded/shadowed/gradient utilities */
+html .rounded-lg, html .rounded-xl, html .rounded-2xl, html .rounded-3xl, html .rounded-md { border-radius: 4px; }
+html .shadow-sm, html .shadow, html .shadow-md, html .shadow-lg, html .shadow-xl, html .shadow-2xl { box-shadow: none; }
+html [class*="bg-gradient-to"] { background-image: none; }
+html .btn-brand:hover, html .btn-gold:hover { transform: none; }
+
+/* Contrast fixes for utilities whose palette value is too dim/bright on the new surfaces */
+html .text-gray-600 { color: var(--lp-muted); }
+html .text-brand, html .hover\:text-brand:hover, html .group:hover .group-hover\:text-brand { color: var(--lp-win); }
+/* Solid fills that carry white text */
+html .bg-brand { background-color: var(--lp-btn); }
+/* Semantic text: win green, loss red, warning yellow (same hues as the profile page) */
+html .text-green-300, html .text-green-400, html .text-green-500 { color: var(--lp-win); }
+html .text-red-300, html .text-red-400 { color: var(--lp-loss); }
+html .text-yellow-300, html .text-yellow-400 { color: var(--lp-warn); }
+/* Draws are grey, not yellow */
+#lbBody td.text-yellow-300 { color: var(--lp-draw); }
+
+/* Brand name: "Gladiator" yellow, "League" white. Explicit hex on purpose, independent of the gold/brand remap. */
+html.dark .brand-gladiator, html.dark a:hover .brand-gladiator, html.dark a:focus-visible .brand-gladiator { color: #fbbf24; }
+html.dark .brand-league, html.dark a:hover .brand-league, html.dark a:focus-visible .brand-league { color: #ffffff; }
+html:not(.dark) .brand-gladiator, html:not(.dark) a:hover .brand-gladiator { color: #b45309; }
+html:not(.dark) .brand-league, html:not(.dark) a:hover .brand-league { color: var(--lp-head); }
+.brand-gladiator, .brand-league, .brand-artificial {
+  text-shadow: none !important; background: none; filter: none;
+  -webkit-text-fill-color: currentColor; -webkit-background-clip: border-box; background-clip: border-box;
+}
+
+/* Two-line brand: "Artificial" on line 1, "Gladiator League" (never wrapped) on line 2 */
+html.dark .brand-artificial { color: #8bc34a; }
+html:not(.dark) .brand-artificial { color: var(--lp-win); }
+html .brand-artificial { display: block; }
+html .brand-line2 { display: block; white-space: nowrap; }
+html .brand-logo { display: inline-block; text-align: center; line-height: 1.1; font-size: .9rem; }
+html .brand-hero { line-height: 1.05; font-size: clamp(1.6rem, calc((100vw - 3rem) / 9.2), 3.75rem); }
+@media (min-width: 1024px) {
+  /* two-column hero: the text column is about half of the container */
+  html .brand-hero { font-size: clamp(2.25rem, calc((min(100vw, 1200px) - 7rem) / 2 / 9.2), 3.5rem); }
+}
+@media (max-width: 400px) {
+  html .brand-link { gap: .5rem; }
+  html .brand-logo { font-size: .8rem; }
+}
+
+/* ── 3. Boxes ─────────────────────────────────── */
+.card {
+  background-color: var(--lp-box);
+  border: 1px solid var(--lp-border);
+  border-radius: 4px;
+  box-shadow: none;
+  padding: 1rem 1.1rem;
+  transition: none;
+}
+.card:hover,
+.card-glow-gold, .card-glow-gold:hover, .card-glow-purple, .card-glow-purple:hover {
+  border-color: var(--lp-border); box-shadow: none; transform: none;
+}
+.card-glow-gold, .card-glow-gold:hover { border-left: 3px solid var(--lp-green); }
+.card-glow-purple, .card-glow-purple:hover { border-left: 3px solid var(--lp-link); }
+html:not(.dark) .card { background-color: var(--lp-box); border-color: var(--lp-border); }
+html:not(.dark) .card:hover { border-color: var(--lp-border); box-shadow: none; }
+
+.stat-pill {
+  background-color: var(--lp-box); border: 1px solid var(--lp-border);
+  border-radius: 4px; padding: .7rem 1rem; min-width: 6rem;
+}
+.stat-pill .stat-value { color: var(--lp-head); }
+.stat-pill .stat-label { text-transform: none; letter-spacing: 0; font-size: .75rem; color: var(--lp-muted); }
+
+.divider { border-top-color: var(--lp-border); margin: 1.25rem 0; }
+
+/* Sub-box titles that used gold/brand/purple/amber for decoration become neutral; red (errors) is kept */
+.card .rounded-lg.bg-surface > :is(div, h3).font-semibold:is(.text-brand, .text-gold, .text-purple-400, .text-green-400, .text-amber-400) {
+  color: var(--lp-head);
+}
+
+/* ── 4. Buttons (flat: no gradient, glow or lift) ─ */
+.btn-gold, .btn-brand, .btn-purple, .btn-outline, .btn-danger {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+  min-height: 2.25rem; padding: .45rem 1.1rem;
+  font-size: .9rem; font-weight: 600; line-height: 1.2; text-decoration: none; text-shadow: none;
+  border-radius: 3px; box-shadow: none; transform: none; cursor: pointer;
+  transition: background-color .12s, border-color .12s, color .12s;
+}
+.btn-gold, .btn-brand {
+  color: #fff; background: var(--lp-btn); border: 1px solid var(--lp-btn);
+}
+.btn-gold:hover, .btn-brand:hover {
+  background: var(--lp-btn-hover); border-color: var(--lp-btn-hover); box-shadow: none; transform: none;
+}
+.btn-gold:active, .btn-brand:active, .btn-purple:active { transform: none; }
+.btn-brand:disabled, .btn-brand[disabled], .btn-gold:disabled { opacity: .5; cursor: not-allowed; }
+.btn-purple {
+  color: var(--lp-head); background: var(--lp-box-head); border: 1px solid var(--lp-border);
+}
+.btn-purple:hover { background: var(--lp-hover); border-color: var(--lp-muted); box-shadow: none; transform: none; }
+.btn-outline {
+  color: var(--lp-text); background: transparent; border: 1px solid var(--lp-border);
+}
+.btn-outline:hover {
+  background: var(--lp-hover); color: var(--lp-head); border-color: var(--lp-muted); box-shadow: none;
+}
+.btn-danger { color: var(--lp-loss); background: transparent; border: 1px solid var(--lp-loss); }
+.btn-danger:hover { background: var(--lp-loss); color: #fff; }
+.btn-sm { min-height: 1.9rem; padding: .3rem .8rem; font-size: .8rem; border-radius: 3px; }
+
+/* ── 5. Forms ─────────────────────────────────── */
+/* Zero-specificity :where(): sets a flat default but any Tailwind utility on the field still wins */
+html body :where(input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=submit], [type=button], [type=color]), select, textarea) {
+  background-color: var(--lp-input); color: var(--lp-head);
+  border: 1px solid var(--lp-border); border-radius: 3px;
+  padding: .4rem .6rem; font: inherit; box-shadow: none;
+}
+html body :where(input[type=checkbox], input[type=radio], input[type=range]) { accent-color: var(--lp-green); }
+html body input:not([type=checkbox], [type=radio], [type=range], [type=file], [type=hidden], [type=submit], [type=button], [type=color]):focus,
+html body select:focus, html body textarea:focus {
+  border-color: var(--lp-green); box-shadow: 0 0 0 1px var(--lp-green);
+}
+html body :is(input, select, textarea):disabled { opacity: .7; cursor: default; }
+.form-group label { color: var(--lp-text); font-size: .85rem; font-weight: 500; }
+.form-group .helptext, .form-group .help-text { color: var(--lp-muted); }
+.form-group .errorlist li { color: var(--lp-loss); }
+
+/* ── 6. Tables ────────────────────────────────── */
+.stats-table th, html:not(.dark) .stats-table th {
+  padding: .45rem .7rem; font-size: .75rem; font-weight: 600; text-transform: none; letter-spacing: 0;
+  color: var(--lp-muted); border-bottom: 1px solid var(--lp-border);
+}
+.stats-table td, html:not(.dark) .stats-table td {
+  padding: .4rem .7rem; border-bottom: 1px solid var(--lp-border);
+}
+.stats-table tbody tr:last-child td { border-bottom: 0; }
+.stats-table tr:hover td, html:not(.dark) .stats-table tr:hover td,
+.lb-table tbody tr:hover td { background-color: var(--lp-hover) !important; }
+.lb-table tbody tr:nth-child(even) td { background-color: transparent; }
+.sortable:hover { color: var(--lp-head); }
+
+/* ── 7. Tabs ──────────────────────────────────── */
+
+.lb-tab {
+  padding: .65rem 1rem; font-size: .9rem; border-bottom: 3px solid transparent; margin-bottom: -1px; transition: none;
+}
+.lb-tab:hover { color: var(--lp-head); background: var(--lp-hover); }
+.lb-tab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
+.lb-tab .badge { border-radius: 3px; background-color: var(--lp-hover); color: var(--lp-muted); }
+.lb-tab.active .badge { background-color: rgba(98,153,36,.2); color: var(--lp-win); }
+
+/* Time-control / option buttons */
+.tc-btn, html:not(.dark) .tc-btn {
+  background-color: var(--lp-input); border: 1px solid var(--lp-border); border-radius: 3px;
+  color: var(--lp-text); transition: border-color .12s, background-color .12s, color .12s;
+}
+.tc-btn:hover, .tc-btn.active,
+html:not(.dark) .tc-btn:hover, html:not(.dark) .tc-btn.active {
+  border-color: var(--lp-green); background-color: rgba(98,153,36,.12); color: var(--lp-win);
+}
+.tc-btn.active { box-shadow: inset 0 0 0 1px var(--lp-green); }
+
+/* Wizard / selectable options */
+.wizard-step .step-num { border-width: 1px; border-color: var(--lp-border); background: var(--lp-input); color: var(--lp-muted); }
+.wizard-step.active .step-num { box-shadow: none; background: transparent; border-color: var(--lp-green); color: var(--lp-head); }
+.wizard-step.completed .step-num { background: var(--lp-btn); border-color: var(--lp-btn); color: #fff; }
+.wizard-step.completed .step-label { color: var(--lp-win); }
+.wizard-connector.completed { background: var(--lp-green); }
+.game-option { border-radius: 4px; border-width: 1px; }
+.game-option:hover { background: var(--lp-hover); }
+.game-option.selected { border-color: var(--lp-green); background: rgba(98,153,36,.12); box-shadow: none; }
+
+/* ── 8. Badges (flat) ─────────────────────────── */
+.badge-streak, .badge-rank, .armageddon-badge { border-radius: 3px; }
+.badge-streak.positive, .badge-rank.green { background: rgba(98,153,36,.2); color: var(--lp-win); }
+.badge-rank.purple { background: var(--lp-hover); color: var(--lp-muted); }
+.badge-streak.negative { background: rgba(224,96,96,.15); color: var(--lp-loss); }
+.badge-rank.gold { background: rgba(98,153,36,.2); color: var(--lp-win); }
+
+/* Brackets / move list: neutral hovers (colors of clocks and board are left alone) */
+.bracket-match { border-radius: 4px; }
+.bracket-match:hover { border-color: var(--lp-muted); }
+html:not(.dark) .bracket-match { background-color: var(--lp-box); border-color: var(--lp-border); }
+.bracket-player.winner { background-color: rgba(98,153,36,.14); }
+.move-row:hover { background-color: var(--lp-hover); }
+.move-white.last-move, .move-black.last-move { background-color: rgba(56,147,232,.16); color: var(--lp-link); }
+
+/* Legal / prose pages */
+.legal-page h2, .legal-page h3, .legal-page strong,
+html:not(.dark) .legal-page h2, html:not(.dark) .legal-page h3, html:not(.dark) .legal-page strong { color: var(--lp-head); }
+.legal-page p, .legal-page ul, .legal-page ol,
+html:not(.dark) .legal-page p, html:not(.dark) .legal-page ul, html:not(.dark) .legal-page ol { color: var(--lp-text); }
+.legal-page .callout, html:not(.dark) .legal-page .callout {
+  background-color: var(--lp-box); border-left-color: var(--lp-green); border-radius: 0 3px 3px 0;
+}
+.legal-page .toc, html:not(.dark) .legal-page .toc { background-color: var(--lp-box); border-color: var(--lp-border); border-radius: 4px; }
+.legal-page a { color: var(--lp-link); }
+.legal-page a:hover { color: var(--lp-link); }
+
+/* Termly legal embeds ship their own dark-on-white text, so they get a light panel to stay readable */
+[name="termly-embed"] {
+  background: #ffffff; color: #1a1a1a; color-scheme: light;
+  border: 1px solid var(--lp-border); border-radius: 4px; padding: 1.25rem 1.5rem;
+}
+[name="termly-embed"]:empty { display: none; }
+[name="termly-embed"] a:not([class]) { color: #0b5cad; }
+
+/* ── 9. Navbar ────────────────────────────────── */
+html .lp-nav.lp-nav {
+  background: var(--lp-box-head); border-bottom: 1px solid var(--lp-border);
+  box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+html .lp-nav .nav-link {
+  border-radius: 3px; font-weight: 500; transition: none;
+  padding-left: .55rem; padding-right: .55rem;
+}
+html .lp-nav #playDropdownBtn { padding-left: .25rem; padding-right: .25rem; }
+html .lp-nav .nav-link:hover { color: var(--lp-head); background: var(--lp-hover); }
+html .lp-nav .nav-link.active {
+  color: var(--lp-head); background: transparent; border-radius: 0;
+  box-shadow: inset 0 -3px 0 var(--lp-green);
+}
+html .lp-nav .nav-link.active::after { display: none; }
+
+html .lp-pill.lp-pill {
+  background: var(--lp-input); border: 1px solid var(--lp-border); border-radius: 3px;
+}
+
+/* Dropdown menus (play, user) and the mobile drawer */
+html .lp-menu.lp-menu {
+  background: var(--lp-box); border: 1px solid var(--lp-border); border-radius: 4px; box-shadow: var(--lp-shadow);
+}
+html .lp-menu.lp-menu a:hover,
+html .lp-menu.lp-menu button:not([class*="text-red"]):hover { background: var(--lp-hover); color: var(--lp-head); }
+html .lp-drawer.lp-drawer { background: var(--lp-box); border-top: 1px solid var(--lp-border); }
+html .lp-drawer .nav-link:hover { background: var(--lp-hover); color: var(--lp-head); }
+html .lp-drawer .nav-link.active { color: var(--lp-head); box-shadow: inset 3px 0 0 var(--lp-green); }
+
+/* ── 10. Footer, flash messages ───────────────── */
+html .lp-footer.lp-footer { background: var(--lp-box); border-top: 1px solid var(--lp-border); }
+html .lp-footer a:hover { color: var(--lp-head); text-decoration: underline; }
+
+.lp-msg {
+  border: 1px solid var(--lp-border); border-radius: 3px; background: var(--lp-box);
+  color: var(--lp-text);
+}
+.lp-msg--success { background: rgba(98,153,36,.15); border-color: rgba(98,153,36,.55); color: var(--lp-win); }
+.lp-msg--error   { background: rgba(224,96,96,.12); border-color: rgba(224,96,96,.5);  color: var(--lp-loss); }
+.lp-msg--warn    { background: rgba(224,176,48,.12); border-color: rgba(224,176,48,.5); color: var(--lp-warn); }
+
+/* ── 11. Mobile bottom nav ────────────────────── */
+html.dark .mobile-bottom-nav, html:not(.dark) .mobile-bottom-nav {
+  background: var(--lp-box-head); border-top: 1px solid var(--lp-border);
+}
+.mobile-bottom-nav a { color: var(--lp-muted); min-height: 2.75rem; justify-content: center; transition: none; }
+.mobile-bottom-nav a:hover, .mobile-bottom-nav a.active { color: var(--lp-head); }
+.mobile-bottom-nav a.active { box-shadow: inset 0 3px 0 var(--lp-green); }
+
+/* ── 12. Create Lobby modal ───────────────────── */
+html .lp-modal.lp-modal {
+  background: var(--lp-box); border: 1px solid var(--lp-border); border-radius: 4px; box-shadow: var(--lp-shadow);
+}
+#createLobbyOverlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ── 13. JS-built elements (CSS-only reach) ───── */
+html #toastContainer > a {
+  background: var(--lp-box-head); color: var(--lp-head);
+  border: 1px solid var(--lp-border); border-left: 3px solid var(--lp-green); border-radius: 3px;
+  box-shadow: var(--lp-shadow); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+html #toastContainer > a:hover { background: var(--lp-box); }
+#userSearchResults {
+  background: var(--lp-box); border: 1px solid var(--lp-border); border-radius: 4px; box-shadow: var(--lp-shadow);
+}
+
+/* ── 13b. Games: lobby, game view, spectate, tournament match ─ */
+html .border-gray-800 { border-color: var(--lp-border); }
+html .bg-gray-900, html .bg-gray-900\/60, html .bg-gray-900\/40 { background-color: var(--lp-input); }
+html .bg-gray-950\/30 { background-color: var(--lp-hover); }
+/* JS-built error toasts */
+html .bg-red-900\/90 {
+  background: var(--lp-box-head); color: var(--lp-head); border: 1px solid var(--lp-border);
+  border-left: 3px solid var(--lp-loss); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+#joinGameOverlay { backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* Connection dot: connecting = yellow (gladiator.css used the gold variable, which is green now) */
+.ws-dot.connecting { background-color: var(--lp-warn); }
+.lobby-badge-dot--live { background-color: var(--lp-win); }
+.lobby-badge-dot--done { background-color: var(--lp-loss); }
+
+/* Clocks: keep white/black distinction, make the active clock obvious */
+.chess-clock { border-radius: 4px; }
+.chess-clock.active-clock { box-shadow: 0 0 0 2px var(--lp-win); }
+
+/* Game-over overlay (UI chrome only, the board underneath is untouched) */
+.game-over-overlay { background-color: rgba(22,21,18,.88); border-radius: 4px; }
+.game-over-overlay .result-text { text-shadow: none; }
+.game-over-overlay .result-text.text-yellow-300 { color: var(--lp-draw); }
+html #gameOverBanner { box-shadow: none; border-color: var(--lp-green); }
+
+/* Lobby: Chess = green, Breakthrough = blue; variant badges are neutral so they never read as a game type */
+.lp-lobby .bg-purple-500\/15.text-purple-300 { background: rgba(98,153,36,.18); color: var(--lp-win); border-color: rgba(98,153,36,.5); }
+.lp-lobby .bg-orange-500\/15.text-orange-300 { background: rgba(56,147,232,.16); color: var(--lp-link); border-color: rgba(56,147,232,.5); }
+.lp-lobby :is(
+  .bg-red-500\/15.text-red-300.border-red-400\/30,
+  .bg-yellow-500\/15.text-yellow-300.border-yellow-400\/30,
+  .bg-green-500\/15.text-green-300.border-green-400\/30,
+  .bg-blue-500\/15.text-blue-300.border-blue-400\/30,
+  .bg-amber-500\/15.text-amber-300.border-amber-400\/30
+) { background: var(--lp-hover); color: var(--lp-text); border-color: var(--lp-border); }
+.lp-lobby .js-board-mode-badge.text-emerald-300 { color: var(--lp-win); background: rgba(98,153,36,.18); border-color: rgba(98,153,36,.5); }
+.lp-lobby .rounded-xl.border:not([class*="border-brand"], [class*="border-amber"], .border-dashed) { border-color: var(--lp-border); }
+.lp-lobby .border-dashed { background: transparent; }
+
+/* ── 13c. Tournaments ─────────────────────────── */
+/* Avatar initials: neutral instead of the old purple */
+html .bg-purple { background-color: var(--lp-avatar-bg); }
+/* Gauntlet "Completed" pill: grey, so it is not confused with a game type */
+.bg-purple\/20.text-purple.border-purple\/40 { background: var(--lp-hover); color: var(--lp-muted); border-color: var(--lp-border); }
+/* Money-tournament accept button: keep it a clear primary action once enabled */
+#accept-btn:not(:disabled) { background: var(--lp-btn); border-color: var(--lp-btn); color: #fff; }
+#accept-btn:not(:disabled):hover { background: var(--lp-btn-hover); border-color: var(--lp-btn-hover); }
+.bracket-match.completed { opacity: 1; }
+.bracket-player.loser { opacity: .6; }
+
+/* ── 13d. Forum and news ──────────────────────── */
+/* Article / post text. .prose is shared by news, forum posts and any rendered markdown. */
+.prose, .prose-news, .prose-forum {
+  max-width: 72ch; overflow-wrap: anywhere; word-break: break-word; line-height: 1.7;
+}
+.prose > * + *, .prose-news > * + *, .prose-forum > * + * { margin-top: .85em; }
+.prose p, .prose-news p, .prose-forum p { margin: 0; }
+.prose :is(h2, h3, h4), .prose-news :is(h2, h3, h4), .prose-forum :is(h2, h3, h4) { color: var(--lp-head); line-height: 1.3; }
+html :is(.prose, .prose-news, .prose-forum) a { color: var(--lp-link); text-decoration: underline; }
+html :is(.prose, .prose-news, .prose-forum) a:hover { color: var(--lp-link); text-decoration-thickness: 2px; }
+:is(.prose, .prose-news, .prose-forum) :is(strong, b) { color: var(--lp-head); }
+:is(.prose, .prose-news, .prose-forum) :is(ul, ol) { padding-left: 1.4em; }
+:is(.prose, .prose-news, .prose-forum) ul { list-style: disc; }
+:is(.prose, .prose-news, .prose-forum) ol { list-style: decimal; }
+:is(.prose, .prose-news, .prose-forum) blockquote {
+  margin-left: 0; padding: .4rem 1rem; color: var(--lp-muted);
+  border-left: 3px solid var(--lp-border); background: var(--lp-hover);
+}
+:is(.prose, .prose-news, .prose-forum) img { max-width: 100%; height: auto; border-radius: 3px; }
+html :is(.prose, .prose-news, .prose-forum) code {
+  background: var(--lp-input); color: var(--lp-text); border: 1px solid var(--lp-border);
+  border-radius: 3px; font-size: .85em; padding: .1em .35em;
+}
+html :is(.prose, .prose-news, .prose-forum) pre {
+  background: var(--lp-input); border: 1px solid var(--lp-border); border-radius: 3px;
+  max-width: 100%; overflow-x: auto; white-space: pre; overflow-wrap: normal; word-break: normal;
+}
+html :is(.prose, .prose-news, .prose-forum) pre code { background: none; border: 0; padding: 0; }
+
+/* News: boxes follow the flat box color instead of the sunken surface */
+.lp-news .bg-surface.border { background-color: var(--lp-box); }
+html .hover\:border-purple:hover { border-color: var(--lp-muted); }
+/* Delete confirmation: red top edge and a solid red action */
+.lp-confirm .bg-surface.border { border-top: 3px solid var(--lp-loss); }
+.lp-confirm .btn-danger { background: var(--lp-danger); border-color: var(--lp-danger); color: #fff; }
+.lp-confirm .btn-danger:hover { background: var(--lp-loss); border-color: var(--lp-loss); }
+
+/* Django field errors */
+.errorlist { list-style: none; margin: .25rem 0 0; padding: 0; color: var(--lp-loss); font-size: .85rem; }
+
+/* ── 13e. Account and password pages ─────────── */
+/* Hand-written fields (gray-800 fill) match the Django-rendered ones (surface fill) */
+html input.bg-gray-800, html textarea.bg-gray-800, html select.bg-gray-800 {
+  background-color: var(--lp-input); border-color: var(--lp-border); color: var(--lp-head);
+}
+/* reCAPTCHA v3 badge floats bottom-right; lift it above the mobile bottom nav so it stays visible */
+@media (max-width: 767px) { .grecaptcha-badge { bottom: 76px !important; } }
+
+/* ── 14. Light-mode (ready, currently unreachable) ─ */
+html:not(.dark) :is(h1, h2, h3, h4).text-white { color: var(--lp-head); }
+html:not(.dark) :is(.text-gray-100, .text-gray-200) { color: var(--lp-head); }
+html:not(.dark) .text-gray-300 { color: var(--lp-text); }
+html:not(.dark) :is(.text-gray-400, .text-gray-500, .text-gray-600) { color: var(--lp-muted); }
+html:not(.dark) :is(.text-brand, .text-gold, .text-green-300, .text-green-400, .text-green-500, .text-emerald-300) { color: var(--lp-win); }
+html:not(.dark) :is(.text-purple, .text-purple-300, .text-purple-400, .text-blue-200, .text-blue-300, .text-blue-400) { color: var(--lp-link); }
+html:not(.dark) :is(.text-red-200, .text-red-300, .text-red-400) { color: var(--lp-loss); }
+html:not(.dark) :is(.text-yellow-100, .text-yellow-200, .text-yellow-300, .text-yellow-400, .text-amber-200, .text-amber-300, .text-amber-400, .text-orange-300, .text-orange-400) { color: var(--lp-warn); }
+html:not(.dark) :is(.bg-surface, .bg-navy, .bg-navyLight, .bg-gray-800, .bg-gray-900, .bg-gray-950) { background-color: var(--lp-input); }
+html:not(.dark) :is(.bg-surfaceLight, .bg-gray-700, .bg-borderDark) { background-color: var(--lp-box-head); }
+html:not(.dark) :is(.border-borderDark, .border-gray-600, .border-gray-700, .border-gray-800) { border-color: var(--lp-border); }
+html:not(.dark) :is(.bg-red-900\/10, .bg-red-900\/20, .bg-red-900\/30, .bg-red-900\/40, .bg-red-900\/60, .bg-red-500\/15) { background-color: rgba(176,42,42,.08); }
+html:not(.dark) :is(.bg-green-900\/15, .bg-green-900\/20, .bg-green-900\/30, .bg-green-900\/40, .bg-green-900\/60, .bg-green-500\/15, .bg-emerald-500\/15) { background-color: rgba(63,122,10,.1); }
+html:not(.dark) :is(.bg-yellow-900\/15, .bg-yellow-900\/20, .bg-yellow-900\/30, .bg-yellow-900\/40, .bg-yellow-500\/15, .bg-amber-500\/15, .bg-amber-900\/20, .bg-orange-500\/15) { background-color: rgba(138,97,0,.1); }
+html:not(.dark) :is(.bg-blue-500\/15, .bg-blue-900\/20, .bg-blue-900\/30, .bg-blue-900\/40, .bg-purple-500\/15, .bg-purple-900\/20, .bg-purple-900\/30) { background-color: rgba(31,111,192,.08); }

@@ -3,7 +3,7 @@
 {% block title %}{{ post.title }} — News — Artificial Gladiator{% endblock %}
 
 {% block content %}
-<div class="animate-fade-in max-w-3xl mx-auto">
+<div class="lp-news animate-fade-in max-w-3xl mx-auto">
 
   <div class="text-xs text-gray-500 mb-4">
     <a href="{% url 'news:list' %}" class="hover:text-gold transition">&larr; Back to news</a>
@@ -23,7 +23,7 @@
       {% endif %}
     </div>
 
-    <h1 class="text-2xl sm:text-3xl font-bold leading-snug">{{ post.title }}</h1>
+    <h1 class="text-2xl sm:text-3xl font-bold leading-snug break-words">{{ post.title }}</h1>
 
     <p class="text-xs text-gray-500 mt-2">
       by <span class="text-gray-400">{{ post.author.username|default:"deleted user" }}</span>

@@ -82,6 +82,8 @@ def _get_prize_claim_alert(user) -> dict | None:
     # Bug 2 fix: only show the badge while the claim is still PENDING.
     if claim is None or claim.status != PrizeClaim.Status.PENDING:
         return None
+    if tournament.prize_on_hold:
+        return None
 
     return {
         "url": reverse("tournaments:prize_claim", args=[tournament.pk]),

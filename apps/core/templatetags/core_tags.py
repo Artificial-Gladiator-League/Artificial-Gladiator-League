@@ -1,7 +1,29 @@
 from django import template
+from django.templatetags.static import static
+from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 register = template.Library()
+
+
+@register.simple_tag
+def profile_flag(user):
+    """Flag <img> for the PROFILE PAGE only (never used in standings, leaderboards, etc.).
+
+    Renders nothing unless the user has a country and ``show_flag`` is on. The images
+    are the GIFs bundled with django-countries; a missing file renders nothing.
+    """
+    from apps.users.countries import country_name as _name, flag_static_path, is_valid_country
+
+    code = getattr(user, "country", "") or ""
+    if not code or not getattr(user, "show_flag", False) or not is_valid_country(code):
+        return ""
+    try:
+        src = static(flag_static_path(code))
+    except ValueError:
+        return ""
+    name = _name(code)
+    return format_html('<img class="lp-flag" src="{}" alt="{}" title="{}" loading="lazy">', src, name, name)
 
 
 @register.filter

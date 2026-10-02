@@ -12,7 +12,7 @@
   </div>
 
   <div class="mb-6">
-    <h1 class="text-2xl sm:text-3xl font-bold flex items-center gap-2 flex-wrap">
+    <h1 class="text-2xl sm:text-3xl font-bold flex items-center gap-2 flex-wrap break-words min-w-0">
       {% if topic.is_pinned %}<span title="Pinned">📌</span>{% endif %}
       {{ topic.title }}
       {% if topic.is_hot %}

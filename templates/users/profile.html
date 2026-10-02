@@ -4,200 +4,262 @@
 
 {% block extra_head %}
 <style>
-  /* profile chessground board size */
-  .profile-board { width: 280px; height: 280px; }
-  @media (min-width: 640px) { .profile-board { width: 320px; height: 320px; } }
-  .locked-hint { color: #f59e0b; font-size: .7rem; margin-top: .15rem; }
-  /* Profile tabs */
-  .profile-tab {
-    padding: 0.75rem 1.5rem;
-    font-weight: 600;
-    font-size: 0.875rem;
-    color: #9ca3af;
-    border-bottom: 2px solid transparent;
-    background: none;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-  }
-  .profile-tab:hover { color: #77b255; }
-  .profile-tab.active { color: #77b255; border-color: #77b255; }
-  html:not(.dark) .profile-tab { color: #6b7280; }
-  html:not(.dark) .profile-tab:hover { color: #5a9a3c; }
-  html:not(.dark) .profile-tab.active { color: #5a9a3c; border-color: #5a9a3c; }
-  /* ── AI Models subtab styling (small horizontal subtabs) ── */
-  .ai-subtab {
-    padding: 0.45rem 0.9rem;
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: #9ca3af;
-    border-bottom: 2px solid transparent;
-    background: none;
-    cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
-    margin-right: 0.5rem;
-    white-space: nowrap;
-  }
-  .ai-subtab:hover { color: #77b255; }
-  .ai-subtab.active { color: #77b255; border-color: #77b255; }
-  html:not(.dark) .ai-subtab { color: #6b7280; }
-  html:not(.dark) .ai-subtab:hover { color: #5a9a3c; }
-  html:not(.dark) .ai-subtab.active { color: #5a9a3c; border-color: #5a9a3c; }
-  /* Stats & History per-game subtabs */
-  .stats-subtab {
-    padding: 0.45rem 1.1rem;
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: #9ca3af;
-    border-bottom: 2px solid transparent;
-    background: none;
-    cursor: pointer;
-    transition: color 0.12s, border-color 0.12s;
-    white-space: nowrap;
-  }
-  .stats-subtab:hover { color: #77b255; }
-  .stats-subtab.active { color: #77b255; border-color: #77b255; }
-  html:not(.dark) .stats-subtab { color: #6b7280; }
-  html:not(.dark) .stats-subtab:hover { color: #5a9a3c; }
-  html:not(.dark) .stats-subtab.active { color: #5a9a3c; border-color: #5a9a3c; }
-  /* Format stats sub-card */
-  .format-section { border-left: 3px solid #77b255; padding-left: 1rem; margin-bottom: 1.5rem; }
-  .tc-badge {
-    display: inline-block; font-size: 0.65rem; font-weight: 700;
-    padding: 0.15rem 0.5rem; border-radius: 9999px;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .tc-bullet { background: rgba(239,68,68,.15); color: #f87171; }
-  .tc-blitz  { background: rgba(251,191,36,.15); color: #fbbf24; }
-  .tc-rapid  { background: rgba(96,165,250,.15); color: #60a5fa; }
+  /* Profile-only rules. Theme variables, the page background, links, headings, cards, buttons,
+     fields and tables come from lichess.css; this block only adds what is specific to this page. */
 
-  /* ── Activity Heatmap ──────────────────────── */
-  .heatmap-scroll { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
-  .heatmap-grid {
-    display: grid;
-    grid-template-rows: repeat(7, 1fr);
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 3px;
+  .lichess-profile { font-variant-numeric: tabular-nums; }
+
+  .lichess-profile a { color: var(--lp-link); }
+
+  /* Flat boxes: .lp-box is profile-only, .card keeps this page's tighter padding */
+  .lichess-profile .lp-box {
+    background: var(--lp-box); border: 1px solid var(--lp-border); border-radius: 4px;
+    box-shadow: none; padding: 0.9rem 1rem; transition: none;
   }
-  .heatmap-cell {
-    width: 13px; height: 13px;
-    border-radius: 2px;
-    cursor: pointer;
-    transition: outline 0.1s;
-    outline: 1px solid transparent;
+  .lichess-profile.lichess-profile .card { padding: 0.9rem 1rem; }
+  .lichess-profile .lp-side .lp-box { padding: 0; }
+  .lichess-profile .lp-title {
+    margin: 0; padding: 0.55rem 0.9rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.02em;
+    color: var(--lp-head); background: var(--lp-box-head); border-bottom: 1px solid var(--lp-border);
+    border-radius: 3px 3px 0 0; text-transform: none;
   }
-  .heatmap-cell:hover { outline: 1px solid #77b255; }
-  .heatmap-cell.selected { outline: 2px solid #77b255; }
+  .lichess-profile .card > .lp-title { margin: -0.9rem -1rem 0.75rem; }
+  .lichess-profile .lp-body { padding: 0.6rem 0.9rem; }
 
-  /* 5-level green scale (dark theme) */
-  .hm-0 { background-color: #1e1e2e; }
-  .hm-1 { background-color: rgba(119,178,85,.20); }
-  .hm-2 { background-color: rgba(119,178,85,.40); }
-  .hm-3 { background-color: rgba(119,178,85,.65); }
-  .hm-4 { background-color: #77b255; }
-  /* Light theme override */
-  html:not(.dark) .hm-0 { background-color: #ebedf0; }
-  html:not(.dark) .hm-1 { background-color: #c6e48b; }
-  html:not(.dark) .hm-2 { background-color: #7bc96f; }
-  html:not(.dark) .hm-3 { background-color: #449e48; }
-  html:not(.dark) .hm-4 { background-color: #196127; }
+  /* Header */
+  .lichess-profile .lp-head { display: flex; gap: 0.9rem; align-items: flex-start; padding: 0.9rem 1rem; margin-bottom: 12px; }
+  .lichess-profile .lp-avatar {
+    flex: none; width: 60px; height: 60px; border-radius: 3px; overflow: hidden;
+    background: var(--lp-box-head); border: 1px solid var(--lp-border);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .lichess-profile .lp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .lichess-profile .lp-avatar span { font-size: 1.6rem; font-weight: 700; color: var(--lp-head); }
+  .lichess-profile .lp-name { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.45rem; margin: 0; font-size: 1.5rem; font-weight: 500; line-height: 1.2; }
+  .lichess-profile .lp-dot { width: 10px; height: 10px; border-radius: 9999px; background: var(--lp-muted); flex: none; }
+  .lichess-profile .lp-dot.on { background: var(--lp-green); }
+  .lichess-profile .lp-flag { height: 1rem; width: auto; border-radius: 2px; flex: none; }
+  .lichess-profile .lp-ai { font-size: 1rem; font-weight: 400; color: var(--lp-muted); }
+  .lichess-profile .lp-meta { margin: 0.2rem 0 0; font-size: 0.8rem; color: var(--lp-muted); }
+  .lichess-profile .lp-bio { margin: 0.6rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--lp-border); white-space: pre-line; overflow-wrap: anywhere; }
 
-  .heatmap-months { display: flex; font-size: 0.6rem; color: #6b7280; margin-bottom: 2px; }
-  .heatmap-months span { flex: none; text-align: center; }
-  .heatmap-dow { display: grid; grid-template-rows: repeat(7,1fr); gap: 3px; font-size: 0.55rem; color: #6b7280; margin-right: 4px; align-items: center; }
-  .heatmap-dow span:nth-child(even) { visibility: hidden; }
+  /* Two-column layout: sidebar first on mobile */
+  .lichess-profile .lp-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  @media (min-width: 1024px) { .lichess-profile .lp-layout { grid-template-columns: 300px minmax(0, 1fr); align-items: start; } }
+  .lichess-profile .lp-side, .lichess-profile .lp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .lichess-profile .lp-main .tab-panel > * + * { margin-top: 12px; }
 
-  .hm-legend { display: flex; align-items: center; gap: 3px; font-size: 0.65rem; color: #6b7280; margin-top: 6px; }
-  .hm-legend-cell { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+  /* Ratings (perfs) list */
+  .lichess-profile .lp-perf { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.9rem; border-top: 1px solid var(--lp-border); }
+  .lichess-profile .lp-perf:first-of-type { border-top: 0; }
+  .lichess-profile .lp-perf:hover { background: var(--lp-hover); }
+  .lichess-profile .lp-perf-ico { flex: none; width: 1.6rem; text-align: center; font-size: 1.45rem; line-height: 1; color: var(--lp-muted); }
+  .lichess-profile .lp-perf-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  .lichess-profile .lp-perf-name { font-weight: 600; color: var(--lp-head); }
+  .lichess-profile .lp-perf-tier, .lichess-profile .lp-perf-games { font-size: 0.75rem; }
+  .lichess-profile .lp-perf-games { color: var(--lp-muted); }
+  .lichess-profile .lp-perf-rating { flex: none; font-size: 1.5rem; font-weight: 500; color: var(--lp-head); }
 
-  /* Tooltip */
+  /* Label-left / value-right lists */
+  .lichess-profile .lp-row { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; padding: 0.22rem 0; font-size: 0.85rem; }
+  .lichess-profile .lp-row + .lp-row { border-top: 1px solid var(--lp-border); }
+  .lichess-profile .lp-row > :first-child { color: var(--lp-muted); }
+  .lichess-profile .lp-row > :last-child { color: var(--lp-head); font-weight: 600; text-align: right; }
+  .lichess-profile .lp-stat-block + .lp-stat-block { margin-top: 0.8rem; padding-top: 0.6rem; border-top: 1px solid var(--lp-border); }
+  .lichess-profile .lp-stat-title { font-size: 0.8rem; font-weight: 700; color: var(--lp-head); margin-bottom: 0.2rem; }
+  .lichess-profile .lp-win { color: var(--lp-win); }
+  .lichess-profile .lp-loss { color: var(--lp-loss); }
+  .lichess-profile .lp-draw { color: var(--lp-draw); }
+
+  /* Win / draw / loss bar */
+  .lichess-profile .lp-wdl { display: flex; height: 8px; margin: 0.5rem 0 0.25rem; border-radius: 2px; overflow: hidden; background: var(--lp-border); }
+  .lichess-profile .lp-wdl > span { display: block; height: 100%; }
+  .lichess-profile .lp-wdl .w { background: var(--lp-win); }
+  .lichess-profile .lp-wdl .d { background: var(--lp-draw); }
+  .lichess-profile .lp-wdl .l { background: var(--lp-loss); }
+  .lichess-profile .lp-wdl-legend { display: flex; justify-content: space-between; font-size: 0.75rem; }
+
+  /* Chessground board (sidebar width) */
+  .lichess-profile .profile-board { width: 100%; height: auto; aspect-ratio: 1 / 1; }
+  .lichess-profile .lp-board-wrap { padding: 8px; }
+
+  /* Tabs: flat strip, 3px green underline on the active tab, never wraps */
+  .lichess-profile .lp-tabs { display: flex; overflow-x: auto; scrollbar-width: thin; padding: 0; }
+  .lichess-profile .profile-tab {
+    flex: 1 0 auto; min-width: max-content; padding: 0.75rem 1rem; font-size: 0.9rem; font-weight: 500;
+    white-space: nowrap; color: var(--lp-muted); background: none; border: 0;
+    border-bottom: 3px solid transparent; cursor: pointer; text-align: center;
+  }
+  .lichess-profile .profile-tab:hover { color: var(--lp-head); background: var(--lp-hover); }
+  .lichess-profile .profile-tab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
+  .lichess-profile .ai-subtab, .lichess-profile .stats-subtab {
+    padding: 0.5rem 0.9rem; font-size: 0.85rem; font-weight: 500; white-space: nowrap; color: var(--lp-muted);
+    background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer; margin: 0;
+  }
+  .lichess-profile .ai-subtab:hover, .lichess-profile .stats-subtab:hover { color: var(--lp-head); }
+  .lichess-profile .ai-subtab.active, .lichess-profile .stats-subtab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
+  .lichess-profile .tab-panel .overflow-x-auto { scrollbar-width: thin; }
+
+  /* Time-control badges (flat) */
+  .lichess-profile .tc-badge { display: inline-block; font-size: 0.65rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lichess-profile .tc-bullet { background: rgba(224,96,96,.15); color: var(--lp-loss); }
+  .lichess-profile .tc-blitz  { background: rgba(214,170,40,.18); color: #c8a020; }
+  .lichess-profile .tc-rapid  { background: rgba(56,147,232,.16); color: var(--lp-link); }
+
+  /* Tables: compact cells (colors, borders and hover come from lichess.css) */
+  .lichess-profile .stats-table th { padding: 0.4rem 0.6rem; }
+  .lichess-profile .stats-table td { padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+  .lichess-profile .day-detail-row { cursor: pointer; }
+  .lichess-profile .day-detail-row:hover td { background: var(--lp-hover); }
+
+  /* Colours of existing markup and JS-built rows that differ from the site-wide mapping */
+  .lichess-profile .text-gray-500, .lichess-profile .text-gray-400 { color: var(--lp-muted); }
+  .lichess-profile .text-gray-300, .lichess-profile .text-gray-200, .lichess-profile .text-gray-100 { color: var(--lp-text); }
+  .lichess-profile .text-brand { color: var(--lp-link); }
+  .lichess-profile .text-gold { color: var(--lp-head); }
+  .lichess-profile .rounded-lg, .lichess-profile .rounded-xl, .lichess-profile .rounded-2xl { border-radius: 3px; }
+  .lichess-profile .bg-gray-800, .lichess-profile .bg-gray-900, .lichess-profile .bg-navy { background-color: var(--lp-input); }
+  .lichess-profile .border-gray-700, .lichess-profile .border-gray-600, .lichess-profile .border-borderDark { border-color: var(--lp-border); }
+  .lichess-profile .move-list { color: var(--lp-text); }
+
+  /* Fields: keep this page's padding even where a Tailwind class sets another one */
+  .lichess-profile input[type=text], .lichess-profile input[type=email], .lichess-profile input[type=password],
+  .lichess-profile input[type=url], .lichess-profile textarea, .lichess-profile select {
+    border-radius: 3px; padding: 0.4rem 0.6rem;
+  }
+  .lichess-profile .divider { margin: 1rem 0; }
+
+  /* Buttons: compact sizes (look comes from lichess.css) */
+  .lichess-profile .btn-gold, .lichess-profile .btn-brand { min-height: 2rem; padding: 0.4rem 0.9rem; font-size: 0.85rem; }
+  .lichess-profile .btn-outline { min-height: 2rem; padding: 0.35rem 0.8rem; font-size: 0.8rem; }
+
+  /* Email modal (box look comes from lichess.css) */
+  .lichess-profile .lp-modal h3 { font-size: 1rem; }
+
+  /* Activity heatmap: green scale */
+  .lichess-profile .heatmap-scroll { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+  .lichess-profile .heatmap-grid { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; }
+  .lichess-profile .heatmap-cell { width: 13px; height: 13px; border-radius: 2px; cursor: pointer; outline: 1px solid transparent; }
+  .lichess-profile .heatmap-cell:hover { outline: 1px solid var(--lp-head); }
+  .lichess-profile .heatmap-cell.selected { outline: 2px solid var(--lp-head); }
+  .lichess-profile .hm-0 { background-color: #34322f; }
+  .lichess-profile .hm-1 { background-color: rgba(98,153,36,.30); }
+  .lichess-profile .hm-2 { background-color: rgba(98,153,36,.55); }
+  .lichess-profile .hm-3 { background-color: rgba(98,153,36,.80); }
+  .lichess-profile .hm-4 { background-color: #7ab52c; }
+  html:not(.dark) .lichess-profile .hm-0 { background-color: #ebebe8; }
+  html:not(.dark) .lichess-profile .hm-1 { background-color: #cfe3a8; }
+  html:not(.dark) .lichess-profile .hm-2 { background-color: #a3c866; }
+  html:not(.dark) .lichess-profile .hm-3 { background-color: #6f9f2a; }
+  html:not(.dark) .lichess-profile .hm-4 { background-color: #3f6516; }
+  .lichess-profile .heatmap-months { display: flex; font-size: 0.65rem; color: var(--lp-muted); margin-bottom: 2px; }
+  .lichess-profile .heatmap-months span { flex: none; text-align: center; }
+  .lichess-profile .heatmap-dow { display: grid; grid-template-rows: repeat(7,1fr); gap: 3px; font-size: 0.6rem; color: var(--lp-muted); margin-right: 4px; align-items: center; }
+  .lichess-profile .heatmap-dow span:nth-child(even) { visibility: hidden; }
+  .lichess-profile .hm-legend { display: flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--lp-muted); margin-top: 6px; }
+  .lichess-profile .hm-legend-cell { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+
+  /* Tooltip is appended to <body> by the script, so it cannot be scoped */
   .hm-tooltip {
     position: absolute; z-index: 50; pointer-events: none;
-    background: #1a1a2e; border: 1px solid #374151; border-radius: 6px;
-    padding: 4px 8px; font-size: 0.7rem; color: #d1d5db;
-    white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+    background: var(--lp-box); border: 1px solid var(--lp-border); border-radius: 3px;
+    padding: 3px 8px; font-size: 0.7rem; color: var(--lp-head); white-space: nowrap;
   }
-  html:not(.dark) .hm-tooltip { background: #fff; border-color: #e5e7eb; color: #374151; }
-
-  /* Day detail panel */
-  .day-detail-row { cursor: pointer; transition: background 0.1s; }
-  .day-detail-row:hover { background: rgba(119,178,85,.08); }
 
   @media (max-width: 639px) {
-    .heatmap-cell { width: 10px; height: 10px; }
-    .heatmap-grid { gap: 2px; }
+    .lichess-profile .heatmap-cell { width: 10px; height: 10px; }
+    .lichess-profile .heatmap-grid { gap: 2px; }
+    .lichess-profile .lp-name { font-size: 1.25rem; }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="animate-fade-in">
+<div class="animate-fade-in lichess-profile">
 
   <!-- ═══════════════════════════════════════════
-       Top: identity bar
+       Cover, avatar, name and tabs
        ═══════════════════════════════════════════ -->
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-    <div>
-      <h1 class="text-3xl font-bold flex items-center gap-2">
-        {% fide_badge user_profile %} {% if user_profile.ai_name %}{{ user_profile.ai_name }}{% else %}{{ user_profile.username }}{% endif %}
+  <header class="lp-box lp-head">
+    <div class="lp-avatar">
+      {% if user_profile.profile_picture %}
+        <img src="{{ user_profile.profile_picture.url }}" alt="{{ user_profile.username }}">
+      {% else %}
+        <span>{{ user_profile.username|slice:":1"|upper }}</span>
+      {% endif %}
+    </div>
+    <div class="min-w-0 flex-1">
+      <h1 class="lp-name">
+        {# No online-presence variable reaches this template: green means "you are here" on your own profile. #}
+        <span class="lp-dot{% if is_own_profile %} on{% endif %}" role="img" aria-label="{% if is_own_profile %}Online{% else %}Offline{% endif %}" title="{% if is_own_profile %}Online{% else %}Offline{% endif %}"></span>
+        {% profile_flag user_profile %}
+        {% fide_badge user_profile %}
+        <span>{{ user_profile.username }}</span>
+        {% if user_profile.ai_name %}<span class="lp-ai">{{ user_profile.ai_name }}</span>{% endif %}
       </h1>
-      <p class="text-sm text-gray-400 mt-1">
+      <p class="lp-meta">
         <span class="{{ category.css }} font-semibold">{{ category.tier }}</span>
+        <span class="mx-1">&middot;</span>Raised by {{ user_profile.username }}{% if is_own_profile %} &middot; This Gladiator belongs to you{% endif %}
       </p>
+      {% if user_profile.origin_story %}<p class="lp-bio">{{ user_profile.origin_story }}</p>{% endif %}
     </div>
-    <div class="flex items-center gap-3">
-    </div>
-  </div>
+  </header>
 
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+  <div class="lp-layout">
 
     <!-- ═══════════════════════════════════════
          Left col: Global Stats
          ═══════════════════════════════════════ -->
-    <div class="lg:col-span-1 space-y-6">
+    <div class="lp-side">
 
-      <!-- Full stats table -->
-      <div class="card">
-        <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-3">Statistics</h2>
-        <table class="stats-table text-sm">
-          <tbody>
-            <tr>
-              <td class="text-gray-400">Chess ELO</td>
-              <td class="text-right font-medium text-brand">{{ user_profile.elo_chess }}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-400">Breakthrough ELO</td>
-              <td class="text-right font-medium text-purple-400">{{ user_profile.elo_breakthrough }}</td>
-            </tr>
-            <tr>
-              <td class="text-gray-400">Chess Category</td>
-              <td class="text-right font-medium {{ category_chess.css }}">
-                {{ category_chess.tier }}
-              </td>
-            </tr>
-            <tr>
-              <td class="text-gray-400">Breakthrough Category</td>
-              <td class="text-right font-medium {{ category_breakthrough.css }}">
-                {{ category_breakthrough.tier }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <!-- Ratings (perfs list) -->
+      <div class="lp-box">
+        <h2 class="lp-title">Ratings</h2>
+        <div class="lp-perf">
+          <span class="lp-perf-ico" aria-hidden="true">&#9818;</span>
+          <span class="lp-perf-main">
+            <span class="lp-perf-name">Chess</span>
+            <span class="lp-perf-tier {{ category_chess.css }}">{{ category_chess.tier }}</span>
+            {% for gts in game_type_stats %}{% if gts.game_type == 'chess' %}<span class="lp-perf-games">{{ gts.overall.total }} game{{ gts.overall.total|pluralize }}</span>{% endif %}{% endfor %}
+          </span>
+          <span class="lp-perf-rating">{{ user_profile.elo_chess }}</span>
+        </div>
+        <div class="lp-perf">
+          <span class="lp-perf-ico" aria-hidden="true">&#9823;</span>
+          <span class="lp-perf-main">
+            <span class="lp-perf-name">Breakthrough</span>
+            <span class="lp-perf-tier {{ category_breakthrough.css }}">{{ category_breakthrough.tier }}</span>
+            {% for gts in game_type_stats %}{% if gts.game_type == 'breakthrough' %}<span class="lp-perf-games">{{ gts.overall.total }} game{{ gts.overall.total|pluralize }}</span>{% endif %}{% endfor %}
+          </span>
+          <span class="lp-perf-rating">{{ user_profile.elo_breakthrough }}</span>
+        </div>
       </div>
 
-      <!-- Tournament Readiness card -->
-      <div class="card">
-        <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-3">Tournament Readiness</h2>
+      <!-- Statistics -->
+      <div class="lp-box">
+        <h2 class="lp-title">Statistics</h2>
+        <div class="lp-body">
+          <div class="lp-row"><span>Chess ELO</span><span>{{ user_profile.elo_chess }}</span></div>
+          <div class="lp-row"><span>Breakthrough ELO</span><span>{{ user_profile.elo_breakthrough }}</span></div>
+          <div class="lp-row"><span>Chess Category</span><span class="{{ category_chess.css }}">{{ category_chess.tier }}</span></div>
+          <div class="lp-row"><span>Breakthrough Category</span><span class="{{ category_breakthrough.css }}">{{ category_breakthrough.tier }}</span></div>
+        </div>
+      </div>
+
+      <!-- Tournament Readiness -->
+      <div class="lp-box">
+        <h2 class="lp-title">Tournament Readiness</h2>
+        <div class="lp-body">
         {% for tr in tournament_readiness %}
-        <div class="mb-4 last:mb-0">
+        <div class="mb-2 last:mb-0">
           <div class="flex items-center justify-between mb-1.5">
             <span class="text-xs font-semibold text-gray-300">{{ tr.label }}</span>
             {% if tr.ready %}
-              <span class="text-xs font-bold text-green-400">✔ Eligible</span>
+              <span class="text-xs font-bold text-green-400">Eligible</span>
             {% elif tr.repo_changed %}
-              <span class="text-xs font-bold text-yellow-400">⚠ Cooldown</span>
+              <span class="text-xs font-bold text-yellow-400">Cooldown</span>
             {% else %}
-              <span class="text-xs font-bold text-red-400">✖ Not ready</span>
+              <span class="text-xs font-bold text-red-400">Not ready</span>
             {% endif %}
           </div>
 
@@ -230,24 +292,58 @@
           {% endif %}
         </div>
         {% endfor %}
+        </div>
       </div>
 
       <!-- Chessground board (also used for replay) -->
-      <div class="card flex flex-col items-center justify-center">
+      <div class="lp-box lp-board-wrap">
         <div id="profileBoard" class="profile-board"></div>
       </div>
 
       <!-- Replay controls (hidden until a game is selected) -->
-      <div id="replaySection" class="card hidden">
-        <p class="text-xs text-gray-500 mb-2 font-semibold" id="replayHeader"></p>
-        <div class="flex items-center justify-center gap-3 mb-3">
-          <button id="btnFirst" class="btn-outline text-xs py-1 px-3" title="First">⏮</button>
-          <button id="btnPrev"  class="btn-outline text-xs py-1 px-3" title="Previous">◀</button>
+      <div id="replaySection" class="lp-box hidden">
+        <p class="lp-title" id="replayHeader"></p>
+        <div class="lp-body">
+        <div class="flex items-center justify-center gap-2 mb-2">
+          <button id="btnFirst" class="btn-outline text-xs py-1 px-3" title="First">First</button>
+          <button id="btnPrev"  class="btn-outline text-xs py-1 px-3" title="Previous">Prev</button>
           <span class="text-xs text-gray-400" id="replayMoveNum">0 / 0</span>
-          <button id="btnNext"  class="btn-outline text-xs py-1 px-3" title="Next">▶</button>
-          <button id="btnLast"  class="btn-outline text-xs py-1 px-3" title="Last">⏭</button>
+          <button id="btnNext"  class="btn-outline text-xs py-1 px-3" title="Next">Next</button>
+          <button id="btnLast"  class="btn-outline text-xs py-1 px-3" title="Last">Last</button>
         </div>
         <div id="replayMoves" class="move-list text-xs" style="max-height:260px;overflow-y:auto;"></div>
+        </div>
+      </div>
+
+      <!-- My Gladiator (editable on your own profile) -->
+      <div class="lp-box">
+        <h2 class="lp-title">My Gladiator</h2>
+        <div class="lp-body space-y-2">
+          <div>
+            <label for="origin_story" class="block text-xs text-gray-400 mb-1">Origin story</label>
+            <textarea id="origin_story" rows="3" class="w-full text-xs"{% if not is_own_profile %} disabled{% endif %}>{{ user_profile.origin_story }}</textarea>
+            {% if is_own_profile %}<button onclick="saveField('origin_story')" class="mt-1 btn-gold text-xs px-3 py-1.5 w-full">Save story</button>{% endif %}
+          </div>
+          <div class="flex items-end gap-2">
+            <div class="flex-1 min-w-0">
+              <label for="fighting_style" class="block text-xs text-gray-400 mb-1">Fighting style</label>
+              <select id="fighting_style" class="w-full text-xs"{% if not is_own_profile %} disabled{% endif %}>
+                <option value="Unhinged Rage"{% if user_profile.fighting_style == "Unhinged Rage" %} selected{% endif %}>Unhinged Rage</option>
+                <option value="Silent Assassin"{% if user_profile.fighting_style == "Silent Assassin" %} selected{% endif %}>Silent Assassin</option>
+                <option value="The Rage Philosopher"{% if user_profile.fighting_style == "The Rage Philosopher" %} selected{% endif %}>The Rage Philosopher</option>
+                <option value="Chaotic Genius"{% if user_profile.fighting_style == "Chaotic Genius" %} selected{% endif %}>Chaotic Genius</option>
+              </select>
+            </div>
+            {% if is_own_profile %}<button onclick="saveField('fighting_style')" class="btn-gold text-xs px-3 py-1.5">Save</button>{% endif %}
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <span class="block text-xs text-gray-400">Mood</span>
+              <div id="mood_display" data-mood="{{ user_profile.current_mood }}" class="text-sm font-bold"></div>
+            </div>
+            {% if is_own_profile %}<button onclick="saveField('current_mood')" class="btn-gold text-xs px-3 py-1.5">Update</button>{% endif %}
+          </div>
+        </div>
       </div>
 
     </div>
@@ -255,17 +351,19 @@
     <!-- ═══════════════════════════════════════
          Right col: Tabbed interface
          ═══════════════════════════════════════ -->
-    <div class="lg:col-span-2 space-y-0">
+    <div class="lp-main">
 
-      <!-- Tab bar -->
-      <div class="flex border-b border-gray-700 mb-6">
+      <!-- Tab strip -->
+      <div class="lp-box lp-tabs">
         {% if is_own_profile %}
         <button class="profile-tab active" data-tab="edit">Profile</button>
-        <button class="profile-tab" data-tab="ai-models">AG Champions</button>
-        <button class="profile-tab" data-tab="stats">Stats &amp; History</button>
+        <button class="profile-tab" data-tab="ai-models">Gladiator</button>
+        <button class="profile-tab" data-tab="rivalries">Rivalries</button>
+        <button class="profile-tab" data-tab="stats">Activity</button>
         <button class="profile-tab" data-tab="paypal">PayPal</button>
         {% else %}
-        <button class="profile-tab active" data-tab="stats">Stats &amp; History</button>
+        <button class="profile-tab" data-tab="rivalries">Rivalries</button>
+        <button class="profile-tab active" data-tab="stats">Activity</button>
         {% endif %}
       </div>
 
@@ -273,7 +371,7 @@
            TAB 1: Edit Profile (own profile only)
            ═══════════════════════════════════════ -->
       {% if is_own_profile %}
-      <div id="tab-edit" class="tab-panel space-y-6">
+      <div id="tab-edit" class="tab-panel space-y-3">
         <div class="card">
           <form method="post" enctype="multipart/form-data" id="profileForm" novalidate>
             {% csrf_token %}
@@ -290,7 +388,6 @@
               <div class="form-group">
                 <label for="id_username">Username</label>
                 {{ form.username }}
-                {% if form.username.help_text %}<p class="locked-hint">🔒 {{ form.username.help_text }}</p>{% endif %}
                 {% if form.username.errors %}<ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
               </div>
             </div>
@@ -300,13 +397,57 @@
               <div class="form-group">
                 <label for="id_ai_name">Artificial Gladiator Name</label>
                 {{ form.ai_name }}
-                {% if form.ai_name.help_text %}<p class="locked-hint">🔒 {{ form.ai_name.help_text }}</p>{% endif %}
                 {% if form.ai_name.errors %}<ul class="errorlist">{% for e in form.ai_name.errors %}<li>{{ e }}</li>{% endfor %}</ul>{% endif %}
               </div>
             </div>
 
             {# Save Changes button removed per UI update #}
           </form>
+        </div>
+
+        <!-- ── Country of residence ──────────────────── -->
+        <div class="card" id="countryCard">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Country of residence</h2>
+          {% if user_profile.country %}
+            <p class="text-sm text-gray-200 mb-1">
+              <span class="font-semibold">{{ country_name }}</span>
+              <span class="text-xs text-gray-500">({{ user_profile.country }})</span>
+            </p>
+            <p class="text-xs text-gray-400 mb-4">To correct your country, contact support.</p>
+            <form method="post" action="{% url 'users:save_country' %}">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="flag">
+              <label class="flex items-center gap-2 text-sm text-gray-300">
+                <input type="checkbox" name="show_flag" value="1"{% if user_profile.show_flag %} checked{% endif %}>
+                Show my flag on my profile
+              </label>
+              <button type="submit" class="btn-outline btn-sm text-sm mt-3">Save</button>
+            </form>
+          {% else %}
+            <p class="text-xs text-gray-400 mb-3">
+              Some tournaments are open to residents of certain countries only. Set your country once; it is used for an early eligibility check and does not replace the location and residency checks at registration.
+            </p>
+            <div class="rounded-lg border border-yellow-700 bg-yellow-900/15 px-4 py-2.5 text-sm text-yellow-300 mb-4">
+              Your country of residence cannot be changed later. Choose carefully. To correct a mistake you will have to contact support.
+            </div>
+            <form method="post" action="{% url 'users:save_country' %}" novalidate>
+              {% csrf_token %}
+              <input type="hidden" name="action" value="set">
+              {% if request.GET.next %}<input type="hidden" name="next" value="{{ request.GET.next }}">{% endif %}
+              <div class="form-group">
+                <label for="id_country">Country of residence</label>
+                <select name="country" id="id_country" required class="w-full max-w-sm">
+                  <option value="">Select your country…</option>
+                  {% for code, label in country_set_form.fields.country.choices %}{% if code %}<option value="{{ code }}">{{ label }}</option>{% endif %}{% endfor %}
+                </select>
+              </div>
+              <label class="flex items-start gap-2 text-sm text-gray-300 mb-4">
+                <input type="checkbox" name="country_confirm" value="1" id="id_country_confirm" required class="mt-1">
+                <span>I confirm this is my country of residence and I understand it cannot be changed later.</span>
+              </label>
+              <button type="submit" class="btn-brand btn-sm text-sm">Save country</button>
+            </form>
+          {% endif %}
         </div>
 
         <!-- GDPR / Data & Privacy link -->
@@ -379,7 +520,7 @@
         <div id="emailChangeModal" class="fixed inset-0 z-[100] hidden">
           <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" id="emailChangeOverlay"></div>
           <div class="relative flex items-center justify-center min-h-full p-4">
-            <div class="relative w-full max-w-md bg-gray-950 border border-gray-800 rounded-2xl shadow-2xl p-6 space-y-5 animate-fade-in">
+            <div class="relative w-full max-w-md lp-modal p-6 space-y-5 animate-fade-in">
               <div class="flex items-center justify-between">
                 <h3 class="text-lg font-bold">Update email address</h3>
                 <button type="button" id="closeEmailModal"
@@ -411,7 +552,7 @@
       <!-- ═══════════════════════════════════════
            TAB: PayPal Payout Email (own profile)
            ═══════════════════════════════════════ -->
-      <div id="tab-paypal" class="tab-panel hidden space-y-6">
+      <div id="tab-paypal" class="tab-panel hidden space-y-3">
         <div class="card">
           <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Payout Email</h2>
           <p class="text-xs text-gray-400 mb-4">
@@ -468,14 +609,13 @@
       <!-- ═══════════════════════════════════════
            TAB: AI Models (own profile only)
            ═══════════════════════════════════════ -->
-      <div id="tab-ai-models" class="tab-panel hidden space-y-6">
+      <div id="tab-ai-models" class="tab-panel hidden space-y-3">
 
         <!-- Subtabs: one per game -->
         <div class="mb-4">
           <div class="flex items-center gap-2 overflow-x-auto pb-2">
             {% for game in game_configs %}
             <button class="ai-subtab {% if forloop.first %}active{% endif %}" data-game="{{ game.type }}">
-              {% if game.type == 'breakthrough' %}♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span>{% else %}♟{% endif %}
               {{ game.label }}
             </button>
             {% endfor %}
@@ -487,7 +627,6 @@
           <div class="card">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-semibold">
-              {% if game.type == 'breakthrough' %}♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span>{% else %}♟{% endif %}
               {{ game.label }}
             </h2>
             {% if game.model %}
@@ -696,9 +835,9 @@
               <p class="font-semibold text-blue-200 flex items-center gap-2">
                 Proof of Ownership
                 {% if game.model.model_repo_ownership_verified %}
-                  <span class="text-xs text-green-400">✅ Model repo verified — add file to remaining repos below</span>
+                  <span class="text-xs text-green-400">Model repo verified — add file to remaining repos below</span>
                 {% else %}
-                  <span class="text-xs text-yellow-400">⚠️ Not yet verified</span>
+                  <span class="text-xs text-yellow-400">Not yet verified</span>
                 {% endif %}
               </p>
               <p>
@@ -790,7 +929,7 @@
       <!-- ═══════════════════════════════════════
            TAB 2: Stats & History
            ═══════════════════════════════════════ -->
-      <div id="tab-stats" class="tab-panel {% if is_own_profile %}hidden{% endif %} space-y-6">
+      <div id="tab-stats" class="tab-panel {% if is_own_profile %}hidden{% endif %} space-y-3">
 
         <!-- ── Stats & History: per-game subtabs ─────────────── -->
         <!-- TODO Backend fix: Format stats use _compute_stats() on entries built
@@ -802,14 +941,9 @@
              Fix the signal and the format stats will be correct automatically. -->
 
         <!-- Game type sub-tab bar -->
-        <div class="flex items-center gap-2 overflow-x-auto pb-1 border-b border-gray-700 mb-6">
+        <div class="flex items-center gap-2 overflow-x-auto pb-1 border-b border-gray-700 mb-3">
           {% for gts in game_type_stats %}
           <button class="stats-subtab {% if forloop.first %}active{% endif %}" data-gtype="{{ gts.game_type }}">
-            {% if gts.game_type == 'breakthrough' %}
-              ♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span>
-            {% else %}
-              {{ gts.icon }}
-            {% endif %}
             {{ gts.label }}
           </button>
           {% endfor %}
@@ -819,83 +953,47 @@
         <!-- ── {{ gts.label }} panel ── -->
         <div id="stats-game-{{ gts.game_type }}" class="stats-subtab-panel {% if not forloop.first %}hidden{% endif %} space-y-5">
 
-          <!-- ELO + overall pills -->
+          <!-- ELO + overall stats list -->
           <div class="card">
-            <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-4">
-              {% if gts.game_type == 'breakthrough' %}
-                ♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span>
-              {% else %}
-                {{ gts.icon }}
-              {% endif %}
-              {{ gts.label }} — Overall
-            </h3>
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-              <div class="stat-pill">
-                <span class="stat-value {{ gts.elo_css }}">{{ gts.elo }}</span>
-                <span class="stat-label">ELO</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-green-400">{{ gts.overall.wins }}</span>
-                <span class="stat-label">Wins</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-red-400">{{ gts.overall.losses }}</span>
-                <span class="stat-label">Losses</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-yellow-300">{{ gts.overall.draws }}</span>
-                <span class="stat-label">Draws</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-gray-300">{{ gts.overall.total }}</span>
-                <span class="stat-label">Total</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-brand">{{ gts.overall.win_rate_pct }}%</span>
-                <span class="stat-label">Win Rate</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value {% if gts.overall.streak > 0 %}text-green-400{% elif gts.overall.streak < 0 %}text-red-400{% else %}text-gray-400{% endif %}">
-                  {% if gts.overall.streak > 0 %}+{% endif %}{{ gts.overall.streak }}
-                </span>
-                <span class="stat-label">Streak</span>
-              </div>
+            <h3 class="lp-title">{{ gts.label }} &mdash; Overall</h3>
+            <div class="lp-wdl" role="img" aria-label="{{ gts.overall.wins }} wins, {{ gts.overall.draws }} draws, {{ gts.overall.losses }} losses">
+              <span class="w" style="width: {% widthratio gts.overall.wins gts.overall.total 100 %}%"></span>
+              <span class="d" style="width: {% widthratio gts.overall.draws gts.overall.total 100 %}%"></span>
+              <span class="l" style="width: {% widthratio gts.overall.losses gts.overall.total 100 %}%"></span>
+            </div>
+            <div class="lp-wdl-legend">
+              <span class="lp-win">{{ gts.overall.wins }} W</span>
+              <span class="lp-draw">{{ gts.overall.draws }} D</span>
+              <span class="lp-loss">{{ gts.overall.losses }} L</span>
+            </div>
+            <div class="mt-2">
+              <div class="lp-row"><span>Rating</span><span class="{{ gts.elo_css }}">{{ gts.elo }}</span></div>
+              <div class="lp-row"><span>Games</span><span>{{ gts.overall.total }}</span></div>
+              <div class="lp-row"><span>Win rate</span><span>{{ gts.overall.win_rate_pct }}%</span></div>
+              <div class="lp-row"><span>Streak</span><span class="{% if gts.overall.streak > 0 %}lp-win{% elif gts.overall.streak < 0 %}lp-loss{% endif %}">{% if gts.overall.streak > 0 %}+{% endif %}{{ gts.overall.streak }}</span></div>
             </div>
           </div>
 
           <!-- Sub-sections: Tournament + One-on-One -->
           {% for fmt in gts.formats %}
           <div class="card">
-            <p class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-4">{{ fmt.label }}</p>
+            <p class="lp-title">{{ fmt.label }}</p>
 
-            <!-- Overall pills for this format -->
-            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
-              <div class="stat-pill">
-                <span class="stat-value text-green-400">{{ fmt.overall.wins }}</span>
-                <span class="stat-label">Wins</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-red-400">{{ fmt.overall.losses }}</span>
-                <span class="stat-label">Losses</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-yellow-300">{{ fmt.overall.draws }}</span>
-                <span class="stat-label">Draws</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-gray-300">{{ fmt.overall.total }}</span>
-                <span class="stat-label">Total</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value text-brand">{{ fmt.overall.win_rate_pct }}%</span>
-                <span class="stat-label">Win Rate</span>
-              </div>
-              <div class="stat-pill">
-                <span class="stat-value {% if fmt.overall.streak > 0 %}text-green-400{% elif fmt.overall.streak < 0 %}text-red-400{% else %}text-gray-400{% endif %}">
-                  {% if fmt.overall.streak > 0 %}+{% endif %}{{ fmt.overall.streak }}
-                </span>
-                <span class="stat-label">Streak</span>
-              </div>
+            <!-- Overall for this format -->
+            <div class="lp-wdl" role="img" aria-label="{{ fmt.overall.wins }} wins, {{ fmt.overall.draws }} draws, {{ fmt.overall.losses }} losses">
+              <span class="w" style="width: {% widthratio fmt.overall.wins fmt.overall.total 100 %}%"></span>
+              <span class="d" style="width: {% widthratio fmt.overall.draws fmt.overall.total 100 %}%"></span>
+              <span class="l" style="width: {% widthratio fmt.overall.losses fmt.overall.total 100 %}%"></span>
+            </div>
+            <div class="lp-wdl-legend">
+              <span class="lp-win">{{ fmt.overall.wins }} W</span>
+              <span class="lp-draw">{{ fmt.overall.draws }} D</span>
+              <span class="lp-loss">{{ fmt.overall.losses }} L</span>
+            </div>
+            <div class="mt-2 mb-3">
+              <div class="lp-row"><span>Games</span><span>{{ fmt.overall.total }}</span></div>
+              <div class="lp-row"><span>Win rate</span><span>{{ fmt.overall.win_rate_pct }}%</span></div>
+              <div class="lp-row"><span>Streak</span><span class="{% if fmt.overall.streak > 0 %}lp-win{% elif fmt.overall.streak < 0 %}lp-loss{% endif %}">{% if fmt.overall.streak > 0 %}+{% endif %}{{ fmt.overall.streak }}</span></div>
             </div>
 
             {% if fmt.time_controls %}
@@ -915,7 +1013,7 @@
                 <tbody>
                   {% for tc in fmt.time_controls %}
                   <tr>
-                    <td><span class="tc-badge tc-{{ tc.css }}">{{ tc.icon }} {{ tc.label }}</span></td>
+                    <td><span class="tc-badge tc-{{ tc.css }}">{{ tc.label }}</span></td>
                     <td class="text-center text-green-400 font-medium">{{ tc.wins }}</td>
                     <td class="text-center text-red-400 font-medium">{{ tc.losses }}</td>
                     <td class="text-center text-yellow-300 font-medium">{{ tc.draws }}</td>
@@ -996,12 +1094,69 @@
 
       </div>{# /tab-stats #}
 
+      <div id="tab-rivalries" class="tab-panel hidden space-y-3">
+      <div class="card">
+        <h2 class="text-red-400 text-xl mb-4">RIVALRIES & FEUDS</h2>
+        <div class="text-6xl font-black text-red-400">{{ rivalry_count }}</div>
+        <div class="text-sm text-gray-400">Gladiators you’ve destroyed</div>
+
+        {% for rival in recent_rivalries %}
+          <div class="mt-6 flex justify-between items-center py-3 border-b border-borderDark">
+            <div>
+              <div class="font-medium">{{ rival.opponent }}</div>
+              <div class="text-xs text-red-400">W:{{ rival.wins }} L:{{ rival.losses }}</div>
+            </div>
+          </div>
+        {% empty %}
+          <p class="text-gray-400">No rivalries yet… start fighting and earn legends.</p>
+        {% endfor %}
+      </div>
+      </div>{# /tab-rivalries #}
+
     </div>{# /right col #}
   </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
+<script>
+var GLADIATOR_MOODS = [
+  { value: '\u{1F608}', label: 'Menacing' },
+  { value: '\u{1F525}', label: 'On Fire' },
+  { value: '\u{1F9E0}', label: 'Calculating' },
+  { value: '\u{1F60E}', label: 'Cool' },
+  { value: '\u{1F480}', label: 'Ruthless' },
+  { value: '\u{1F921}', label: 'Chaotic' }
+];
+function renderMood(value) {
+  var el = document.getElementById('mood_display');
+  var mood = GLADIATOR_MOODS.find(function (m) { return m.value === value; }) || GLADIATOR_MOODS[0];
+  el.dataset.mood = mood.value;
+  el.textContent = mood.label;
+}
+renderMood(document.getElementById('mood_display').dataset.mood);
+</script>
+{% if is_own_profile %}
+<script>
+function saveField(field) {
+  var el = document.getElementById(field === 'current_mood' ? 'mood_display' : field);
+  var value;
+  if (field === 'current_mood') {
+    var idx = GLADIATOR_MOODS.findIndex(function (m) { return m.value === el.dataset.mood; });
+    value = GLADIATOR_MOODS[(idx + 1) % GLADIATOR_MOODS.length].value;
+    renderMood(value);
+  } else {
+    value = el.value;
+  }
+  htmx.ajax('POST', "{% url 'users:save_gladiator_field' %}", {
+    target: '#toastContainer',
+    swap: 'beforeend',
+    values: { field: field, value: value },
+    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+  });
+}
+</script>
+{% endif %}
 <script>
 (function () {
   // Social features removed: friend/unfriend UI disabled.
@@ -1076,10 +1231,10 @@
     var allOk = (data.model_files && data.model_files.length > 0) &&
                 (data.data_files  && data.data_files.length  > 0);
     if (allOk) {
-      html += '<p class="text-sm text-green-400">✅ ' + label +
+      html += '<p class="text-sm text-green-400">' + label +
         ' is operating correctly\u2014all required files are present</p>';
     } else {
-      html += '<p class="text-sm text-yellow-400">⚠️ ' + label +
+      html += '<p class="text-sm text-yellow-400">' + label +
         ' won\u2019t function properly\u2014one or more files are missing. Check the repository\u2019s file status for details</p>';
     }
     /* Model repo section */
@@ -1089,7 +1244,7 @@
       html += '<ul class="space-y-1 text-sm">';
       data.model_files.forEach(function (f) {
         html += '<li class="flex items-center gap-2">' +
-          (f.present ? '<span class="text-green-400">✅</span>' : '<span class="text-red-400">❌</span>') +
+          (f.present ? '<span class="text-green-400">Present</span>' : '<span class="text-red-400">Missing</span>') +
           ' <code class="text-gray-300">' + esc(f.name) + '</code></li>';
       });
       html += '</ul>';
@@ -1106,7 +1261,7 @@
       html += '<ul class="space-y-1 text-sm">';
       data.data_files.forEach(function (f) {
         html += '<li class="flex items-center gap-2">' +
-          (f.present ? '<span class="text-green-400">✅</span>' : '<span class="text-red-400">❌</span>') +
+          (f.present ? '<span class="text-green-400">Present</span>' : '<span class="text-red-400">Missing</span>') +
           ' <code class="text-gray-300">' + esc(f.name) + '</code></li>';
       });
       html += '</ul>';
@@ -1309,8 +1464,8 @@
         ? `<span class="text-brand">${esc(g.tournament)}</span> R${g.round}`
         : '<span class="text-gray-500 italic">One-on-One</span>';
       const playedAs = g.played_as === 'white'
-        ? '<span class="text-gray-100">♙ White</span>'
-        : '<span class="text-gray-400">♟ Black</span>';
+        ? '<span class="text-gray-100">White</span>'
+        : '<span class="text-gray-400">Black</span>';
       tr.innerHTML =
         `<td class="text-gray-400">${esc(g.time)}</td>` +
         `<td>${g.opponent_flag || ''}${esc(g.opponent)}</td>` +
@@ -1318,7 +1473,7 @@
         `<td class="text-center font-semibold ${resultCls}">${resultLetter} <span class="text-gray-500 font-normal ml-0.5">${esc(g.result)}</span></td>` +
         `<td class="text-center"><span class="tc-badge tc-${g.tc_css}">${esc(g.tc)}</span></td>` +
         `<td>${typeLabel}</td>` +
-        `<td><button class="text-brand text-xs hover:underline hm-replay-btn" data-rid="${g.id}" data-rtype="${g.type}" data-played-as="${g.played_as || ''}">Replay ▶</button></td>`;
+        `<td><button class="text-brand text-xs hover:underline hm-replay-btn" data-rid="${g.id}" data-rtype="${g.type}" data-played-as="${g.played_as || ''}">Replay</button></td>`;
       tbody.appendChild(tr);
     });
     if (detailEl) {

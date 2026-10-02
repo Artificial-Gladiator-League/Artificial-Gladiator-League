@@ -329,7 +329,7 @@ def record_original_sha(
     from apps.games.model_check import check_model
 
     model_dir, data_dir = resolve_model_path(
-        game_model.user_id, game_model.game_type, repo_id=repo_id,
+        game_model.user_id, game_model.game_type, repo_id=repo_id, model_revision=sha,
         data_repo_id=(game_model.hf_data_repo_id or "").strip() or None,
     )
     if model_dir is None:

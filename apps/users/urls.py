@@ -18,6 +18,7 @@ urlpatterns = [
     path("logout/", views.UserLogoutView.as_view(), name="logout"),
     path("profile/", views.ProfileView.as_view(), name="profile"),
     path("profile/@<str:username>/", views.public_profile, name="public_profile"),
+    path("profile/gladiator/save/", views.save_gladiator_field, name="save_gladiator_field"),
     path("match/<int:match_id>/moves/", views.match_moves, name="match_moves"),
     path("game/<int:game_id>/moves/", views.game_moves, name="game_moves"),
     path("activity-heatmap/", views.activity_heatmap, name="activity_heatmap"),
@@ -30,6 +31,7 @@ urlpatterns = [
     # PayPal payout email
     path("profile/paypal-email/save/", views.save_paypal_email, name="save_paypal_email"),
     path("profile/paypal-email/delete/", views.delete_paypal_email, name="delete_paypal_email"),
+    path("profile/country/", views.save_country, name="save_country"),
     # Email change
     path("profile/email/request-change/", views.request_email_change, name="request_email_change"),
     path("profile/email/confirm/<uidb64>/<token>/", views.confirm_email_change, name="confirm_email_change"),

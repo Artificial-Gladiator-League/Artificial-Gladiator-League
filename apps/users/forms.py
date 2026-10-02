@@ -8,6 +8,7 @@ from django import forms
 from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
 
+from .countries import country_choices, is_valid_country
 from .models import CustomUser, GDPRRequest, validate_hf_repo_id
 
 
@@ -46,7 +47,58 @@ def _dark_attrs(extra=None, css=_INPUT_CSS, **kwargs):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Registration
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-class RegistrationForm(forms.Form):
+COUNTRY_WARNING = (
+    "Your country of residence cannot be changed later. Choose carefully. "
+    "To correct a mistake you will have to contact support."
+)
+COUNTRY_CONFIRM_LABEL = "I confirm this is my country of residence and I understand it cannot be changed later."
+
+
+class _UpperChoiceField(forms.ChoiceField):
+    """ChoiceField that accepts the code in any case (the select always posts upper case)."""
+
+    def to_python(self, value):
+        return super().to_python((value or "").strip().upper())
+
+
+class CountryChoiceMixin:
+    """Required country select + confirmation checkbox, shared by registration and profile settings."""
+
+    @staticmethod
+    def build_country_fields():
+        return {
+            "country": _UpperChoiceField(
+                required=True,
+                label="Country of residence",
+                choices=[("", "Select your country…")] + list(country_choices()),
+                error_messages={"required": "Please select your country of residence."},
+                widget=forms.Select(attrs={"class": "form-select"}),
+                help_text=COUNTRY_WARNING,
+            ),
+            "country_confirm": forms.BooleanField(
+                required=True,
+                label=COUNTRY_CONFIRM_LABEL,
+                error_messages={"required": "Please confirm your country of residence."},
+                widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            ),
+        }
+
+    def clean_country(self):
+        code = (self.cleaned_data.get("country") or "").strip().upper()
+        if not is_valid_country(code):
+            raise forms.ValidationError("Please select your country of residence.")
+        return code
+
+
+class CountrySetForm(CountryChoiceMixin, forms.Form):
+    """One-time country entry for existing accounts that have none (profile settings)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields.update(self.build_country_fields())
+
+
+class RegistrationForm(CountryChoiceMixin, forms.Form):
     """Username-only registration form with password confirmation and reCAPTCHA v3."""
 
     username = forms.CharField(
@@ -100,6 +152,17 @@ class RegistrationForm(forms.Form):
         error_messages={"required": "You must accept the Terms of Service and Privacy Policy to register."},
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Rebuilt per instance so the field order is: ... ai_name, country, country_confirm, consent.
+        extra = self.build_country_fields()
+        ordered = {}
+        for name, field in self.fields.items():
+            if name == "consent":
+                ordered.update(extra)
+            ordered[name] = field
+        self.fields = ordered
 
     def clean_captcha(self):
         """Verify the reCAPTCHA v3 token against Google's siteverify API."""

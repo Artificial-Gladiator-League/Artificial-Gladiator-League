@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 import logging
@@ -18,6 +19,11 @@ from apps.games.models import Game
 from apps.core.utils import parse_thinking_seconds
 
 from .models import Match, PayoutConfirmation, PrizeClaim, Tournament, TournamentParticipant, TournamentChatMessage
+from . import payouts
+from .terms import (
+    accepted_terms_fields, build_terms_context, paypal_email_ok,
+    posted_terms_match, required_confirmations, residency_field_name,
+)
 
 log = logging.getLogger(__name__)
 
@@ -532,6 +538,35 @@ def resign_match(request, pk, match_id):
     return redirect("tournaments:live_match", pk=pk, match_id=match_id)
 
 
+def _profile_country_stop(request, tournament, return_path):
+    """Early profile-country filter; returns a redirect response or None to carry on.
+
+    Runs before every other join/terms check. Missing country on a restricted
+    tournament -> profile settings (then back to *return_path*); a country that is
+    not allowed -> blocked with the tournament page as the landing spot.
+    """
+    from urllib.parse import quote
+
+    from django.urls import reverse
+
+    from .profile_country import MISSING, profile_country_verdict
+
+    verdict = profile_country_verdict(request.user, tournament)
+    if verdict is None:
+        return None
+    log.info(
+        "profile-country filter: user=%s t=%s verdict=%s profile=%r",
+        request.user.username, tournament.pk, verdict.kind, request.user.country,
+    )
+    if verdict.kind == MISSING:
+        messages.warning(request, verdict.message)
+        return redirect(
+            reverse("users:profile") + "?tab=edit&next=" + quote(return_path, safe="/") + "#countryCard"
+        )
+    messages.error(request, verdict.message)
+    return redirect("tournaments:detail", pk=tournament.pk)
+
+
 @login_required
 @require_POST
 def join_tournament(request, pk):
@@ -557,6 +592,15 @@ def join_tournament(request, pk):
     from apps.users.models import UserGameModel
 
     tournament = get_object_or_404(Tournament, pk=pk, status=Tournament.Status.OPEN)
+
+    # ── Gate 0: early profile-country filter (convenience layer, runs first) ─────
+    _stop = _profile_country_stop(
+        request, tournament,
+        reverse("tournaments:money_terms", args=[pk]) if tournament.is_money_tournament
+        else reverse("tournaments:detail", args=[pk]),
+    )
+    if _stop is not None:
+        return _stop
 
     # ── Gate P: password-protected tournament ─────────────────────────────
     if tournament.join_password:
@@ -806,36 +850,48 @@ def join_tournament(request, pk):
             )
             return redirect("games:lobby")
 
-    # ── Gate M‑geo: Israeli-residents-only check (money tournaments) ──
+    # ── Gate M‑geo: allowed-countries check (money tournaments) ──
     _join_ip: str = ""
     _join_country: str | None = None
     _geo_eligible: bool | None = None
     if tournament.is_money_tournament:
-        from .eligibility import check_geo_eligibility
-        _join_ip, _join_country, _geo_eligible = check_geo_eligibility(request)
+        from .eligibility import check_geo_eligibility, geo_block_message
+        _join_ip, _join_country, _geo_eligible = check_geo_eligibility(
+            request, tournament.allowed_country_codes,
+        )
         if _geo_eligible is False:
             log.warning(
                 "join_tournament BLOCKED (geo): user=%s t=%s ip=%s country=%s",
                 request.user.username, tournament.pk, _join_ip, _join_country,
             )
             messages.error(
-                request,
-                "This tournament is open to Israeli residents only. "
-                "Your location does not qualify. "
-                "If you believe this is an error, please contact support.",
+                request, geo_block_message(tournament.allowed_country_codes, _join_country),
             )
             return redirect("tournaments:detail", pk=pk)
 
     # ── Gate M‑terms/paypal: profile PayPal email + terms acceptance (money tournaments) ─
+    _age_declared = request.POST.get("confirmed_age_18_plus") == "1"
+    _residency_declared = request.POST.get(residency_field_name(tournament)) == "1"
     if tournament.is_money_tournament:
-        _paypal_ok = bool(request.user.paypal_email)
-        if tournament.terms_version:
-            # Terms accepted when the POST came directly from the terms page.
-            _terms_ok = request.POST.get("terms_accepted") == "1"
-        else:
-            _terms_ok = True
-        _age_ok = request.POST.get("confirmed_age_18_plus") == "1"
-        _residency_ok = request.POST.get("confirmed_israeli_resident") == "1"
+        # The form must carry the terms the player was actually shown.
+        if not posted_terms_match(tournament, request.POST):
+            log.warning(
+                "join_tournament REJECTED (terms changed): user=%s t=%s posted=%r/%r",
+                request.user.username, tournament.pk,
+                request.POST.get("terms_slug", ""), request.POST.get("terms_version", ""),
+            )
+            messages.error(
+                request,
+                "The terms for this tournament changed since you opened the page. "
+                "Please read the current terms and accept them again.",
+            )
+            return redirect("tournaments:money_terms", pk=pk)
+
+        required = required_confirmations(tournament)
+        _paypal_ok = paypal_email_ok(request.user, tournament)
+        _terms_ok = (not required["terms"]) or request.POST.get("terms_accepted") == "1"
+        _age_ok = (not required["age"]) or _age_declared
+        _residency_ok = (not required["residency"]) or _residency_declared
         if not _paypal_ok or not _terms_ok or not _age_ok or not _residency_ok:
             log.info(
                 "join_tournament PAYPAL/TERMS: user=%s t=%s — redirecting to terms page",
@@ -874,7 +930,10 @@ def join_tournament(request, pk):
         participant_thinking = parse_thinking_seconds(request)
         TournamentParticipant.objects.filter(
             tournament=tournament, user=request.user,
-        ).update(ai_thinking_seconds=participant_thinking)
+        ).update(
+            ai_thinking_seconds=participant_thinking,
+            profile_country_code=(request.user.country or "").upper(),
+        )
 
         # ── Pin registration-time SHA baseline for anti-cheat ────────────
         # Capture the participant's current repo SHA immediately at registration
@@ -904,6 +963,29 @@ def join_tournament(request, pk):
                 "for user=%s tournament=%s", request.user.username, tournament.pk,
             )
 
+        # ── Store money-tournament audit fields ─────────────────────
+        # Before the confirmation email so its PDF can use the accepted terms.
+        if tournament.is_money_tournament:
+            _paypal_email = request.user.paypal_email
+            _accepted_slug, _accepted_version = accepted_terms_fields(tournament)
+            TournamentParticipant.objects.filter(
+                tournament=tournament, user=request.user,
+            ).update(
+                join_ip=_join_ip or None,
+                join_country_code=_join_country or "",
+                geo_eligible=_geo_eligible,
+                terms_accepted_at=timezone.now(),
+                terms_version_accepted=_accepted_version,
+                accepted_terms_slug=_accepted_slug,
+                paypal_email=_paypal_email,
+                confirmed_age_18_plus=_age_declared,
+                confirmed_israeli_resident=_residency_declared and tournament.is_israel_only,
+                declared_residency_countries=(
+                    ",".join(tournament.allowed_country_codes) if _residency_declared else ""
+                ),
+                eligibility_confirmed_at=timezone.now(),
+            )
+
         # ── Send T&C confirmation email (every registration) ───────────────
         # Called inline — no Celery worker in this deployment.
         try:
@@ -917,23 +999,6 @@ def join_tournament(request, pk):
             log.exception(
                 "join_tournament: T&C email failed entirely for "
                 "user=%s tournament=%s", request.user.username, tournament.pk,
-            )
-
-        # ── Store money-tournament audit fields ─────────────────────
-        if tournament.is_money_tournament:
-            _paypal_email = request.user.paypal_email
-            TournamentParticipant.objects.filter(
-                tournament=tournament, user=request.user,
-            ).update(
-                join_ip=_join_ip or None,
-                join_country_code=_join_country or "",
-                geo_eligible=_geo_eligible,
-                terms_accepted_at=timezone.now(),
-                terms_version_accepted=tournament.terms_version,
-                paypal_email=_paypal_email,
-                confirmed_age_18_plus=_age_ok,
-                confirmed_israeli_resident=_residency_ok,
-                eligibility_confirmed_at=timezone.now(),
             )
 
         # Auto‑close registration and start when full
@@ -1192,8 +1257,13 @@ def money_tournament_terms(request, pk):
         is_money_tournament=True,
     )
 
-    # ── Guard: profile-level PayPal email required ────────────
-    if not request.user.paypal_email:
+    # ── Early profile-country filter (convenience layer, before every other check) ──
+    _stop = _profile_country_stop(request, tournament, request.path)
+    if _stop is not None:
+        return _stop
+
+    # ── Guard: profile-level PayPal email required (only when the terms carry a prize) ──
+    if not paypal_email_ok(request.user, tournament):
         messages.warning(
             request,
             "Please add your PayPal email to your profile before registering "
@@ -1215,21 +1285,25 @@ def money_tournament_terms(request, pk):
             submitted_pw = request.POST.get("join_password", "").strip()
             if submitted_pw != tournament.join_password:
                 messages.error(request, "Incorrect tournament password.")
-                return render(request, "tournaments/money_terms.html", {"tournament": tournament})
+                return render(request, "tournaments/money_terms.html", {
+                    "tournament": tournament, **build_terms_context(tournament),
+                })
 
-        if tournament.terms_version and not terms_accepted:
+        if required_confirmations(tournament)["terms"] and not terms_accepted:
             messages.error(request, "You must tick the checkbox to accept the terms.")
         else:
-            if tournament.terms_version and terms_accepted:
+            if required_confirmations(tournament)["terms"] and terms_accepted:
                 log.info(
                     "money_tournament_terms: user=%s accepted terms v=%s for t=%s",
-                    request.user.username, tournament.terms_version, tournament.pk,
+                    request.user.username, accepted_terms_fields(tournament)[1], tournament.pk,
                 )
             # Redirect to detail — the form POSTs directly to join, so this
             # branch is only reached if someone POSTs to /terms/ directly.
             return redirect("tournaments:detail", pk=pk)
 
-    return render(request, "tournaments/money_terms.html", {"tournament": tournament})
+    return render(request, "tournaments/money_terms.html", {
+        "tournament": tournament, **build_terms_context(tournament),
+    })
 
 
 # ──────────────────────────────────────────────
@@ -1245,11 +1319,13 @@ def gauntlet_detail(request, pk=None):
     from apps.games.models import Comment
 
     if pk:
-        tournament = get_object_or_404(Tournament, pk=pk, type=Tournament.Type.GAUNTLET)
+        tournament = get_object_or_404(
+            Tournament, pk=pk, type__in=Tournament.MONEY_LIKE_TYPES,
+        )
     else:
         tournament = (
             Tournament.objects
-            .filter(type=Tournament.Type.GAUNTLET)
+            .filter(type__in=Tournament.MONEY_LIKE_TYPES)
             .order_by("-start_time")
             .first()
         )
@@ -1308,7 +1384,7 @@ def gauntlet_detail(request, pk=None):
     # Past gauntlets (for archive navigation)
     past_gauntlets = (
         Tournament.objects
-        .filter(type=Tournament.Type.GAUNTLET, status=Tournament.Status.COMPLETED)
+        .filter(type__in=Tournament.MONEY_LIKE_TYPES, status=Tournament.Status.COMPLETED)
         .exclude(pk=tournament.pk)
         .order_by("-week_number")[:10]
     )
@@ -1334,7 +1410,9 @@ def gauntlet_standings_partial(request, pk):
     """HTMX partial: return just the <tbody> rows for the standings table."""
     from .models import GauntletStanding
 
-    tournament = get_object_or_404(Tournament, pk=pk, type=Tournament.Type.GAUNTLET)
+    tournament = get_object_or_404(
+        Tournament, pk=pk, type__in=Tournament.MONEY_LIKE_TYPES,
+    )
     standings = list(
         tournament.standings
         .select_related("user")
@@ -1488,29 +1566,75 @@ def prize_claim(request, pk):
         raise PermissionDenied
     claim = get_object_or_404(PrizeClaim, tournament=tournament)
 
+    non_paypal = claim.payout_method != Tournament.PayoutMethod.PAYPAL
+    context = {
+        "tournament": tournament,
+        "claim": claim,
+        "non_paypal": non_paypal,
+        "hold_notice": (
+            payouts.HOLD_MESSAGE
+            if tournament.prize_on_hold or claim.status == PrizeClaim.Status.BLOCKED else ""
+        ),
+        "needs_email": non_paypal and not request.user.email,
+    }
+    if claim.status == PrizeClaim.Status.CLAIMED and not context["hold_notice"] and (
+        non_paypal or tournament.requires_legal_check
+    ):
+        context["progress_notice"] = payouts.winner_notice(tournament, claim)
+        context["show_confirm_link"] = (
+            not context["progress_notice"] and not payouts.winner_confirmed(claim)
+        )
+
     if request.method == "POST":
         paypal_email = request.POST.get("paypal_email", "").strip()
         now = timezone.now()
+
+        if context["hold_notice"] or context["needs_email"]:
+            return render(request, "tournaments/prize_claim.html", context)
 
         if (
             claim.status == PrizeClaim.Status.PENDING
             and claim.expires_at > now
         ):
-            if paypal_email and paypal_email != claim.paypal_email:
-                claim.admin_notes += (
-                    f"\n[{now.isoformat()}] PayPal email updated: "
-                    f"{claim.paypal_email!r} → {paypal_email!r}"
-                )
-                claim.paypal_email = paypal_email
-            claim.status = PrizeClaim.Status.CLAIMED
-            claim.claimed_at = now
-            claim.save(update_fields=["status", "claimed_at", "paypal_email", "admin_notes"])
+            if non_paypal:
+                claim.status = PrizeClaim.Status.CLAIMED
+                claim.claimed_at = now
+                claim.save(update_fields=["status", "claimed_at"])
+            else:
+                if paypal_email and paypal_email != claim.paypal_email:
+                    claim.admin_notes += (
+                        f"\n[{now.isoformat()}] PayPal email updated: "
+                        f"{claim.paypal_email!r} → {paypal_email!r}"
+                    )
+                    claim.paypal_email = paypal_email
+                claim.status = PrizeClaim.Status.CLAIMED
+                claim.claimed_at = now
+                claim.save(update_fields=["status", "claimed_at", "paypal_email", "admin_notes"])
+            payouts.sync_expiry_clock(claim)
 
             # Email the winner a confirmation and alert admins to process the payout.
             try:
                 from django.core.mail import send_mail, mail_admins
-                recipient = claim.paypal_email or request.user.email
+                recipient = (claim.paypal_email or request.user.email) if not non_paypal else request.user.email
                 tournament_url = f"{settings.SITE_URL}/tournaments/{tournament.pk}/"
+                if non_paypal:
+                    winner_payout_text = (
+                        f"Payout method: {claim.get_payout_method_display()}\n\n"
+                        f"We will contact you at this email address after your eligibility has "
+                        f"been verified. Never send bank or UPI details through this site.\n\n"
+                    )
+                    admin_payout_line = (
+                        f"Method     : {claim.get_payout_method_display()}\n"
+                        f"Winner mail: {request.user.email}\n"
+                    )
+                else:
+                    winner_payout_text = (
+                        f"PayPal address on file: {claim.paypal_email}\n\n"
+                        f"Payouts are processed manually and typically take a few business days. "
+                        f"No further action is needed from you — we will send payment directly to "
+                        f"the PayPal address above.\n\n"
+                    )
+                    admin_payout_line = f"PayPal     : {claim.paypal_email}\n"
                 if recipient:
                     send_mail(
                         subject=f"\U0001f3c6 Prize claim received — {tournament.name}",
@@ -1518,10 +1642,7 @@ def prize_claim(request, pk):
                             f"Hi {request.user.username},\n\n"
                             f"We have received your prize claim for {tournament.name}.\n\n"
                             f"Amount: {claim.amount} {claim.currency}\n"
-                            f"PayPal address on file: {claim.paypal_email}\n\n"
-                            f"Payouts are processed manually and typically take a few business days. "
-                            f"No further action is needed from you — we will send payment directly to "
-                            f"the PayPal address above.\n\n"
+                            f"{winner_payout_text}"
                             f"If you have any questions, please visit:\n{tournament_url}\n\n"
                             f"— Artificial Gladiator League"
                         ),
@@ -1536,7 +1657,7 @@ def prize_claim(request, pk):
                         f"Tournament : {tournament.name}\n"
                         f"Winner     : {request.user.username}\n"
                         f"Amount     : {claim.amount} {claim.currency}\n"
-                        f"PayPal     : {claim.paypal_email}\n"
+                        f"{admin_payout_line}"
                         f"Claimed at : {claim.claimed_at.isoformat()}\n\n"
                         f"Admin link : {settings.SITE_URL}/admin/tournaments/prizeclaim/{claim.pk}/change/"
                     ),
@@ -1548,41 +1669,80 @@ def prize_claim(request, pk):
                 )
 
             return render(request, "tournaments/prize_claim.html", {
-                "tournament": tournament,
-                "claim": claim,
+                **context,
                 "submitted": True,
+                **_post_claim_progress(tournament, claim, non_paypal),
             })
 
         return render(request, "tournaments/prize_claim.html", {
-            "tournament": tournament,
-            "claim": claim,
+            **context,
             "error": True,
         })
 
-    return render(request, "tournaments/prize_claim.html", {
-        "tournament": tournament,
-        "claim": claim,
-    })
+    return render(request, "tournaments/prize_claim.html", context)
 
 
 @login_required
 def payout_confirm(request, pk):
-    """Winner confirms their PayPal address before a prize can be paid out.
+    """Winner confirms how their prize is paid before it can be paid out.
 
-    A PayoutConfirmation row is created/updated with a snapshot of the
-    user's current PayPal email and confirmed_by_user=True.  The admin
-    mark_as_paid action is blocked unless this confirmation exists.
+    PayPal: a PayoutConfirmation row is created/updated with a snapshot of the user's
+    current PayPal email and confirmed_by_user=True. Other methods: the winner confirms
+    the prize terms and the account email AGL will use; no bank or UPI details are stored.
+    The admin mark_as_paid action is blocked unless this confirmation exists.
     """
     tournament = get_object_or_404(Tournament, pk=pk)
     if tournament.champion_id != request.user.pk:
         raise PermissionDenied
 
     entry = get_object_or_404(TournamentParticipant, tournament=tournament, user=request.user)
+    claim = PrizeClaim.objects.filter(tournament=tournament).first()
+    non_paypal = (
+        claim.payout_method if claim else tournament.payout_method
+    ) != Tournament.PayoutMethod.PAYPAL
 
     try:
         confirmation = entry.payout_confirmation
     except PayoutConfirmation.DoesNotExist:
         confirmation = None
+
+    notice = payouts.winner_notice(tournament, claim)
+    if notice:
+        return render(request, "tournaments/payout_confirm.html", {
+            "tournament": tournament, "entry": entry, "confirmation": confirmation,
+            "claim": claim, "non_paypal": non_paypal, "notice": notice,
+        })
+
+    if request.method == "POST" and non_paypal:
+        if not request.user.email:
+            messages.error(
+                request,
+                "You have no confirmed email on file. Please add and confirm one before confirming.",
+            )
+            from django.urls import reverse
+            from urllib.parse import quote
+            return redirect(
+                reverse("users:profile") + "?tab=edit&next=" + quote(request.path, safe="/")
+            )
+        if confirmation is None:
+            confirmation = PayoutConfirmation(tournament_entry=entry)
+        if not confirmation.confirmed_by_user:
+            confirmation.paypal_email_snapshot = ""
+            confirmation.payout_method = claim.payout_method if claim else tournament.payout_method
+            confirmation.contact_email_snapshot = request.user.email
+            confirmation.terms_slug = entry.accepted_terms_slug or ""
+            confirmation.terms_version = entry.terms_version_accepted or ""
+            confirmation.confirmed_at = timezone.now()
+            confirmation.confirmed_by_user = True
+            confirmation.save()
+            if claim:
+                payouts.sync_expiry_clock(claim)
+            log.info(
+                "payout_confirm: user=%s confirmed prize terms (%s) for tournament=%s",
+                request.user.username, confirmation.payout_method, tournament.pk,
+            )
+            messages.success(request, "Prize terms confirmed.")
+        return redirect("tournaments:prize_claim", pk=pk)
 
     if request.method == "POST":
         paypal_email = request.user.paypal_email
@@ -1605,6 +1765,8 @@ def payout_confirm(request, pk):
         confirmation.confirmed_at = timezone.now()
         confirmation.confirmed_by_user = True
         confirmation.save()
+        if claim:
+            payouts.sync_expiry_clock(claim)
 
         log.info(
             "payout_confirm: user=%s confirmed payout email for tournament=%s",
@@ -1617,7 +1779,17 @@ def payout_confirm(request, pk):
         "tournament": tournament,
         "entry": entry,
         "confirmation": confirmation,
+        "claim": claim,
+        "non_paypal": non_paypal,
     })
+
+
+def _post_claim_progress(tournament, claim, non_paypal):
+    """What the winner sees right after claiming, for flows with extra steps (neutral text only)."""
+    if not (non_paypal or tournament.requires_legal_check):
+        return {}
+    notice = payouts.winner_notice(tournament, claim)
+    return {"progress_notice": notice, "show_confirm_link": not notice and not payouts.winner_confirmed(claim)}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

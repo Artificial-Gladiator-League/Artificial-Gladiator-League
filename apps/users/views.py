@@ -24,6 +24,7 @@ from django.views.generic import UpdateView
 from .tokens import account_activation_token, email_change_token
 
 from .forms import (
+    CountrySetForm,
     EmailChangeRequestForm,
     GDPRRequestForm,
     ProfileForm,
@@ -31,6 +32,7 @@ from .forms import (
     SetNewPasswordForm,
     StyledLoginForm,
 )
+from .countries import country_name as _country_name
 from .models import CustomUser, GDPRRequest, UserGameModel, validate_hf_repo_id
 from apps.games.models import Game
 from apps.tournaments.models import Match
@@ -220,7 +222,11 @@ def register(request):
             password = form.cleaned_data["password"]
             email = form.cleaned_data["email"]
             ai_name = form.cleaned_data["ai_name"]
-            user = CustomUser(username=username, email=email, ai_name=ai_name, is_active=False)
+            user = CustomUser(
+                username=username, email=email, ai_name=ai_name, is_active=False,
+                country=form.cleaned_data["country"], country_locked=True,
+                country_set_at=timezone.now(),
+            )
             user.password = make_password(password)
             user.save()
             log.info("New user registered (pending activation): %s (AI: %s, IP: %s)", username, ai_name, ip)
@@ -574,6 +580,85 @@ class UserLogoutView(LogoutView):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Gladiator character sheet + rivalries
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _rivalry_context(user):
+    """Head-to-head records from decisive games and completed tournament matches."""
+    from django.db.models import Q
+
+    h2h = {}
+
+    def _add(opp_id, opp_name, won, ts):
+        rec = h2h.setdefault(opp_id, {"opponent": opp_name, "wins": 0, "losses": 0, "last": ts})
+        rec["wins" if won else "losses"] += 1
+        if ts > rec["last"]:
+            rec["last"] = ts
+
+    games = Game.objects.filter(
+        Q(white=user) | Q(black=user), winner__isnull=False,
+    ).values_list("white_id", "white__username", "black_id", "black__username", "winner_id", "timestamp")
+    for w_id, w_name, b_id, b_name, win_id, ts in games:
+        if w_id == user.pk:
+            _add(b_id, b_name, win_id == user.pk, ts)
+        else:
+            _add(w_id, w_name, win_id == user.pk, ts)
+
+    matches = Match.objects.filter(
+        Q(player1=user) | Q(player2=user),
+        match_status=Match.MatchStatus.COMPLETED,
+        winner__isnull=False,
+    ).values_list("player1_id", "player1__username", "player2_id", "player2__username", "winner_id", "timestamp")
+    for p1_id, p1_name, p2_id, p2_name, win_id, ts in matches:
+        if p1_id == user.pk:
+            _add(p2_id, p2_name, win_id == user.pk, ts)
+        else:
+            _add(p1_id, p1_name, win_id == user.pk, ts)
+
+    h2h.pop(None, None)
+    rivals = sorted(
+        (r for r in h2h.values() if r["wins"] + r["losses"] >= 2),
+        key=lambda r: r["last"],
+        reverse=True,
+    )
+    return {
+        "rivalry_count": sum(1 for r in h2h.values() if r["wins"] > 0),
+        "recent_rivalries": rivals[:5],
+    }
+
+
+@login_required
+def save_gladiator_field(request):
+    """HTMX POST: save one character-sheet field, return a toast fragment."""
+    if request.method != "POST":
+        return redirect("users:profile")
+
+    field = request.POST.get("field", "")
+    value = request.POST.get("value", "")
+    labels = {"origin_story": "Story", "fighting_style": "Style", "current_mood": "Mood"}
+
+    if field == "origin_story":
+        value = value.strip()
+        valid = len(value) <= 1000
+    elif field == "fighting_style":
+        valid = value in CustomUser.FightingStyle.values
+    elif field == "current_mood":
+        valid = value in CustomUser.MOODS
+    else:
+        valid = False
+
+    if not valid:
+        return render(request, "users/partials/gladiator_toast.html", {
+            "ok": False, "message": "Invalid value.",
+        })
+
+    setattr(request.user, field, value)
+    request.user.save(update_fields=[field])
+    return render(request, "users/partials/gladiator_toast.html", {
+        "ok": True, "message": f"{labels[field]} saved.",
+    })
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Public Profile (read-only, for viewing other users)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @login_required
@@ -598,6 +683,7 @@ def public_profile(request, username):
         "friendship_status": friendship_status,
         "friend_request_id": friend_request_id,
         "friends_list": profile_user.friends.only("pk", "username", "elo", "last_login"),
+        **_rivalry_context(profile_user),
     })
 
 
@@ -907,6 +993,57 @@ def delete_paypal_email(request):
     return redirect("users:profile")
 
 
+@login_required
+def save_country(request):
+    """POST only: set the country of residence ONCE, or toggle the profile-flag preference.
+
+    ``action=flag`` toggles ``show_flag`` (always allowed). ``action=set`` sets the
+    country for an account that has none and locks it. A saved country is never
+    changed here, whatever the POST carries.
+    """
+    from urllib.parse import quote
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    if request.method != "POST":
+        return redirect("users:profile")
+
+    next_url = request.POST.get("next", "").strip()
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        next_url = ""
+    profile_url = reverse("users:profile") + "?tab=edit"
+    back = profile_url + ("&next=" + quote(next_url, safe="/") if next_url else "")
+    user = request.user
+
+    if request.POST.get("action") == "flag":
+        user.show_flag = request.POST.get("show_flag") == "1"
+        user.save(update_fields=["show_flag"])
+        messages.success(request, "Flag preference saved.")
+        return redirect(profile_url)
+
+    if user.country:
+        messages.error(
+            request,
+            "Your country of residence is already saved and cannot be changed. "
+            "To correct your country, contact support.",
+        )
+        return redirect(profile_url)
+
+    form = CountrySetForm(request.POST)
+    if not form.is_valid():
+        for errors in form.errors.values():
+            for error in errors:
+                messages.error(request, error)
+        return redirect(back)
+
+    if not user.claim_country(form.cleaned_data["country"]):
+        messages.error(request, "Your country of residence is already saved and cannot be changed.")
+        return redirect(profile_url)
+
+    log.info("User %s set country of residence to %s", user.username, user.country)
+    messages.success(request, f"Country of residence saved: {_country_name(user.country)}. It is now locked.")
+    return redirect(next_url or profile_url)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Email change
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1034,6 +1171,9 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         ctx["friends_list"] = user.friends.only("pk", "username", "elo", "last_login")
         ctx["email_change_form"] = EmailChangeRequestForm()
         ctx["password_change_form"] = SetNewPasswordForm()
+        ctx["country_name"] = _country_name(user.country)
+        ctx["country_set_form"] = None if user.country else CountrySetForm()
+        ctx.update(_rivalry_context(user))
 
         # ── Tournament match history ───────────────────────
         matches_as_p1 = Match.objects.filter(

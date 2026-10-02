@@ -57,6 +57,29 @@ _game_ready_players: dict[int, set] = {}
 VALID_TIME_CONTROLS = {"1+0", "1+1", "2+0", "2+1", "3+0", "3+1"}
 
 
+def _prewarm_user_models_sync(user_pk) -> None:
+    """Load this user's sandbox worker(s) so their first move is never a cold start.
+
+    Runs in a plain worker thread. Never raises.
+    """
+    from django.db import connection
+    try:
+        from apps.users.models import UserGameModel
+        from .local_inference import prewarm_local
+        for gm in UserGameModel.objects.filter(user_id=user_pk):
+            repo = (getattr(gm, "hf_model_repo_id", "") or "").strip()
+            if not repo:
+                continue
+            t0 = time.monotonic()
+            ok = prewarm_local(user_pk, gm.game_type, repo_id=repo)
+            log.info("[prewarm] user=%s game_type=%s repo=%s ok=%s in %.2fs (lobby/page warm-up)",
+                     user_pk, gm.game_type, repo, ok, time.monotonic() - t0)
+    except Exception:
+        log.warning("[prewarm] user=%s warm-up failed", user_pk, exc_info=True)
+    finally:
+        connection.close()
+
+
 class LobbyConsumer(AsyncWebsocketConsumer):
     """
     Lobby WebSocket — handles:
@@ -78,6 +101,11 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             "type": "tournament_counts",
             "counts": counts,
         }))
+        # Load the player's model while they browse the lobby, long before any game.
+        if self.user and not self.user.is_anonymous:
+            asyncio.ensure_future(database_sync_to_async(
+                _prewarm_user_models_sync, thread_sensitive=False,
+            )(self.user.pk))
 
     async def disconnect(self, close_code):
         username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
@@ -400,6 +428,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Log model cache status for this user
         await self._log_model_cache_status()
 
+        # Warm this player's sandbox worker in the background (fire-and-forget) so the
+        # model is already loaded by the time both players click Start.
+        if self.user and not self.user.is_anonymous:
+            self._prewarm_task = asyncio.ensure_future(self._prewarm_workers_both_if_waiting())
+
         # Push full game state on connect
         state = await self._get_game_state()
         await self.send(text_data=json.dumps(state))
@@ -592,6 +625,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             "type": "broadcast_player_ready",
             "color": my_color,
         })
+        # Start loading this player's model now, while we wait for the opponent.
+        asyncio.ensure_future(self._prewarm_workers(only_user_pk=self.user.pk))
 
         # ── If both players are ready, start the game ────────────────────────
         if white_id not in ready_set or black_id not in ready_set:
@@ -602,14 +637,21 @@ class GameConsumer(AsyncWebsocketConsumer):
         if _game_ready_players.pop(self.game_id, None) is None:
             return
 
+        # First-move budget starts HERE (the moment the match is actually started),
+        # so nothing that happens before the bot loop is hidden from the timer.
+        self._first_turn_started = time.monotonic()
         result = await self._process_start()
         if result.get("error"):
+            self._first_turn_started = None
             await self.send(text_data=json.dumps({
                 "type": "error", "message": result["error"],
             }))
             return
         game_type = await self._get_game_type()
         log.info("[GAME START] Game %s started -- type=%s -- launching bot loop", self.game_id, game_type)
+        # Launch the bot loop NOW; lobby bookkeeping below runs concurrently with it
+        # instead of delaying the first move.
+        asyncio.ensure_future(self._run_bot_game_loop())
         # Broadcast updated game state to all participants
         await self.channel_layer.group_send(self.group_name, {
             "type": "broadcast_state",
@@ -641,8 +683,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 log.warning("[WARN] [game %s] _get_lobby_game_data returned None -- skipping lobby broadcast", self.game_id)
         except Exception as exc:
             log.exception("[ERROR] [game %s] Failed to broadcast ongoing_game_added: %s", self.game_id, exc)
-        # Start the AI bot game loop
-        asyncio.ensure_future(self._run_bot_game_loop())
 
     # ── Group broadcast handlers ───────────────
     async def broadcast_state(self, event):
@@ -709,10 +749,114 @@ class GameConsumer(AsyncWebsocketConsumer):
         black_bot = load_bot(black_repo, game_type=game_type) if game.black else None
         return white_bot, black_bot
 
+    async def _prewarm_workers_both_if_waiting(self):
+        """Page-open warm-up for BOTH players' models (colours are random, so either
+        one may have to move first). Only while the game has not started yet."""
+        try:
+            if not await self._user_is_player():
+                return
+            from .models import Game
+            status = await database_sync_to_async(
+                lambda: Game.objects.values_list("status", flat=True).get(pk=self.game_id)
+            )()
+            if status != Game.Status.WAITING:
+                return
+            await self._prewarm_workers(only_color="white")
+            await self._prewarm_workers(only_color="black")
+        except Exception:
+            log.warning("[prewarm] game=%s page warm-up failed", self.game_id, exc_info=True)
+
+    async def _prewarm_workers(self, only_user_pk=None, only_color=None):
+        """Warm the sandbox worker(s) for this game. Never raises."""
+        try:
+            await database_sync_to_async(
+                self._prewarm_workers_sync, thread_sensitive=False,
+            )(only_user_pk, only_color)
+        except Exception:
+            log.warning("[prewarm] game=%s failed", self.game_id, exc_info=True)
+
+    def _prewarm_workers_sync(self, only_user_pk=None, only_color=None):
+        """Blocking part of the pre-warm (runs in a worker thread, not the event loop).
+
+        ``only_user_pk`` -> warm just that player's model, and only while the
+        game is still WAITING (page-open warm-up). ``None`` -> warm every
+        player's model in parallel (game start).
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        from django.db import connection
+        from .models import Game
+        from .local_inference import prewarm_local
+
+        try:
+            game = Game.objects.select_related("white", "black").get(pk=self.game_id)
+        except Game.DoesNotExist:
+            return
+        if game.is_finished:
+            return
+        if only_user_pk is not None and only_color is None and game.status != Game.Status.WAITING:
+            return
+
+        game_type = game.game_type or "chess"
+        repos = []
+        for color, player in (("white", game.white), ("black", game.black)):
+            if player is None:
+                continue
+            if only_user_pk is not None and player.pk != only_user_pk:
+                continue
+            if only_color is not None and color != only_color:
+                continue
+            repo = player.get_repo_for_game(game_type)
+            if repo and repo not in repos:
+                repos.append(repo)
+        if not repos:
+            return
+
+        def _one(repo):
+            try:
+                from apps.users.models import UserGameModel
+                gm = UserGameModel.objects.filter(
+                    hf_model_repo_id=repo, game_type=game_type,
+                ).first()
+                if gm is None:
+                    return False
+                t0 = time.monotonic()
+                ok = prewarm_local(gm.user_id, game_type, repo_id=repo)
+                log.info(
+                    "[prewarm] game=%s repo=%s ok=%s in %.2fs",
+                    self.game_id, repo, ok, time.monotonic() - t0,
+                )
+                return ok
+            finally:
+                connection.close()  # this thread owns its own DB connection
+
+        with ThreadPoolExecutor(max_workers=len(repos)) as pool:
+            list(pool.map(_one, repos))
+
     async def _run_bot_game_loop(self):
         """Run the AI-vs-AI game loop after the match has been started."""
         game_type = await self._get_game_type()
         log.info("[BOT LOOP] [game %s] Bot loop starting -- type=%s", self.game_id, game_type)
+        # The FIRST move's thinking budget starts NOW, so worker warm-up counts
+        # toward the time the player chose (e.g. 3s) instead of being added on top.
+        if getattr(self, "_first_turn_started", None) is None:
+            self._first_turn_started = time.monotonic()
+        log.info("[first-move] game=%s budget already used before bot loop: %.2fs",
+                 self.game_id, time.monotonic() - self._first_turn_started)
+        # Wait only for the side that moves first; warm the other side in the
+        # background so it is ready by the time it has to answer.
+        _w0 = time.monotonic()
+        try:
+            await asyncio.wait_for(self._prewarm_workers(only_color="white", only_user_pk=None), timeout=120)
+            _w = time.monotonic() - _w0
+            if _w > 0.5:
+                log.warning(
+                    "[first-move] game=%s COLD START: first mover's model was not loaded and "
+                    "needed %.2fs - first move cannot fit the chosen thinking time",
+                    self.game_id, _w,
+                )
+        except Exception:
+            log.warning("[prewarm] game=%s did not finish - continuing anyway", self.game_id, exc_info=True)
+        self._second_side_warm = asyncio.ensure_future(self._prewarm_workers(only_color="black"))
         if game_type == 'breakthrough':
             await self._run_bt_bot_loop()
             return
@@ -741,8 +885,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Play moves in a loop until the game ends
         while True:
-            # Small delay so the UI can render each move
-            await asyncio.sleep(0.15)
+            # NOTE: no fixed sleep here any more - the per-move pad below is computed from
+            # wall-clock time and already guarantees a minimum gap for the UI.
 
             result = await self._bot_make_move(white_bot, black_bot)
 
@@ -785,12 +929,50 @@ class GameConsumer(AsyncWebsocketConsumer):
                     })
                 break
 
+    @staticmethod
+    def _resolve_thinking_target(game, user, is_white) -> float:
+        """Thinking time (seconds) the player chose for this side.
+
+        Order: per-side field on the Game, then (tournament games) the
+        participant's ``ai_thinking_seconds``, then ``game.ai_thinking_seconds``.
+        Applies identically to the first move and to every later move.
+        """
+        target = game.white_thinking_seconds if is_white else game.black_thinking_seconds
+        if target:
+            return float(target)
+        if user is not None and getattr(game, "is_tournament_game", False):
+            try:
+                from apps.tournaments.models import TournamentParticipant
+                tm = game.tournament_match
+                if tm and tm.tournament_id:
+                    tp = TournamentParticipant.objects.filter(
+                        tournament_id=tm.tournament_id, user=user,
+                    ).first()
+                    if tp is not None and getattr(tp, "ai_thinking_seconds", None):
+                        return float(tp.ai_thinking_seconds)
+            except Exception:
+                log.exception("thinking-target lookup failed game=%s", game.pk)
+        return float(getattr(game, "ai_thinking_seconds", 0.0) or 0.0)
+
+    @staticmethod
+    def _pad_to_target(total_elapsed, target) -> float:
+        """Seconds still to wait so the whole turn lasts at least ``target``.
+
+        Computed directly (not via a per-repo helper) so a cold/first move
+        gets exactly the same floor as any other move.
+        """
+        from .bot_runner import MOVE_DELAY
+        return max(0.0, max(target or 0.0, MOVE_DELAY) - total_elapsed)
+
     @database_sync_to_async
     def _bot_make_move(self, white_bot, black_bot):
         """Get the current side's bot to produce a move and process it."""
+        # First move of the game: budget counts from the start of the bot loop (includes warm-up).
+        turn_started = getattr(self, "_first_turn_started", None) or time.monotonic()
+        self._first_turn_started = None
         from django.utils import timezone
         from .models import Game
-        from .bot_runner import get_bot_move, compute_thinking_delay
+        from .bot_runner import get_bot_move, MOVE_DELAY
         from .chess_engine import (
             make_move, apply_increment, apply_time_spent,
             create_armageddon, resolve_armageddon_draw,
@@ -914,8 +1096,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 game.save()
 
-        target_secs = game.white_thinking_seconds if moving_color == chess.WHITE else game.black_thinking_seconds
-        result["thinking_delay"] = compute_thinking_delay(bot_elapsed, target_secs, repo=getattr(bot, 'hf_repo_id', None))
+        target_secs = self._resolve_thinking_target(
+            game, moving_user, moving_color == chess.WHITE,
+        )
+        # WALL-CLOCK for the whole turn (SHA check, DB, sandbox start-up, inference).
+        total_elapsed = time.monotonic() - turn_started
+        result["thinking_delay"] = self._pad_to_target(total_elapsed, target_secs)
+        log.info(
+            "[thinking-time] game=%s move=%d target=%.2fs elapsed=%.2fs pad=%.2fs",
+            self.game_id, len(game.move_list or []), target_secs,
+            total_elapsed, result["thinking_delay"],
+        )
 
         return result
 
@@ -1102,7 +1293,6 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _run_bt_bot_loop(self):
         """Run the AI-vs-AI loop for Breakthrough using random legal moves."""
         while True:
-            await asyncio.sleep(0.15)
             result = await self._bt_bot_make_move()
 
             if result.get("already_finished"):
@@ -1139,10 +1329,13 @@ class GameConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _bt_bot_make_move(self):
         """Get a Breakthrough move via Docker sandbox and apply it."""
+        # First move of the game: budget counts from the start of the bot loop (includes warm-up).
+        turn_started = getattr(self, "_first_turn_started", None) or time.monotonic()
+        self._first_turn_started = None
         from django.utils import timezone
         from .models import Game
         from . import breakthrough_engine as bt
-        from .bot_runner import _get_bot_move, _get_repo_for_user, compute_thinking_delay
+        from .bot_runner import _get_bot_move, _get_repo_for_user, MOVE_DELAY
 
         try:
             game = Game.objects.select_related("white", "black").get(pk=self.game_id)
@@ -1235,8 +1428,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 game.save()
 
-        target_secs = game.white_thinking_seconds if turn == bt.WHITE else game.black_thinking_seconds
-        result["thinking_delay"] = compute_thinking_delay(bt_elapsed, target_secs, repo=repo or None)
+        target_secs = self._resolve_thinking_target(game, current_user, turn == bt.WHITE)
+        total_elapsed = time.monotonic() - turn_started  # wall-clock for the whole turn
+        result["thinking_delay"] = self._pad_to_target(total_elapsed, target_secs)
+        log.info(
+            "[thinking-time] game=%s target=%.2fs elapsed=%.2fs pad=%.2fs",
+            self.game_id, target_secs, total_elapsed, result["thinking_delay"],
+        )
 
         return result
 
@@ -1256,15 +1454,21 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return {"error": "It is not your turn (Black to move)."}
 
         now = timezone.now()
-        if game.last_move_at:
-            elapsed = (now - game.last_move_at).total_seconds()
-            bt.apply_time_spent(game, turn, elapsed)
-            if game.is_finished:
-                game.save()
-                return {
-                    "state": self._build_state(game),
-                    "game_over": self._build_game_over(game),
-                }
+        if client_clock is not None:
+            # thinking time was already subtracted by the bot
+            elapsed = max(0.0, client_clock - bt_elapsed)
+            log.debug("Using client-reported clock time after subtracting thinking: %.3f seconds", elapsed)
+        else:
+            elapsed = (now - game.last_move_at).total_seconds() if game.last_move_at else 0.0
+
+        bt.apply_time_spent(game, turn, elapsed)
+
+        if game.is_finished:
+            game.save()
+            return {
+                "state": self._build_state(game),
+                "game_over": self._build_game_over(game),
+            }
 
         ok, err = bt.make_move(game, uci)
         if not ok:
@@ -1276,15 +1480,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not game.is_finished:
             game.status = GameModel.Status.ONGOING
 
-        result = {"state": self._build_state(game)}
+        # SAVE ONLY ONCE — after both time update and move
+        game.save()
 
-        if game.is_finished:
-            game.save()
-            result["game_over"] = self._build_game_over(game)
-        else:
-            game.save()
-
-        return result
+        return {"state": self._build_state(game)}
 
     # ── DB‑touching logic (sync, wrapped) ──────
     @database_sync_to_async
@@ -1322,30 +1521,35 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Apply elapsed time
         now = timezone.now()
-        if game.last_move_at:
-            elapsed = (now - game.last_move_at).total_seconds()
-            apply_time_spent(game, moving_color, elapsed)
-            if game.is_finished:
-                game.save()
-                return {
-                    "state": self._build_state(game),
-                    "game_over": self._build_game_over(game),
-                }
+        if client_clock is not None:
+            elapsed = max(0.0, client_clock - 0.0)  # thinking time already handled by client for human moves
+            log.debug("Using client-reported clock time for move: %.3f seconds", elapsed)
+        else:
+            elapsed = (now - game.last_move_at).total_seconds() if game.last_move_at else 0.0
 
-        # Validate and apply the move
+        apply_time_spent(game, moving_color, elapsed)
+
+        if game.is_finished:
+            game.save()
+            return {
+                "state": self._build_state(game),
+                "game_over": self._build_game_over(game),
+            }
+
         ok, err = make_move(game, uci)
         if not ok:
             return {"error": err}
 
-        # Apply increment to the side that just moved
         apply_increment(game, moving_color)
         game.last_move_at = now
 
-        # If ongoing and not finished by board logic, set status ongoing
         if not game.is_finished:
             game.status = Game.Status.ONGOING
 
-        result = {"state": self._build_state(game)}
+        # SAVE ONLY ONCE
+        game.save()
+
+        return {"state": self._build_state(game)}
 
         # Handle game-ending scenarios
         if game.is_finished:
