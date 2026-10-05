@@ -51,26 +51,13 @@
 
     typeField.addEventListener('change', applyDefaults);
 
-    // Terms only apply to Gauntlet-like types; hide and clear the dropdown otherwise.
-    var MONEY_LIKE = ['gauntlet', 'gladiatormania'];
-    var termsField = document.getElementById('id_terms');
-    var termsRow = termsField && termsField.closest('.form-row');
-    function toggleTerms() {
-      if (!termsRow) return;
-      var show = MONEY_LIKE.indexOf(typeField.value) !== -1;
-      termsRow.style.display = show ? '' : 'none';
-      if (!show) termsField.value = '';
-    }
-    typeField.addEventListener('change', toggleTerms);
-    toggleTerms();
-
-    // Tournaments open to India are chess only: lock the game type while IN is listed.
+    // Tournaments open to India (or to all countries) are chess only: lock the game type.
     var countriesField = document.getElementById('id_allowed_countries');
     var gameField = document.getElementById('id_game_type');
     function lockChessForIndia() {
       if (!countriesField || !gameField) return;
-      var codes = countriesField.value.toUpperCase().split(/[\s,;]+/);
-      var locked = codes.indexOf('IN') !== -1;
+      var codes = countriesField.value.toUpperCase().split(/[\s,;]+/).filter(Boolean);
+      var locked = codes.length === 0 || codes.indexOf('IN') !== -1;
       if (locked) gameField.value = 'chess';
       Array.prototype.forEach.call(gameField.options, function (o) {
         o.disabled = locked && o.value !== 'chess';
@@ -78,6 +65,21 @@
     }
     if (countriesField) countriesField.addEventListener('input', lockChessForIndia);
     lockChessForIndia();
+
+    // Countries: blank = all countries. A new Gauntlet starts open; QA and Gladiatormania start
+    // Israel-only. Only an untouched field on the add form follows the type.
+    var COUNTRY_DEFAULTS = { gauntlet: '', gladiatormania: 'IL', qa: 'IL' };
+    var countriesTouched = false;
+    if (countriesField) {
+      countriesField.addEventListener('input', function () { countriesTouched = true; });
+      typeField.addEventListener('change', function () {
+        if (!isAddForm || countriesTouched) return;
+        var d = COUNTRY_DEFAULTS[typeField.value];
+        if (d === undefined) return;
+        countriesField.value = d;
+        lockChessForIndia();
+      });
+    }
   }
 
   if (document.readyState === 'loading') {

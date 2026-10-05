@@ -8,7 +8,7 @@ class CountryCodesField(forms.CharField):
 
     def __init__(self, **kwargs):
         kwargs.setdefault("required", False)
-        kwargs.setdefault("help_text", "Comma-separated ISO 3166-1 alpha-2 codes, e.g. IL or IN.")
+        kwargs.setdefault("help_text", "Comma-separated ISO 3166-1 alpha-2 codes, e.g. IL or IN. Leave empty for all countries.")
         super().__init__(**kwargs)
 
     def prepare_value(self, value):

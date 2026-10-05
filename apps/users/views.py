@@ -12,6 +12,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.views import LoginView, LogoutView
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
+from django.db import transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
@@ -19,6 +20,7 @@ from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.views.decorators.http import require_POST
 from django.views.generic import UpdateView
 
 from .tokens import account_activation_token, email_change_token
@@ -33,7 +35,10 @@ from .forms import (
     StyledLoginForm,
 )
 from .countries import country_name as _country_name
-from .models import CustomUser, GDPRRequest, UserGameModel, validate_hf_repo_id
+from .diagnostics import get_missing_model_message
+from .models import CustomUser, DiagnosticRun, GDPRRequest, UserGameModel, validate_hf_repo_id
+from .repo_id import normalize_hf_repo_id
+from .guided_steps import build_steps, next_step_line
 from apps.games.models import Game
 from apps.tournaments.models import Match
 
@@ -497,6 +502,21 @@ GAME_TYPES = [
     {"type": "chess", "label": "Chess"},
     {"type": "breakthrough", "label": "Breakthrough"},
 ]
+
+
+def _schedule_model_preload(user_id):
+    """Fetch the user's approved model revisions now; Celery first, direct call as fallback."""
+    try:
+        from apps.users.tasks import preload_user_models_task
+        preload_user_models_task.delay(user_id)
+        return
+    except Exception:
+        log.warning("Could not enqueue model preload for user=%s; running it directly", user_id, exc_info=True)
+    try:
+        from apps.games.model_preloader import preload_user_models
+        preload_user_models(user_id)
+    except Exception:
+        log.exception("Model preload failed for user=%s", user_id)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1377,9 +1397,12 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 # model_files_status is loaded lazily via AJAX (users:model_file_status_api)
                 # to avoid blocking the profile page load with HuggingFace HTTP requests.
                 "model_files_status": None,
+                "diag_missing_message": get_missing_model_message(user, g["type"]),
+                "steps": build_steps(gm),
             }
             game_configs.append(entry)
         ctx["game_configs"] = game_configs
+        ctx["ai_next_step"] = next_step_line(game_configs)
 
         # ── Tournament readiness per game type ─────────────
         from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES
@@ -1446,79 +1469,28 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         import re as _re
         from .ownership_verification import (
             VERIFY_FILENAME,
-            check_full_ownership,
             generate_verification_code,
         )
 
         action = request.POST.get("action", "connect")
         game_type = request.POST.get("game_type", "").strip()
-        repo_id = request.POST.get("hf_model_repo_id", "").strip()
-        data_repo_id = request.POST.get("hf_data_repo_id", "").strip()
+        repo_id = normalize_hf_repo_id(request.POST.get("hf_model_repo_id", ""))
+        data_repo_id = normalize_hf_repo_id(request.POST.get("hf_data_repo_id", ""))
+        save_and_verify = bool(request.POST.get("save_and_verify"))
+        profile_url = reverse("users:profile") + "?tab=ai-models"
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
-            return redirect("users:profile")
+            return redirect(profile_url)
 
         # ── Verify ownership action ────────────────────────────
         if action == "verify":
             submitted_repo_id = request.POST.get("hf_model_repo_id", "").strip()
-            gm = request.user.get_game_model(game_type)
-            if not gm:
-                messages.error(request, "No model registered for this game type yet.")
-            elif submitted_repo_id and submitted_repo_id != gm.hf_model_repo_id:
-                # Cross-game protection: reject if the submitted repo_id doesn't match
-                # the one stored for this game_type. Each game has its own verification
-                # code on its own UserGameModel row (unique_together = user + game_type),
-                # so a code issued for game A cannot legitimately verify game B.
-                messages.error(
-                    request,
-                    f"Repository mismatch: the submitted repo '{submitted_repo_id}' does not "
-                    f"match the registered {game_type} repo '{gm.hf_model_repo_id}'. "
-                    "Please reconnect the correct repo first.",
-                )
-            else:
-                ok, msg = check_full_ownership(gm)
-                if ok:
-                    messages.success(request, msg)
-
-                    # Run the real contract check now instead of waiting for a
-                    # tournament join, so the user gets pass/fail feedback right away.
-                    from apps.users.integrity import _get_stored_token, record_original_sha
-                    from apps.games.model_preloader import ensure_hf_snapshot
-
-                    label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
-                    token = _get_stored_token(request.user)
-                    if token:
-                        # Contract check runs against local files — make sure a
-                        # cache snapshot actually exists for a brand-new repo.
-                        ensure_hf_snapshot(gm)
-                        record_original_sha(gm, token)
-                        gm.refresh_from_db()
-                        if gm.status == UserGameModel.ContractStatus.ACTIVE:
-                            messages.success(
-                                request,
-                                f"{label} model check passed — your model is "
-                                "contract-compliant and active.",
-                            )
-                        elif gm.status == UserGameModel.ContractStatus.FAILED:
-                            messages.error(
-                                request,
-                                f"{label} model check FAILED: "
-                                f"{gm.last_error or 'see logs for details.'}",
-                            )
-                    else:
-                        messages.info(
-                            request,
-                            f"{label} ownership verified, but no Hugging Face token "
-                            "is available yet to run the automated model check. It "
-                            "will run automatically the first time you join a "
-                            "tournament, or during daily revalidation.",
-                        )
-                else:
-                    messages.error(request, msg)
-            return redirect("users:profile")
+            self._run_verify_action(request, game_type, submitted_repo_id)
+            return redirect(profile_url)
 
         # ── Connect / update a repo ────────────────────────────
+        connected = False
         if not repo_id:
             messages.error(request, "Please enter a Hugging Face repo ID.")
         elif (_shape_err := _check_repo_id_shape(repo_id)) is not None:
@@ -1571,8 +1543,74 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                         f"at the root of {repo_id} containing exactly: {code}.{data_note} "
                         "Then click 'Verify Ownership'.",
                     )
+                connected = True
 
-        return redirect("users:profile")
+        if connected:
+            _schedule_model_preload(request.user.pk)
+
+        if connected and save_and_verify:
+            self._run_verify_action(request, game_type, repo_id)
+
+        return redirect(profile_url)
+
+    def _run_verify_action(self, request, game_type, submitted_repo_id):
+        """Body of the 'verify' action, shared with 'Save and verify'."""
+        from .ownership_verification import check_full_ownership
+
+        gm = request.user.get_game_model(game_type)
+        if not gm:
+            messages.error(request, "No model registered for this game type yet.")
+        elif submitted_repo_id and submitted_repo_id != gm.hf_model_repo_id:
+            # Cross-game protection: reject if the submitted repo_id doesn't match
+            # the one stored for this game_type. Each game has its own verification
+            # code on its own UserGameModel row (unique_together = user + game_type),
+            # so a code issued for game A cannot legitimately verify game B.
+            messages.error(
+                request,
+                f"Repository mismatch: the submitted repo '{submitted_repo_id}' does not "
+                f"match the registered {game_type} repo '{gm.hf_model_repo_id}'. "
+                "Please reconnect the correct repo first.",
+            )
+        else:
+            ok, msg = check_full_ownership(gm)
+            if ok:
+                messages.success(request, msg)
+
+                # Run the real contract check now instead of waiting for a
+                # tournament join, so the user gets pass/fail feedback right away.
+                from apps.users.integrity import _get_stored_token, record_original_sha
+                from apps.games.model_preloader import ensure_hf_snapshot
+
+                label = dict((g["type"], g["label"]) for g in GAME_TYPES).get(game_type, game_type)
+                token = _get_stored_token(request.user)
+                if token:
+                    # Contract check runs against local files — make sure a
+                    # cache snapshot actually exists for a brand-new repo.
+                    ensure_hf_snapshot(gm)
+                    record_original_sha(gm, token)
+                    gm.refresh_from_db()
+                    if gm.status == UserGameModel.ContractStatus.ACTIVE:
+                        messages.success(
+                            request,
+                            f"{label} model check passed — your model is "
+                            "contract-compliant and active.",
+                        )
+                    elif gm.status == UserGameModel.ContractStatus.FAILED:
+                        messages.error(
+                            request,
+                            f"{label} model check FAILED: "
+                            f"{gm.last_error or 'see logs for details.'}",
+                        )
+                else:
+                    messages.info(
+                        request,
+                        f"{label} ownership verified, but no Hugging Face token "
+                        "is available yet to run the automated model check. It "
+                        "will run automatically the first time you join a "
+                        "tournament, or during daily revalidation.",
+                    )
+            else:
+                messages.error(request, msg)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1786,6 +1824,134 @@ def model_file_status_api(request, game_type):
     if result is None:
         return JsonResponse({"status": "no_data"})
     return JsonResponse({"status": "ok", **result})
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Diagnostics tab (read-only model check, polled by the profile page)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DIAGNOSTICS_COOLDOWN_SECONDS = 60
+# A queued/running run older than this is treated as dead (worker crashed or was killed).
+DIAGNOSTICS_STALE_SECONDS = 600
+
+
+def _valid_game_type(game_type: str) -> bool:
+    return game_type in [g["type"] for g in GAME_TYPES]
+
+
+def _expire_stale_diagnostic_runs(user, game_type: str) -> None:
+    from datetime import timedelta
+
+    cutoff = timezone.now() - timedelta(seconds=DIAGNOSTICS_STALE_SECONDS)
+    stale = DiagnosticRun.objects.filter(
+        user=user,
+        game_type=game_type,
+        state__in=(DiagnosticRun.State.QUEUED, DiagnosticRun.State.RUNNING),
+        created_at__lt=cutoff,
+    )
+    for run in stale:
+        run.lines = list(run.lines or []) + [{
+            "t": timezone.now().strftime("%H:%M:%S"),
+            "level": "fail",
+            "msg": "Diagnostics did not finish in time. Please try again.",
+        }]
+        run.state = DiagnosticRun.State.ERROR
+        run.finished_at = timezone.now()
+        run.save(update_fields=["lines", "state", "finished_at"])
+
+
+def _diagnostic_payload(run, since: int = 0) -> dict:
+    lines = list(run.lines or [])
+    return {
+        "run_id": run.pk,
+        "state": run.state,
+        "verdict": run.verdict,
+        "lines": lines[since:],
+        "next": len(lines),
+    }
+
+
+@login_required
+@require_POST
+def run_diagnostics_start(request, game_type):
+    """Queue a read-only diagnostics run for the current user's model of *game_type*."""
+    from datetime import timedelta
+
+    from apps.users.tasks import run_diagnostics_task
+
+    if not _valid_game_type(game_type):
+        return JsonResponse({"message": "Invalid game type."}, status=400)
+
+    message = get_missing_model_message(request.user, game_type)
+    if message:
+        return JsonResponse({"no_model": True, "message": message})
+
+    _expire_stale_diagnostic_runs(request.user, game_type)
+
+    with transaction.atomic():
+        # Serialise concurrent starts for the same user.
+        CustomUser.objects.select_for_update().get(pk=request.user.pk)
+        runs = DiagnosticRun.objects.filter(user=request.user, game_type=game_type)
+        if runs.filter(state__in=(DiagnosticRun.State.QUEUED, DiagnosticRun.State.RUNNING)).exists():
+            return JsonResponse(
+                {"message": "Diagnostics are already running for this game. Please wait for them to finish."},
+                status=429,
+            )
+        cutoff = timezone.now() - timedelta(seconds=DIAGNOSTICS_COOLDOWN_SECONDS)
+        if runs.filter(created_at__gt=cutoff).exists():
+            return JsonResponse(
+                {
+                    "message": (
+                        f"Please wait {DIAGNOSTICS_COOLDOWN_SECONDS} seconds between diagnostics runs."
+                    ),
+                    "retry_after": DIAGNOSTICS_COOLDOWN_SECONDS,
+                },
+                status=429,
+            )
+        run = DiagnosticRun.objects.create(user=request.user, game_type=game_type)
+
+    try:
+        run_diagnostics_task.delay(run.pk)
+    except Exception:
+        log.exception("Could not enqueue diagnostics run %s", run.pk)
+        run.state = DiagnosticRun.State.ERROR
+        run.finished_at = timezone.now()
+        run.lines = [{
+            "t": timezone.now().strftime("%H:%M:%S"),
+            "level": "fail",
+            "msg": "Diagnostics could not be started. Please try again later.",
+        }]
+        run.save(update_fields=["state", "finished_at", "lines"])
+        return JsonResponse({"message": "Diagnostics could not be started. Please try again later."}, status=503)
+
+    return JsonResponse({"run_id": run.pk})
+
+
+@login_required
+def diagnostics_status(request, run_id):
+    """Return the state of one of the current user's runs plus the lines after ?since=N."""
+    run = get_object_or_404(DiagnosticRun, pk=run_id, user=request.user)
+    try:
+        since = max(0, int(request.GET.get("since", 0)))
+    except (TypeError, ValueError):
+        since = 0
+    return JsonResponse(_diagnostic_payload(run, since))
+
+
+@login_required
+def diagnostics_latest(request, game_type):
+    """Return the newest run (all lines) for this user and game, or {"run": null}."""
+    if not _valid_game_type(game_type):
+        return JsonResponse({"message": "Invalid game type."}, status=400)
+    _expire_stale_diagnostic_runs(request.user, game_type)
+    run = (
+        DiagnosticRun.objects.filter(user=request.user, game_type=game_type)
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    if run is None:
+        return JsonResponse({"run": None})
+    return JsonResponse({"run": _diagnostic_payload(run)})
 
 
 @login_required

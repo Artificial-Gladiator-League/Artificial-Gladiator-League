@@ -41,7 +41,9 @@
           <p class="text-gray-400 text-sm mb-3 line-clamp-2">{{ tournament.description }}</p>
         {% endif %}
 
-        {% if tournament.is_money_tournament or not tournament.is_israel_only %}
+        {% if tournament.is_open_to_all %}
+          <p class="text-xs text-gray-500 mb-2">Open to all countries</p>
+        {% elif tournament.is_money_tournament or not tournament.is_israel_only %}
           <p class="text-xs text-gray-500 mb-2">Open to residents of {{ tournament.allowed_countries_text }}</p>
         {% endif %}
 

@@ -732,6 +732,42 @@ class UserGameModel(models.Model):
         return f"{self.user.username} — {self.get_game_type_display()} ({self.hf_model_repo_id})"
 
 
+class DiagnosticRun(models.Model):
+    """One read-only "Diagnostics" run for a user's model (see apps.users.diagnostics)."""
+
+    class State(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        FINISHED = "finished", "Finished"
+        ERROR = "error", "Error"
+
+    class Verdict(models.TextChoices):
+        NONE = "", "None"
+        PASS = "pass", "Pass"
+        FAIL = "fail", "Fail"
+        PLATFORM_ERROR = "platform_error", "Platform error"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="diagnostic_runs",
+    )
+    game_type = models.CharField(max_length=20, choices=UserGameModel.GameType.choices)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.QUEUED)
+    verdict = models.CharField(max_length=20, choices=Verdict.choices, blank=True, default="")
+    lines = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "game_type", "-created_at"], name="diagrun_user_game_created"),
+        ]
+
+    def __str__(self):
+        return f"DiagnosticRun {self.pk} {self.user_id}/{self.game_type} ({self.state})"
+
+
 class CountryChangeLog(models.Model):
     """Audit trail of staff changes to a user's locked country."""
 

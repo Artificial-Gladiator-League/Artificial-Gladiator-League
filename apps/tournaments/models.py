@@ -10,6 +10,7 @@ from .countries import (
     ISRAEL_ONLY, countries_phrase, default_allowed_countries, normalize_country_codes,
     unknown_country_codes, unknown_currency_code,
 )
+from .countries import is_open_to_all as _open_to_all
 from .sensitive import validate_no_sensitive_data
 
 
@@ -199,9 +200,10 @@ class Tournament(models.Model):
     )
     allowed_countries = models.JSONField(
         default=default_allowed_countries,
+        blank=True,
         help_text=(
             "ISO 3166-1 alpha-2 country codes whose residents may enter, e.g. IL or IN. "
-            "Israel only by default; only The Gladiatormania can use other countries."
+            "Leave empty to open the tournament to all countries."
         ),
     )
     prize_amount = models.DecimalField(
@@ -292,7 +294,7 @@ class Tournament(models.Model):
         related_name="tournaments",
         help_text=(
             "Terms & Conditions record shown on the join page. Leave empty to use "
-            "the legacy Gauntlet terms. Only for Gauntlet / Gladiatormania."
+            "the legacy Gauntlet terms."
         ),
     )
     terms_text = models.TextField(
@@ -321,29 +323,37 @@ class Tournament(models.Model):
         super().clean()
         errors = {}
 
+        open_to_all = _open_to_all(self.allowed_countries)
         codes = normalize_country_codes(self.allowed_countries)
         problems = []
-        if not codes:
-            problems.append("Enter at least one country code.")
+        if open_to_all:
+            pass
+        elif not codes:
+            problems.append(
+                "Enter at least one country code, or leave the list empty to open the "
+                "tournament to all countries."
+            )
         elif unknown_country_codes(codes):
             problems.append(
                 f"Unknown ISO 3166-1 country code(s): {', '.join(unknown_country_codes(codes))}."
             )
-        elif codes != ISRAEL_ONLY and self.type != self.Type.GLADIATORMANIA:
-            problems.append(
-                "Only The Gladiatormania can be opened to countries other than Israel; "
-                "the Gladiator Gauntlet and QA tournaments stay Israel-only."
-            )
         if problems:
             errors["allowed_countries"] = problems
-        else:
+        elif not open_to_all:
             self.allowed_countries = codes
+        # An empty list means every country; a list other than exactly Israel goes beyond it.
+        beyond_israel = open_to_all or bool(codes and codes != ISRAEL_ONLY)
 
         if "IN" in codes and self.game_type != self.GameType.CHESS:
             errors["game_type"] = ["Tournaments open to India are chess only."]
+        elif open_to_all and self.game_type != self.GameType.CHESS:
+            errors["game_type"] = [
+                "A tournament open to all countries includes India, which is chess only. "
+                "Choose Chess or list the countries explicitly."
+            ]
 
         has_prize_config = bool(self.prize_amount and self.prize_amount > 0)
-        if codes and codes != ISRAEL_ONLY and (
+        if beyond_israel and (
             (self.is_money_tournament and has_prize_config) or (self.terms_id and self.terms.has_prize)
         ):
             currency_errors = self._currency_errors()
@@ -354,10 +364,10 @@ class Tournament(models.Model):
             errors["verification_documents"] = ["Aadhaar must not be requested."]
 
         if self.terms_id:
-            terms_errors = self._terms_errors(codes)
+            terms_errors = self._terms_errors(codes, open_to_all)
             if terms_errors:
                 errors["terms"] = terms_errors
-        elif self.is_money_tournament and codes and codes != ISRAEL_ONLY:
+        elif self.is_money_tournament and beyond_israel:
             errors["terms"] = [
                 "A money tournament open to other countries needs a terms record: "
                 "the built-in terms are written for Israel only."
@@ -393,12 +403,12 @@ class Tournament(models.Model):
         """Winners of tournaments open beyond Israel need an approved eligibility check before payout."""
         return not self.is_israel_only
 
-    def _terms_errors(self, codes):
+    def _terms_errors(self, codes, open_to_all=False):
         terms = self.terms
         errors = []
-        if self.type not in self.MONEY_LIKE_TYPES:
-            errors.append("Terms can only be attached to Gauntlet / Gladiatormania tournaments.")
-        if not terms.requires_israeli_residency:
+        if open_to_all:
+            pass  # no residency box is shown for an open tournament, so the flag is not enforced
+        elif not terms.requires_israeli_residency:
             if codes == ISRAEL_ONLY:
                 errors.append(
                     "Not supported yet: the geo check and eligibility verification still "
@@ -434,6 +444,10 @@ class Tournament(models.Model):
         return self.allowed_country_codes == ISRAEL_ONLY
 
     @property
+    def is_open_to_all(self):
+        return _open_to_all(self.allowed_countries)
+
+    @property
     def allowed_countries_text(self):
         """Country NAMES (never flags), e.g. "India and Israel"."""
         return countries_phrase(self.allowed_country_codes)
@@ -443,6 +457,8 @@ class Tournament(models.Model):
         """Banner title: "Israeli Residents Only" for Israel, else "Residents of India only"."""
         if self.is_israel_only:
             return "Israeli Residents Only"
+        if self.is_open_to_all:
+            return "Open to all countries"
         return f"Residents of {countries_phrase(self.allowed_country_codes)} only"
 
     TYPE_DEFAULTS = {

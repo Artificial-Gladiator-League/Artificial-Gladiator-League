@@ -25,7 +25,9 @@
       {% if tournament.description %}
         <p class="text-gray-400 text-sm mt-0.5">{{ tournament.description }}</p>
       {% endif %}
-      {% if tournament.is_money_tournament or not tournament.is_israel_only %}
+      {% if tournament.is_open_to_all %}
+        <p class="text-xs text-gray-500 mt-1">Open to all countries</p>
+      {% elif tournament.is_money_tournament or not tournament.is_israel_only %}
         <p class="text-xs text-gray-500 mt-1">Open to residents of {{ tournament.allowed_countries_text }}</p>
       {% endif %}
     </div>
@@ -42,6 +44,12 @@
       </div>
     </div>
   </div>
+
+  {% if country_notice %}
+  <div id="country-notice" class="rounded-lg border border-red-700/50 bg-red-900/20 px-4 py-3 mb-6 text-sm text-red-300">{{ country_notice }}</div>
+  {% elif country_prompt %}
+  <div id="country-prompt" class="rounded-lg border border-yellow-700/50 bg-yellow-900/20 px-4 py-3 mb-6 text-sm text-yellow-200">{{ country_prompt }} <a href="{% url 'users:profile' %}?tab=edit#countryCard" class="underline">Set your country</a></div>
+  {% endif %}
 
   <!-- Status bar -->
   <div class="flex flex-wrap items-center gap-3 mb-6">
@@ -432,7 +440,11 @@
         <span class="text-blue-300"></span>
         <div>
           <p class="text-blue-300 font-semibold text-xs">{{ tournament.residents_only_label }}</p>
+          {% if tournament.is_open_to_all %}
+          <p class="text-gray-400 text-xs">Players from any country may enter. Winners must verify residency before payout.</p>
+          {% else %}
           <p class="text-gray-400 text-xs">Entry restricted by IP geolocation. Winners must verify residency before payout.</p>
+          {% endif %}
         </div>
       </div>
       {% endif %}

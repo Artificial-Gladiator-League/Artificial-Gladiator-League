@@ -381,6 +381,24 @@ def tournament_detail(request, pk):
             else:
                 can_join = True
 
+    # Tell a player from a non-allowed country before they click Register (join stays blocked server-side).
+    country_notice = ""
+    country_prompt = ""
+    if (
+        request.user.is_authenticated
+        and not is_participant
+        and tournament.status == Tournament.Status.OPEN
+    ):
+        from .profile_country import MISSING, NOT_ALLOWED, profile_country_verdict
+        verdict = profile_country_verdict(request.user, tournament)
+        if verdict is not None and verdict.kind == NOT_ALLOWED:
+            country_notice = verdict.message
+            can_join = False
+            join_blocked_reason = ""
+            games_remaining = 0
+        elif verdict is not None and verdict.kind == MISSING:
+            country_prompt = verdict.message
+
     return render(
         request,
         "tournaments/detail.html",
@@ -399,6 +417,8 @@ def tournament_detail(request, pk):
             "join_blocked_reason": join_blocked_reason,
             "games_remaining": games_remaining,
             "user_is_verified": user_is_verified,
+            "country_notice": country_notice,
+            "country_prompt": country_prompt,
             "REVALIDATION_GAMES_REQUIRED": 30,
         },
     )
@@ -857,7 +877,7 @@ def join_tournament(request, pk):
     if tournament.is_money_tournament:
         from .eligibility import check_geo_eligibility, geo_block_message
         _join_ip, _join_country, _geo_eligible = check_geo_eligibility(
-            request, tournament.allowed_country_codes,
+            request, tournament.allowed_countries,
         )
         if _geo_eligible is False:
             log.warning(

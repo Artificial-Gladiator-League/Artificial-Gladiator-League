@@ -64,19 +64,24 @@ class AllowedCountriesFieldTest(TestCase):
         self.assertEqual(t.allowed_countries, ["IN"])
         self.assertFalse(t.is_israel_only)
 
-    def test_clean_rejects_empty_and_unknown_codes(self):
-        for value, text in (([], "at least one"), (["ZZ"], "Unknown"), ("", "at least one")):
+    def test_clean_rejects_junk_and_unknown_codes(self):
+        for value, text in (("", "at least one"), (None, "at least one"), (["ZZ"], "Unknown")):
             with self.subTest(value=value):
                 with self.assertRaises(ValidationError) as ctx:
                     _tournament(allowed_countries=value, terms=None, prize_amount=None).clean()
                 self.assertIn(text, " ".join(ctx.exception.message_dict["allowed_countries"]))
 
-    def test_only_gladiatormania_can_leave_israel(self):
-        for ttype in (Tournament.Type.GAUNTLET, Tournament.Type.QA):
+    def test_an_empty_list_is_open_to_all_countries(self):
+        for ttype in (Tournament.Type.GAUNTLET, Tournament.Type.GLADIATORMANIA):
             with self.subTest(type=ttype):
-                with self.assertRaises(ValidationError) as ctx:
-                    _tournament(ttype, allowed_countries=["IN"], prize_amount=None).clean()
-                self.assertIn("stay Israel-only", " ".join(ctx.exception.message_dict["allowed_countries"]))
+                _tournament(
+                    ttype, allowed_countries=[], terms=_terms(slug=f"ac-open-{ttype}"),
+                ).clean()
+
+    def test_every_type_can_leave_israel(self):
+        for ttype in Tournament.Type.values:
+            with self.subTest(type=ttype):
+                _tournament(ttype, allowed_countries=["IN"], terms=_terms(slug=f"ac-any-{ttype}")).clean()
         _tournament(allowed_countries=["IN"], prize_amount=None, is_money_tournament=False).clean()
         _tournament(allowed_countries=["IN", "IL"], prize_amount=None, is_money_tournament=False).clean()
 
@@ -110,7 +115,7 @@ class ResidencyRuleWithCountriesTest(TestCase):
 
     def test_errors_for_countries_and_terms_are_reported_together(self):
         terms = _terms(slug="ac-both", requires_israeli_residency=False)
-        t = _tournament(Tournament.Type.GAUNTLET, allowed_countries=["IN"], terms=terms)
+        t = _tournament(Tournament.Type.GAUNTLET, allowed_countries=["ZZ"], terms=terms)
         with self.assertRaises(ValidationError) as ctx:
             t.clean()
         self.assertEqual(set(ctx.exception.message_dict), {"allowed_countries", "terms"})
@@ -155,16 +160,16 @@ class CountryCodesAdminFieldTest(TestCase):
         self.assertTrue(omitted.is_valid(), omitted.errors)
         self.assertEqual(omitted.instance.allowed_countries, ["IL"])
 
-    def test_admin_rejects_blank_unknown_and_gauntlet_outside_israel(self):
-        for extra, text in (
-            ({"allowed_countries": ""}, "at least one"),
-            ({"allowed_countries": "ZZ"}, "Unknown"),
-            ({"allowed_countries": "IN", "type": "gauntlet"}, "stay Israel-only"),
-        ):
-            with self.subTest(extra=extra):
-                form = self._form(**extra)
-                self.assertFalse(form.is_valid())
-                self.assertIn(text, " ".join(form.errors["allowed_countries"]))
+    def test_admin_rejects_unknown_codes_and_accepts_blank_or_any_type(self):
+        terms = _terms(slug="ac-admin-any")
+        form = self._form(allowed_countries="ZZ")
+        self.assertFalse(form.is_valid())
+        self.assertIn("Unknown", " ".join(form.errors["allowed_countries"]))
+        for ttype in ("gauntlet", "gladiatormania", "qa"):
+            for countries in ("", "IN"):
+                with self.subTest(type=ttype, countries=countries):
+                    form = self._form(allowed_countries=countries, type=ttype, terms=terms.pk)
+                    self.assertTrue(form.is_valid(), form.errors)
 
     def test_admin_shows_the_current_value(self):
         t = Tournament.objects.create(

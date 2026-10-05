@@ -24,6 +24,10 @@ urlpatterns = [
     path("activity-heatmap/", views.activity_heatmap, name="activity_heatmap"),
     path("profile/model-file-status/<str:game_type>/", views.model_file_status_api, name="model_file_status_api"),
     path("search/", views.user_search, name="user_search"),
+    # Diagnostics tab (own profile)
+    path("profile/diagnostics/<str:game_type>/run/", views.run_diagnostics_start, name="run_diagnostics"),
+    path("profile/diagnostics/run/<int:run_id>/status/", views.diagnostics_status, name="diagnostics_status"),
+    path("profile/diagnostics/<str:game_type>/latest/", views.diagnostics_latest, name="diagnostics_latest"),
     # GDPR
     path("gdpr/", views.gdpr_portal, name="gdpr"),
     path("gdpr/export/", views.gdpr_export, name="gdpr_export"),

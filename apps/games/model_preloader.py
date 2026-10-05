@@ -45,6 +45,29 @@ def _resolve_hf_token(gm) -> str | None:
     return plat or None
 
 
+def _cached_snapshot_for_revision(repo_id: str, revision: str) -> Path | None:
+    """Return the cached snapshot for *revision*, or None if absent or incomplete.
+
+    A full 40-char commit SHA must match the snapshot folder name exactly: the
+    newest-snapshot fallback of ``_find_hf_cache_snapshot`` is never accepted
+    for it, and the folder must hold real model files (a lone
+    ``config_model.json`` is incomplete). Other refs ("main", branches) keep
+    the previous behaviour.
+    """
+    from apps.games.local_inference import _find_hf_cache_snapshot, _has_model_files, _is_commit_sha
+
+    snap = _find_hf_cache_snapshot(repo_id, ref=revision)
+    if snap is None:
+        return None
+    if _is_commit_sha(revision):
+        if snap.name.lower() != revision.lower():
+            return None
+        return snap if _has_model_files(snap) else None
+    if any(snap.rglob("*.safetensors")) or any(snap.rglob("*.py")) or any(snap.rglob("*.npz")):
+        return snap
+    return None
+
+
 def ensure_hf_snapshot(gm) -> Path | None:
     """Ensure the shared HF hub cache contains a snapshot for *gm*.
 
@@ -53,23 +76,22 @@ def ensure_hf_snapshot(gm) -> Path | None:
     :func:`apps.games.local_inference._find_hf_cache_snapshot` succeed and
     inference can read weights locally instead of round-tripping the HF API.
 
+    The snapshot must be for ``_resolve_revision(gm)``; when that is a commit
+    SHA, an older complete snapshot does not count as "already cached".
+
     Returns the snapshot directory on success, else ``None``.
     """
     repo_id = (getattr(gm, "hf_model_repo_id", "") or "").strip()
     if not repo_id:
         return None
 
-    from apps.games.local_inference import _find_hf_cache_snapshot
+    from apps.games.local_inference import _has_model_files, _is_commit_sha
 
     revision = _resolve_revision(gm)
 
     # Already cached?
-    snap = _find_hf_cache_snapshot(repo_id)
-    if snap is not None and (
-        any(snap.rglob("*.safetensors"))
-        or any(snap.rglob("*.py"))
-        or any(snap.rglob("*.npz"))
-    ):
+    snap = _cached_snapshot_for_revision(repo_id, revision)
+    if snap is not None:
         return snap
 
     try:
@@ -92,32 +114,46 @@ def ensure_hf_snapshot(gm) -> Path | None:
             cache_dir=cache_dir,
             token=token,
         )
-        sha = Path(snap_path).name
-        msg = f"Cached snapshot for {repo_id} at {sha}"
-        print(msg)
-        log.info(msg)
-        return Path(snap_path)
     except Exception:
-        log.exception(
-            "ensure_hf_snapshot: snapshot_download failed for repo=%s revision=%s",
-            repo_id, revision,
+        log.error(
+            "[MODEL-DOWNLOAD-FAILED] snapshot_download failed for repo=%s revision=%s user=%s game=%s",
+            repo_id, revision, getattr(gm, "user_id", "?"), getattr(gm, "game_type", "?"),
+            exc_info=True,
         )
         return None
+
+    snap_path = Path(snap_path)
+    if _is_commit_sha(revision) and snap_path.name.lower() != revision.lower():
+        log.error(
+            "[MODEL-DOWNLOAD-FAILED] snapshot_download returned %s, not revision %s (repo=%s)",
+            snap_path.name, revision, repo_id,
+        )
+        return None
+    if _is_commit_sha(revision) and not _has_model_files(snap_path):
+        log.error(
+            "[MODEL-DOWNLOAD-FAILED] snapshot %s of repo=%s has no model files after download",
+            revision, repo_id,
+        )
+        return None
+
+    msg = f"Cached snapshot for {repo_id} at {snap_path.name}"
+    print(msg)
+    log.info(msg)
+    return snap_path
 
 
 def preload_user_models(user_id: int) -> None:
     """Validate and register shared HF hub cache snapshots for a user's models.
 
     No-copy: inference reads directly from ``HF_HUB_CACHE`` snapshot dirs.
-    Updates ``UserGameModel.cached_path`` to the snapshot path so that
-    predict_chess / predict_breakthrough can locate the weights without
-    querying the filesystem each move.
+    Updates ``UserGameModel.cached_path`` / ``cached_commit`` to the snapshot of
+    the requested (approved) revision so that predict_chess / predict_breakthrough
+    can locate the weights without querying the filesystem each move.
 
-    If a repo is not yet present in the local cache, this function will
-    attempt to mirror it via :func:`ensure_hf_snapshot` before falling back
-    to the HF API at inference time.
+    If that revision is not complete in the local cache, this function will
+    fetch it via :func:`ensure_hf_snapshot`. Other snapshots in the shared
+    cache are never modified or deleted.
     """
-    from apps.games.local_inference import _find_hf_cache_snapshot
     try:
         from apps.users.models import UserGameModel
         game_models = list(UserGameModel.objects.filter(user_id=user_id, hf_model_repo_id__gt=""))
@@ -130,23 +166,17 @@ def preload_user_models(user_id: int) -> None:
         if not repo_id:
             continue
 
-        def _has_weights(p: Path) -> bool:
-            return (
-                any(p.rglob("*.safetensors"))
-                or any(p.rglob("*.py"))
-                or any(p.rglob("*.npz"))
-            )
-
-        snap = _find_hf_cache_snapshot(repo_id)
-        if snap is None or not _has_weights(snap):
-            # Try to mirror the repo into HF_HUB_CACHE so inference is local.
+        revision = _resolve_revision(gm)
+        snap = _cached_snapshot_for_revision(repo_id, revision)
+        if snap is None:
+            # Fetch the requested revision into HF_HUB_CACHE so inference is local.
             snap = ensure_hf_snapshot(gm)
 
-        if snap is None or not _has_weights(snap):
+        if snap is None:
             log.warning(
-                "preload_user_models: no HF cache snapshot for "
+                "preload_user_models: no complete HF cache snapshot for revision %s "
                 "user=%s game=%s repo=%s — will use HF API directly",
-                user_id, gm.game_type, repo_id,
+                revision, user_id, gm.game_type, repo_id,
             )
             continue
 

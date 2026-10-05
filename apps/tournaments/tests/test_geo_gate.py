@@ -47,8 +47,10 @@ class CheckGeoEligibilityTest(SimpleTestCase):
         for allowed in (["IL"], ["IN"]):
             self.assertEqual(self.check(None, allowed), (PUBLIC_IP, None, False))
 
-    def test_empty_list_blocks_everyone(self):
-        self.assertEqual(self.check("IN", []), (PUBLIC_IP, "IN", False))
+    def test_empty_list_means_open_to_all(self):
+        with mock.patch(LOOKUP) as lookup:
+            self.assertEqual(check_geo_eligibility(_request(), []), (PUBLIC_IP, None, None))
+        lookup.assert_not_called()
 
     @override_settings(MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES=["US"])
     def test_global_list_is_only_a_fallback_when_no_list_is_passed(self):

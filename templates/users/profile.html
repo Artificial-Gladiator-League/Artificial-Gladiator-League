@@ -92,12 +92,12 @@
   }
   .lichess-profile .profile-tab:hover { color: var(--lp-head); background: var(--lp-hover); }
   .lichess-profile .profile-tab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
-  .lichess-profile .ai-subtab, .lichess-profile .stats-subtab {
+  .lichess-profile .ai-subtab, .lichess-profile .stats-subtab, .lichess-profile .diag-subtab {
     padding: 0.5rem 0.9rem; font-size: 0.85rem; font-weight: 500; white-space: nowrap; color: var(--lp-muted);
     background: none; border: 0; border-bottom: 3px solid transparent; cursor: pointer; margin: 0;
   }
-  .lichess-profile .ai-subtab:hover, .lichess-profile .stats-subtab:hover { color: var(--lp-head); }
-  .lichess-profile .ai-subtab.active, .lichess-profile .stats-subtab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
+  .lichess-profile .ai-subtab:hover, .lichess-profile .stats-subtab:hover, .lichess-profile .diag-subtab:hover { color: var(--lp-head); }
+  .lichess-profile .ai-subtab.active, .lichess-profile .stats-subtab.active, .lichess-profile .diag-subtab.active { color: var(--lp-head); border-bottom-color: var(--lp-green); }
   .lichess-profile .tab-panel .overflow-x-auto { scrollbar-width: thin; }
 
   /* Time-control badges (flat) */
@@ -135,6 +135,20 @@
 
   /* Email modal (box look comes from lichess.css) */
   .lichess-profile .lp-modal h3 { font-size: 1rem; }
+
+  /* Diagnostics terminal: dark in both themes, so its colours are fixed */
+  .lichess-profile .diag-terminal {
+    background: #12110f; color: #bababa; border: 1px solid var(--lp-border); border-radius: 3px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.78rem; line-height: 1.35; padding: 0.6rem 0.75rem;
+    min-height: 8rem; max-height: 360px; overflow-y: auto;
+  }
+  .lichess-profile .diag-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .lichess-profile .diag-line.info { color: #94928d; }
+  .lichess-profile .diag-line.ok { color: #8bc34a; }
+  .lichess-profile .diag-line.warn { color: #e0b030; }
+  .lichess-profile .diag-line.fail { color: #e06060; }
+  .lichess-profile .diag-line.result { font-weight: 700; }
 
   /* Activity heatmap: green scale */
   .lichess-profile .heatmap-scroll { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
@@ -199,7 +213,6 @@
       </h1>
       <p class="lp-meta">
         <span class="{{ category.css }} font-semibold">{{ category.tier }}</span>
-        <span class="mx-1">&middot;</span>Raised by {{ user_profile.username }}{% if is_own_profile %} &middot; This Gladiator belongs to you{% endif %}
       </p>
       {% if user_profile.origin_story %}<p class="lp-bio">{{ user_profile.origin_story }}</p>{% endif %}
     </div>
@@ -315,37 +328,6 @@
         </div>
       </div>
 
-      <!-- My Gladiator (editable on your own profile) -->
-      <div class="lp-box">
-        <h2 class="lp-title">My Gladiator</h2>
-        <div class="lp-body space-y-2">
-          <div>
-            <label for="origin_story" class="block text-xs text-gray-400 mb-1">Origin story</label>
-            <textarea id="origin_story" rows="3" class="w-full text-xs"{% if not is_own_profile %} disabled{% endif %}>{{ user_profile.origin_story }}</textarea>
-            {% if is_own_profile %}<button onclick="saveField('origin_story')" class="mt-1 btn-gold text-xs px-3 py-1.5 w-full">Save story</button>{% endif %}
-          </div>
-          <div class="flex items-end gap-2">
-            <div class="flex-1 min-w-0">
-              <label for="fighting_style" class="block text-xs text-gray-400 mb-1">Fighting style</label>
-              <select id="fighting_style" class="w-full text-xs"{% if not is_own_profile %} disabled{% endif %}>
-                <option value="Unhinged Rage"{% if user_profile.fighting_style == "Unhinged Rage" %} selected{% endif %}>Unhinged Rage</option>
-                <option value="Silent Assassin"{% if user_profile.fighting_style == "Silent Assassin" %} selected{% endif %}>Silent Assassin</option>
-                <option value="The Rage Philosopher"{% if user_profile.fighting_style == "The Rage Philosopher" %} selected{% endif %}>The Rage Philosopher</option>
-                <option value="Chaotic Genius"{% if user_profile.fighting_style == "Chaotic Genius" %} selected{% endif %}>Chaotic Genius</option>
-              </select>
-            </div>
-            {% if is_own_profile %}<button onclick="saveField('fighting_style')" class="btn-gold text-xs px-3 py-1.5">Save</button>{% endif %}
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <div>
-              <span class="block text-xs text-gray-400">Mood</span>
-              <div id="mood_display" data-mood="{{ user_profile.current_mood }}" class="text-sm font-bold"></div>
-            </div>
-            {% if is_own_profile %}<button onclick="saveField('current_mood')" class="btn-gold text-xs px-3 py-1.5">Update</button>{% endif %}
-          </div>
-        </div>
-      </div>
-
     </div>
 
     <!-- ═══════════════════════════════════════
@@ -358,6 +340,7 @@
         {% if is_own_profile %}
         <button class="profile-tab active" data-tab="edit">Profile</button>
         <button class="profile-tab" data-tab="ai-models">Gladiator</button>
+        <button class="profile-tab" data-tab="diagnostics">Diagnostics</button>
         <button class="profile-tab" data-tab="rivalries">Rivalries</button>
         <button class="profile-tab" data-tab="stats">Activity</button>
         <button class="profile-tab" data-tab="paypal">PayPal</button>
@@ -611,6 +594,10 @@
            ═══════════════════════════════════════ -->
       <div id="tab-ai-models" class="tab-panel hidden space-y-3">
 
+        <!-- guided:start -->
+        <p id="ai-next-step" class="text-sm font-semibold" style="color: var(--lp-head);">{{ ai_next_step }}</p>
+        <!-- guided:end -->
+
         <!-- Subtabs: one per game -->
         <div class="mb-4">
           <div class="flex items-center gap-2 overflow-x-auto pb-2">
@@ -716,6 +703,37 @@
 
           {% endif %}
 
+          <!-- guided:start -->
+          <div class="guided-steps mb-4 space-y-1 text-sm" data-game="{{ game.type }}">
+            {% for s in game.steps %}
+            {% if s.state == 'current' %}
+            <div class="guided-step guided-step-current rounded px-3 py-2" style="border: 1px solid var(--lp-green); background: var(--lp-box-head); color: var(--lp-text);">
+              <p class="font-semibold" style="color: var(--lp-head);">{{ s.marker }} {{ s.num }}. {{ s.title }}</p>
+              {% if s.num == 1 %}
+              <p class="mt-1">Type or paste your model repo, then click the gold button <strong>Save and verify</strong>.</p>
+              {% elif s.num == 2 %}
+              <p class="mt-1">Click the yellow button <strong>Open Access Settings</strong> and approve ArtificialGladiatorLeague on Hugging Face. Then come back and click <strong>Save and verify</strong>.</p>
+              {% elif s.num == 3 %}
+              <p class="mt-1">On Hugging Face, add the file AGL_VERIFY.txt with the code below to the root of each repo that is not verified (use the <strong>Copy file name</strong> and <strong>Copy code</strong> buttons here). Then click <strong>Verify Ownership</strong>.</p>
+              {% if game.model.verification_code %}
+              <p class="mt-1">File name: <code>AGL_VERIFY.txt</code>
+                <button type="button" class="guided-copy px-2 py-0.5 text-xs rounded border" style="border-color: var(--lp-border);" data-copy-text="AGL_VERIFY.txt">Copy file name</button></p>
+              <p class="mt-1">Code: <code class="select-all">{{ game.model.verification_code }}</code>
+                <button type="button" class="guided-copy px-2 py-0.5 text-xs rounded border" style="border-color: var(--lp-border);" data-copy-text="{{ game.model.verification_code }}">Copy code</button></p>
+              {% else %}
+              <p class="mt-1">Click <strong>Save and verify</strong> to receive your verification code.</p>
+              {% endif %}
+              {% elif s.num == 4 %}
+              <p class="mt-1">Click <strong>Verify Ownership</strong> (or <strong>Save and verify</strong>).</p>
+              {% endif %}
+            </div>
+            {% else %}
+            <p class="guided-step guided-step-{{ s.state }} px-3" style="color: var(--lp-muted);">{{ s.marker }} {{ s.num }}. {{ s.title }}</p>
+            {% endif %}
+            {% endfor %}
+          </div>
+          <!-- guided:end -->
+
           <form method="post" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="ai_model_form" value="1">
@@ -760,7 +778,7 @@
                   href="https://huggingface.co/{{ game.model.hf_model_repo_id|default:'' }}/settings/access"
                   target="_blank"
                   class="inline-block mt-3 px-3 py-1.5 bg-yellow-500 hover:bg-yellow-400 text-black font-semibold rounded text-xs">
-                  → Open Access Settings and approve "ArtificialGladiatorLeague"
+                  Open Access Settings and approve "ArtificialGladiatorLeague"
                 </a>
               </div>
               {% endif %}
@@ -862,6 +880,9 @@
             {% endif %}
 
             <input type="hidden" name="action" value="connect">
+            <!-- guided:start -->
+            <button type="submit" name="save_and_verify" value="1" class="btn-gold w-full py-2.5">Save and verify</button>
+            <!-- guided:end -->
             <button type="submit" class="btn-brand w-full py-2.5">
               {% if game.model %}Update Repo &amp; Re-issue Code{% else %}Connect Repo{% endif %}
             </button>
@@ -921,7 +942,148 @@
         })();
         </script>
 
+        <script>
+        /* Guided repo entry: URL normalisation, format hint, chess data-repo prefill, copy buttons. */
+        (function () {
+          var PAGES = ['tree', 'blob', 'resolve', 'raw', 'commit', 'commits', 'discussions', 'settings'];
+          var SHAPE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+          function normalize(v) {
+            v = (v || '').trim();
+            var m = /^https?:\/\/(?:www\.)?huggingface\.co\/([^?#]*)(?:[?#].*)?$/i.exec(v);
+            if (!m) return v;
+            var parts = m[1].split('/').filter(Boolean);
+            if (parts.length && parts[0].toLowerCase() === 'datasets') parts = parts.slice(1);
+            if (parts.length < 2 || parts[0].toLowerCase() === 'spaces') return v;
+            if (parts.length > 2 && PAGES.indexOf(parts[2].toLowerCase()) < 0) return v;
+            return parts[0] + '/' + parts[1];
+          }
+
+          function hintFor(v) {
+            if (!v || SHAPE.test(v)) return '';
+            if (/^https?:\/\//i.test(v)) return 'Use owner/repo-name, not a Space or other URL.';
+            return 'Not a valid owner/repo-name format.';
+          }
+
+          function attachHint(input) {
+            var hint = document.createElement('span');
+            hint.className = 'text-xs mt-1';
+            hint.style.color = 'var(--lp-muted)';
+            hint.style.display = 'none';
+            input.insertAdjacentElement('afterend', hint);
+            return hint;
+          }
+
+          function clean(input) {
+            var n = normalize(input.value);
+            if (n !== input.value) input.value = n;
+            return n;
+          }
+
+          ['chess', 'breakthrough'].forEach(function (t) {
+            var modelInput = document.getElementById('id_repo_' + t);
+            var dataInput = document.getElementById('id_data_repo_' + t);
+            if (!modelInput) return;
+            var accessLink = document.getElementById('id_access_link_' + t);
+            var modelHint = attachHint(modelInput);
+            var dataHint = dataInput ? attachHint(dataInput) : null;
+            var autoFilled = '';
+
+            function show(el, text) {
+              el.textContent = text;
+              el.style.display = text ? 'block' : 'none';
+            }
+
+            function refresh() {
+              var mv = modelInput.value;
+              show(modelHint, hintFor(mv));
+              if (dataInput) show(dataHint, hintFor(dataInput.value));
+              if (accessLink) {
+                accessLink.href = mv ? 'https://huggingface.co/' + mv + '/settings/access' : '#';
+              }
+            }
+
+            function prefillData() {
+              if (t !== 'chess' || !dataInput) return;
+              var mv = modelInput.value;
+              var owner = SHAPE.test(mv) ? mv.split('/')[0] : '';
+              if (!owner) return;
+              if (dataInput.value === '' || dataInput.value === autoFilled) {
+                autoFilled = owner + '/chess-data';
+                dataInput.value = autoFilled;
+              }
+            }
+
+            modelInput.addEventListener('input', function () { clean(modelInput); prefillData(); refresh(); });
+            modelInput.addEventListener('blur', function () { clean(modelInput); prefillData(); refresh(); });
+            if (dataInput) {
+              dataInput.addEventListener('input', function () { clean(dataInput); refresh(); });
+              dataInput.addEventListener('blur', function () { clean(dataInput); refresh(); });
+            }
+            refresh();
+          });
+
+          document.addEventListener('click', function (e) {
+            var btn = e.target.closest ? e.target.closest('.guided-copy') : null;
+            if (!btn) return;
+            var text = btn.getAttribute('data-copy-text') || '';
+            var original = btn.textContent;
+            function done(ok) {
+              btn.textContent = ok ? 'Copied' : 'Press Ctrl+C to copy';
+              setTimeout(function () { btn.textContent = original; }, 1500);
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); });
+            } else {
+              done(false);
+            }
+          });
+        })();
+        </script>
+
       </div>{# /tab-ai-models #}
+
+      <!-- ═══════════════════════════════════════
+           TAB: Diagnostics (own profile only)
+           ═══════════════════════════════════════ -->
+      <div id="tab-diagnostics" class="tab-panel hidden space-y-3">
+
+        <div class="mb-4">
+          <div class="flex items-center gap-2 overflow-x-auto pb-2">
+            {% for game in game_configs %}
+            <button type="button" class="diag-subtab {% if forloop.first %}active{% endif %}" data-diag-game="{{ game.type }}">
+              {{ game.label }}
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% for game in game_configs %}
+        <div id="diag-game-{{ game.type }}" class="diag-panel {% if not forloop.first %}hidden{% endif %}"
+             data-diag-game="{{ game.type }}"
+             data-run-url="{% url 'users:run_diagnostics' game_type=game.type %}"
+             data-latest-url="{% url 'users:diagnostics_latest' game_type=game.type %}"
+             {% if game.diag_missing_message %}data-no-model="1"{% endif %}>
+          <div class="card">
+            <h2 class="text-xl font-semibold mb-1">{{ game.label }} diagnostics</h2>
+            <p class="text-sm text-gray-500 mb-3">
+              Checks your registration, repository access, ownership proof, files, version and integrity,
+              then runs a live test of your model. Nothing about your model is changed.
+            </p>
+            <div class="flex items-center gap-3 mb-3">
+              <button type="button" class="btn-brand diag-run-btn"{% if game.diag_missing_message %} disabled{% endif %}>Run diagnostics</button>
+              {% if game.diag_missing_message %}
+              <span class="text-sm text-gray-500 diag-no-model-note">Register a model in the Gladiator tab first.
+                <a href="#" class="underline diag-goto-models">Open the Gladiator tab</a></span>
+              {% endif %}
+              <span class="text-sm text-gray-500 diag-status" role="status" aria-live="polite"></span>
+            </div>
+            <div class="diag-terminal" role="log" aria-label="{{ game.label }} diagnostics output">{% if game.diag_missing_message %}<div class="diag-line warn">[WARN] {{ game.diag_missing_message }}</div>{% endif %}</div>
+          </div>
+        </div>
+        {% endfor %}
+
+      </div>{# /tab-diagnostics #}
       {% endif %}
 
       <!-- Friends tab removed -->
@@ -1120,44 +1282,6 @@
 
 {% block extra_js %}
 <script>
-var GLADIATOR_MOODS = [
-  { value: '\u{1F608}', label: 'Menacing' },
-  { value: '\u{1F525}', label: 'On Fire' },
-  { value: '\u{1F9E0}', label: 'Calculating' },
-  { value: '\u{1F60E}', label: 'Cool' },
-  { value: '\u{1F480}', label: 'Ruthless' },
-  { value: '\u{1F921}', label: 'Chaotic' }
-];
-function renderMood(value) {
-  var el = document.getElementById('mood_display');
-  var mood = GLADIATOR_MOODS.find(function (m) { return m.value === value; }) || GLADIATOR_MOODS[0];
-  el.dataset.mood = mood.value;
-  el.textContent = mood.label;
-}
-renderMood(document.getElementById('mood_display').dataset.mood);
-</script>
-{% if is_own_profile %}
-<script>
-function saveField(field) {
-  var el = document.getElementById(field === 'current_mood' ? 'mood_display' : field);
-  var value;
-  if (field === 'current_mood') {
-    var idx = GLADIATOR_MOODS.findIndex(function (m) { return m.value === el.dataset.mood; });
-    value = GLADIATOR_MOODS[(idx + 1) % GLADIATOR_MOODS.length].value;
-    renderMood(value);
-  } else {
-    value = el.value;
-  }
-  htmx.ajax('POST', "{% url 'users:save_gladiator_field' %}", {
-    target: '#toastContainer',
-    swap: 'beforeend',
-    values: { field: field, value: value },
-    headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-  });
-}
-</script>
-{% endif %}
-<script>
 (function () {
   // Social features removed: friend/unfriend UI disabled.
 
@@ -1223,10 +1347,6 @@ function saveField(field) {
     var modelRepo = panel.dataset.modelRepo || '';
     var dataRepo  = panel.dataset.dataRepo  || '';
     var html = '';
-    if (data.revision_used) {
-      html += '<p class="text-xs text-gray-500 mb-2">Revision: <code class="text-gray-400">' +
-        esc(data.revision_used.substring(0, 16)) + '\u2026</code></p>';
-    }
     var label = gameType === 'chess' ? 'Chess' : 'Breakthrough';
     var allOk = (data.model_files && data.model_files.length > 0) &&
                 (data.data_files  && data.data_files.length  > 0);
@@ -1734,4 +1854,206 @@ function saveField(field) {
   });
 })();
 </script>
+{% if is_own_profile %}
+<script>
+(function () {
+  var tabBtn = document.querySelector('.profile-tab[data-tab="diagnostics"]');
+  var panels = document.querySelectorAll('.diag-panel');
+  if (!tabBtn || !panels.length) return;
+
+  var STATUS_URL_TEMPLATE = "{% url 'users:diagnostics_status' run_id=0 %}";
+  var CSRF_TOKEN = '{{ csrf_token }}';
+  var POLL_INTERVAL_MS = 1000;
+  var MAX_POLL_MS = 8 * 60 * 1000;
+  var QUEUED_WARN_MS = 15 * 1000;
+  var QUEUED_WARN_TEXT = 'The diagnostics worker has not picked up this run yet. If this persists, the service may be busy; try again in a minute.';
+  var LEVELS = ['info', 'ok', 'warn', 'fail'];
+  var stateByGame = {};
+
+  function panelFor(game) { return document.getElementById('diag-game-' + game); }
+  function activePanel() {
+    var active = document.querySelector('.diag-subtab.active');
+    return active ? panelFor(active.dataset.diagGame) : panels[0];
+  }
+  function parts(panel) {
+    return {
+      term: panel.querySelector('.diag-terminal'),
+      btn: panel.querySelector('.diag-run-btn'),
+      status: panel.querySelector('.diag-status')
+    };
+  }
+  function stateFor(panel) {
+    var game = panel.dataset.diagGame;
+    if (!stateByGame[game]) stateByGame[game] = { polling: false, timer: null, runId: null, next: 0, deadline: 0, startedAt: 0, queuedWarned: false };
+    return stateByGame[game];
+  }
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function clock() {
+    var d = new Date();
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function appendLine(panel, line) {
+    var term = parts(panel).term;
+    var level = LEVELS.indexOf(line.level) >= 0 ? line.level : 'info';
+    var msg = String(line.msg == null ? '' : line.msg);
+    var el = document.createElement('div');
+    el.className = 'diag-line ' + level + (msg.indexOf('RESULT:') === 0 ? ' result' : '');
+    el.textContent = '[' + String(line.t || clock()) + '] [' + level.toUpperCase() + '] ' + msg;
+    term.appendChild(el);
+    term.scrollTop = term.scrollHeight;
+  }
+  function addLocal(panel, level, msg) { appendLine(panel, { t: clock(), level: level, msg: msg }); }
+  function clearTerminal(panel) { parts(panel).term.textContent = ''; }
+  function setStatus(panel, text) { parts(panel).status.textContent = text; }
+  function setBusy(panel, busy) { parts(panel).btn.disabled = busy; }
+
+  var VERDICT_TEXT = {
+    pass: 'Finished: your model works correctly.',
+    fail: 'Finished: problems found.',
+    platform_error: 'Finished: platform issue, please try again later.'
+  };
+  function finish(panel, data) {
+    var st = stateFor(panel);
+    st.polling = false;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    setBusy(panel, false);
+    if (data && data.state === 'error') setStatus(panel, 'Diagnostics failed.');
+    else if (data) setStatus(panel, VERDICT_TEXT[data.verdict] || 'Finished.');
+    else setStatus(panel, '');
+  }
+
+  function fetchJson(url, options) {
+    options = options || {};
+    options.credentials = 'same-origin';
+    options.headers = Object.assign({ 'X-Requested-With': 'XMLHttpRequest' }, options.headers || {});
+    return fetch(url, options).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        return { ok: r.ok, status: r.status, data: data };
+      });
+    });
+  }
+
+  function poll(panel) {
+    var st = stateFor(panel);
+    if (Date.now() > st.deadline) {
+      addLocal(panel, 'warn', 'Stopped waiting for results after 8 minutes. Reopen this tab later to see the final result.');
+      finish(panel, null);
+      return;
+    }
+    var url = STATUS_URL_TEMPLATE.replace('/0/', '/' + st.runId + '/') + '?since=' + st.next;
+    fetchJson(url).then(function (res) {
+      if (!res.ok) {
+        addLocal(panel, 'warn', 'Could not read the diagnostics status. Reopen this tab to try again.');
+        finish(panel, null);
+        return;
+      }
+      (res.data.lines || []).forEach(function (line) { appendLine(panel, line); });
+      st.next = res.data.next;
+      if (res.data.state === 'finished' || res.data.state === 'error') {
+        finish(panel, res.data);
+        return;
+      }
+      if (!st.queuedWarned && res.data.state === 'queued' && !st.next && Date.now() - st.startedAt >= QUEUED_WARN_MS) {
+        st.queuedWarned = true;
+        addLocal(panel, 'warn', QUEUED_WARN_TEXT);
+      }
+      st.timer = setTimeout(function () { poll(panel); }, POLL_INTERVAL_MS);
+    }).catch(function () {
+      st.timer = setTimeout(function () { poll(panel); }, POLL_INTERVAL_MS);
+    });
+  }
+
+  function startPolling(panel, runId, next) {
+    var st = stateFor(panel);
+    st.polling = true;
+    st.runId = runId;
+    st.next = next;
+    st.deadline = Date.now() + MAX_POLL_MS;
+    st.startedAt = Date.now();
+    st.queuedWarned = false;
+    setBusy(panel, true);
+    setStatus(panel, 'Running...');
+    st.timer = setTimeout(function () { poll(panel); }, POLL_INTERVAL_MS);
+  }
+
+  function loadLatest(panel) {
+    var st = stateFor(panel);
+    if (st.polling || panel.dataset.noModel === '1') return;
+    fetchJson(panel.dataset.latestUrl).then(function (res) {
+      if (st.polling || !res.ok) return;
+      var run = res.data.run;
+      clearTerminal(panel);
+      if (!run) {
+        setStatus(panel, 'No diagnostics run yet.');
+        return;
+      }
+      (run.lines || []).forEach(function (line) { appendLine(panel, line); });
+      if (run.state === 'queued' || run.state === 'running') {
+        startPolling(panel, run.run_id, run.next);
+      } else {
+        finish(panel, run);
+      }
+    }).catch(function () {});
+  }
+
+  function runDiagnostics(panel) {
+    var st = stateFor(panel);
+    if (st.polling) return;
+    setBusy(panel, true);
+    clearTerminal(panel);
+    setStatus(panel, 'Starting...');
+    fetchJson(panel.dataset.runUrl, { method: 'POST', headers: { 'X-CSRFToken': CSRF_TOKEN } })
+      .then(function (res) {
+        if (res.ok && res.data.no_model) {
+          addLocal(panel, 'warn', res.data.message || 'No model is registered for this game.');
+          setBusy(panel, false);
+          setStatus(panel, '');
+          return;
+        }
+        if (!res.ok || res.data.run_id == null) {
+          addLocal(panel, 'warn', res.data.message || 'Diagnostics could not be started.');
+          setBusy(panel, false);
+          setStatus(panel, '');
+          return;
+        }
+        startPolling(panel, res.data.run_id, 0);
+      })
+      .catch(function () {
+        addLocal(panel, 'warn', 'Network error while starting diagnostics. Please try again.');
+        setBusy(panel, false);
+        setStatus(panel, '');
+      });
+  }
+
+  panels.forEach(function (panel) {
+    parts(panel).btn.addEventListener('click', function () { runDiagnostics(panel); });
+  });
+
+  document.querySelectorAll('.diag-subtab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.diag-subtab').forEach(function (b) { b.classList.remove('active'); });
+      panels.forEach(function (p) { p.classList.add('hidden'); });
+      btn.classList.add('active');
+      var panel = panelFor(btn.dataset.diagGame);
+      if (panel) {
+        panel.classList.remove('hidden');
+        loadLatest(panel);
+      }
+    });
+  });
+
+  document.querySelectorAll('.diag-goto-models').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      var modelsTab = document.querySelector('.profile-tab[data-tab="ai-models"]');
+      if (modelsTab) modelsTab.click();
+    });
+  });
+
+  tabBtn.addEventListener('click', function () { loadLatest(activePanel()); });
+  if (new URLSearchParams(window.location.search).get('tab') === 'diagnostics') loadLatest(activePanel());
+})();
+</script>
+{% endif %}
 {% endblock %}

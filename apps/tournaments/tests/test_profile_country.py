@@ -10,7 +10,8 @@ from django.utils import timezone
 
 from apps.tournaments.models import Tournament, TournamentParticipant, TournamentTerms
 from apps.tournaments.profile_country import (
-    AGREE, MISMATCH, MISSING, NO_DATA, NOT_ALLOWED, country_agreement, profile_country_verdict,
+    AGREE, MISMATCH, MISSING, NO_DATA, NOT_ALLOWED, NOT_ELIGIBLE_NOTICE, country_agreement,
+    profile_country_verdict,
 )
 from apps.tournaments.tests.test_terms_join import PASS_GATES, JoinTermsTestBase
 
@@ -69,7 +70,7 @@ class VerdictTest(TestCase):
         self.user.claim_country("US")
         verdict = self.verdict(t)
         self.assertEqual(verdict.kind, NOT_ALLOWED)
-        self.assertIn("open to residents of India and Israel only", verdict.message)
+        self.assertEqual(verdict.message, NOT_ELIGIBLE_NOTICE)
 
     def test_free_israel_only_tournament_has_no_country_gate(self):
         t, _ = _make("v6", Tournament.Type.QA, ["IL"], money=False)
@@ -110,9 +111,7 @@ class EarlyFilterViewsTest(JoinTermsTestBase):
         resp = self.client.get(self.terms_url(t))
         self.assertEqual(resp.status_code, 302)
         self.assertEqual(resp["Location"], reverse("tournaments:detail", args=[t.pk]))
-        self.assertIn(
-            "This tournament is open to residents of India and Israel only.", _messages(resp)[0],
-        )
+        self.assertIn(NOT_ELIGIBLE_NOTICE, _messages(resp)[0])
 
     def test_wrong_country_cannot_join_even_with_a_crafted_post(self):
         t, terms = _make("e4", Tournament.Type.GLADIATORMANIA, ["IN"])
@@ -120,7 +119,7 @@ class EarlyFilterViewsTest(JoinTermsTestBase):
         resp = self.join(t, terms)
         self.assertEqual(resp.status_code, 302)
         self.assertFalse(self.joined(t))
-        self.assertIn("open to residents of India only", _messages(resp)[-1])
+        self.assertIn(NOT_ELIGIBLE_NOTICE, _messages(resp)[-1])
 
     def test_matching_country_joins_and_records_the_profile_country(self):
         t, terms = _make("e5", Tournament.Type.GLADIATORMANIA, ["IN", "IL"])

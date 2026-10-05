@@ -10,6 +10,11 @@ def default_allowed_countries():
     return list(ISRAEL_ONLY)
 
 
+def is_open_to_all(value):
+    """True only for a real empty list: None, "" or other junk must never mean "all nations"."""
+    return isinstance(value, (list, tuple)) and len(value) == 0
+
+
 def normalize_country_codes(value):
     """Upper-cased, de-duplicated codes from a list or a comma/space separated string."""
     if isinstance(value, str):
@@ -43,6 +48,8 @@ def country_name(code):
 def countries_phrase(codes):
     """"India", "India and Israel", "A, B and C"."""
     names = [country_name(c) for c in normalize_country_codes(codes)]
-    if len(names) <= 1:
-        return "".join(names)
+    if not names:
+        return "all countries"
+    if len(names) == 1:
+        return names[0]
     return ", ".join(names[:-1]) + " and " + names[-1]

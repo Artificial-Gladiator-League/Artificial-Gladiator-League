@@ -138,7 +138,7 @@ class TournamentAdmin(admin.ModelAdmin):
             "description": (
                 "Enable \"is_money_tournament\" to activate prize-pool mode. "
                 "Entry is restricted to residents of the countries in allowed_countries "
-                "(IP-based; Israel only by default). "
+                "(IP-based). Leave allowed_countries empty to open the tournament to all countries. "
                 "Set terms_version to a non-empty string (e.g. \"1.0\") to "
                 "require participants to accept terms before joining. "
                 "prize_structure is an optional JSON list defining per-place payouts, e.g. "
@@ -160,7 +160,17 @@ class TournamentAdmin(admin.ModelAdmin):
 
     @admin.display(description="Countries")
     def countries_display(self, obj):
+        if obj.is_open_to_all:
+            return "All countries"
         return ", ".join(obj.allowed_country_codes)
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        # The add form opens as a Gauntlet (the model's default type), which is open to all countries;
+        # the admin script switches the field for other types.
+        if initial.get("type", Tournament.Type.GAUNTLET) == Tournament.Type.GAUNTLET:
+            initial.setdefault("allowed_countries", [])
+        return initial
 
     def get_form(self, request, obj=None, **kwargs):
         form = super().get_form(request, obj, **kwargs)

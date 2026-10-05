@@ -42,6 +42,7 @@ def build_terms_context(tournament):
     required = required_confirmations(tournament)
     declaration = {
         "israel_only": tournament.is_israel_only,
+        "open_to_all": tournament.is_open_to_all,
         "residency_field_name": residency_field_name(tournament),
         "residency_countries": countries_phrase(tournament.allowed_country_codes),
         "payout_method_label": tournament.get_payout_method_display(),
@@ -71,7 +72,7 @@ def build_terms_context(tournament):
         "terms_body": mark_safe(render_body(terms, tournament)),
         "show_prize_box": terms.has_prize,
         "show_paypal_box": paypal_email_required(tournament),
-        "show_geo_notice": terms.requires_israeli_residency,
+        "show_geo_notice": tournament.is_open_to_all or terms.requires_israeli_residency,
         "require_age": required["age"],
         "require_residency": required["residency"],
         **declaration,
@@ -87,14 +88,16 @@ def required_confirmations(tournament):
     """Which confirmations the join POST must carry for *tournament*.
 
     Without a terms record: age and residency always, the terms box only when the
-    legacy ``terms_version`` is set (unchanged behaviour).
+    legacy ``terms_version`` is set (unchanged behaviour). An open-to-all tournament
+    has no country to declare, so it never asks for a residency declaration.
     """
     terms = tournament.terms
+    asks_residency = not tournament.is_open_to_all
     if terms is None:
-        return {"age": True, "residency": True, "terms": bool(tournament.terms_version)}
+        return {"age": True, "residency": asks_residency, "terms": bool(tournament.terms_version)}
     return {
         "age": terms.requires_age_18,
-        "residency": terms.requires_israeli_residency,
+        "residency": terms.requires_israeli_residency and asks_residency,
         "terms": True,
     }
 

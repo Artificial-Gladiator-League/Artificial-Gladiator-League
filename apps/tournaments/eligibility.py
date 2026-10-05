@@ -32,7 +32,7 @@ import requests
 from django.conf import settings
 from django.core.cache import cache
 
-from .countries import ISRAEL_ONLY, countries_phrase, normalize_country_codes
+from .countries import ISRAEL_ONLY, countries_phrase, is_open_to_all, normalize_country_codes
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def geo_block_message(allowed_countries, country) -> str:
     codes = normalize_country_codes(allowed_countries)
     if codes == ISRAEL_ONLY:
         return ISRAEL_ONLY_BLOCK_MESSAGE
-    if country is None:
+    if country is None or not codes:
         return UNVERIFIED_LOCATION_MESSAGE
     return (
         f"This tournament is open to residents of {countries_phrase(codes)} only. "
@@ -141,7 +141,8 @@ def check_geo_eligibility(
     """Check whether the request originates from an eligible country.
 
     *allowed_countries* is the tournament's list of ISO codes; when omitted the
-    global ``MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES`` fallback is used.
+    global ``MONEY_TOURNAMENT_ELIGIBLE_COUNTRIES`` fallback is used. An empty
+    list means "open to all countries": nothing is looked up and nobody is blocked.
 
     Returns
     -------
@@ -150,14 +151,19 @@ def check_geo_eligibility(
     * ``eligible = True``  — country is in the allowed list
     * ``eligible = False`` — country is NOT allowed, or the lookup failed
       (``country_code`` is then ``None``)
-    * ``eligible = None``  — geo check was skipped (private IP, or
+    * ``eligible = None``  — geo check was skipped (private IP, open-to-all list, or
       ``MONEY_TOURNAMENT_GEO_ENABLED = False``); treat as allowed in dev
     """
+    ip = get_client_ip(request)
+
+    if is_open_to_all(allowed_countries):
+        log.debug("geoip: open to all countries — skipping check")
+        return ip, None, None
+
     allowed = (
         _eligible_countries() if allowed_countries is None
         else normalize_country_codes(allowed_countries)
     )
-    ip = get_client_ip(request)
 
     if not _geo_enabled():
         log.debug("geoip: MONEY_TOURNAMENT_GEO_ENABLED=False — skipping check")

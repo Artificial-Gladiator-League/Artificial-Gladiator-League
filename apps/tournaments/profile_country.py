@@ -6,6 +6,7 @@ for the reasons below.
 
 * Country-restricted tournament (``allowed_countries`` is not exactly ["IL"]) and the
   profile has no country  -> send the player to profile settings to set it once.
+* Open-to-all tournament (empty ``allowed_countries``) -> never blocks, no country needed.
 * Profile country set but not allowed -> blocked with a clear message. This applies to
   money tournaments, where the geo gate also applies. Free Israel-only tournaments
   (QA, ...) have no country gate today and keep having none.
@@ -20,6 +21,12 @@ from .countries import ISRAEL_ONLY, countries_phrase
 MISSING = "missing"
 NOT_ALLOWED = "not_allowed"
 
+# Single source of the text shown to a player whose profile country is not allowed.
+NOT_ELIGIBLE_NOTICE = (
+    "Your country is not eligible for this tournament, "
+    "but you can still take part in other tournaments."
+)
+
 
 @dataclass(frozen=True)
 class ProfileCountryVerdict:
@@ -28,11 +35,7 @@ class ProfileCountryVerdict:
 
 
 def not_allowed_message(codes) -> str:
-    from .eligibility import ISRAEL_ONLY_BLOCK_MESSAGE
-
-    if list(codes) == ISRAEL_ONLY:
-        return ISRAEL_ONLY_BLOCK_MESSAGE      # the existing wording, unchanged
-    return f"This tournament is open to residents of {countries_phrase(codes)} only."
+    return NOT_ELIGIBLE_NOTICE
 
 
 def missing_message(codes) -> str:
@@ -45,6 +48,8 @@ def missing_message(codes) -> str:
 
 def profile_country_verdict(user, tournament) -> ProfileCountryVerdict | None:
     """None = no objection; otherwise the reason the player must be stopped early."""
+    if tournament.is_open_to_all:
+        return None
     codes = tournament.allowed_country_codes
     restricted = codes != ISRAEL_ONLY
     country = (getattr(user, "country", "") or "").upper()

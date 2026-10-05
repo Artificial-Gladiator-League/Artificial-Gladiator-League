@@ -148,6 +148,58 @@ def _check_syntax(model_dir: Path, manifest: dict, game_type: str) -> list[str]:
     return problems
 
 
+def check_model_verbose(model_dir: Path, data_dir: Path | None, game_type: str) -> dict:
+    """Run the full contract check and return the detail behind the verdict.
+
+    Returns ``{"problems": [...], "warnings": [...], "moves": [...], "stage": ...}``
+    where ``stage`` is the stage that produced the result: ``"manifest"`` or
+    ``"syntax"`` (host-side checks failed, sandbox not started) or
+    ``"sandbox"`` (host-side checks passed and the sandbox ran).
+    Raises ``SandboxUnavailableError`` exactly like :func:`check_model`.
+    """
+    model_dir = Path(model_dir)
+    data_dir = Path(data_dir) if data_dir else None
+
+    if not model_dir.exists() or not model_dir.is_dir():
+        return {
+            "problems": [f"model directory does not exist: {model_dir}"],
+            "warnings": [],
+            "moves": [],
+            "stage": "manifest",
+        }
+
+    manifest, problems = _load_manifest(model_dir)
+    problems += _check_manifest_fields(manifest, model_dir, data_dir)
+    manifest_problem_count = len(problems)
+    problems += _check_syntax(model_dir, manifest, game_type)
+
+    if problems:
+        # Don't spin up Docker for a model that can't even import — the
+        # sandbox check below would just repeat the same failure less
+        # legibly (a raw traceback instead of "syntax error in X").
+        return {
+            "problems": problems,
+            "warnings": [],
+            "moves": [],
+            "stage": "manifest" if manifest_problem_count else "syntax",
+        }
+
+    from apps.games.sandbox_runner import run_check_in_sandbox
+
+    result = run_check_in_sandbox(model_dir, data_dir, game_type)
+    warnings = list(result.get("warnings") or [])
+    for note in warnings:
+        log.info("model_check warning (game_type=%s): %s", game_type, note)
+    problems += list(result.get("problems") or [])
+
+    return {
+        "problems": problems,
+        "warnings": warnings,
+        "moves": list(result.get("moves") or []),
+        "stage": "sandbox",
+    }
+
+
 def check_model(model_dir: Path, data_dir: Path | None, game_type: str) -> list[str]:
     """Run the full contract check for a model. Returns a list of problems.
 
@@ -155,27 +207,4 @@ def check_model(model_dir: Path, data_dir: Path | None, game_type: str) -> list[
     ``apps.games.exceptions.SandboxUnavailableError`` if the sandbox itself
     could not run (infra fault) — this is intentionally NOT swallowed here.
     """
-    model_dir = Path(model_dir)
-    data_dir = Path(data_dir) if data_dir else None
-
-    if not model_dir.exists() or not model_dir.is_dir():
-        return [f"model directory does not exist: {model_dir}"]
-
-    manifest, problems = _load_manifest(model_dir)
-    problems += _check_manifest_fields(manifest, model_dir, data_dir)
-    problems += _check_syntax(model_dir, manifest, game_type)
-
-    if problems:
-        # Don't spin up Docker for a model that can't even import — the
-        # sandbox check below would just repeat the same failure less
-        # legibly (a raw traceback instead of "syntax error in X").
-        return problems
-
-    from apps.games.sandbox_runner import run_check_in_sandbox
-
-    result = run_check_in_sandbox(model_dir, data_dir, game_type)
-    for note in result.get("warnings") or []:
-        log.info("model_check warning (game_type=%s): %s", game_type, note)
-    problems += list(result.get("problems") or [])
-
-    return problems
+    return check_model_verbose(model_dir, data_dir, game_type)["problems"]

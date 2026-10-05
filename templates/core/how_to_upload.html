@@ -12,155 +12,264 @@
     </p>
   </div>
 
-  <div class="flex flex-wrap justify-center gap-4 mb-12 text-xs text-center">
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">1</div><span class="text-gray-400">Joining your AG Champion</span></div>
-    <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">2</div><span class="text-gray-400">Create Repos</span></div>
-    <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">3</div><span class="text-gray-400">Prove Ownership</span></div>
-    <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">4</div><span class="text-gray-400">Register</span></div>
-    <div class="hidden sm:flex items-center pb-4"><div class="w-10 h-0.5 bg-borderDark"></div></div>
-    <div class="flex flex-col items-center gap-1"><div class="w-9 h-9 rounded-full bg-brand flex items-center justify-center font-bold text-white">5</div><span class="text-gray-400">Compete</span></div>
+  <!-- Contents -->
+  <div class="card mb-6">
+    <h2 class="text-xl font-bold mb-3">Contents</h2>
+    <ol class="list-decimal list-inside text-sm text-gray-400 space-y-1">
+      <li><a href="#quick-start" class="text-brand hover:underline">Quick start</a></li>
+      <li><a href="#example" class="text-brand hover:underline">Start from a working example</a></li>
+      <li><a href="#step-model" class="text-brand hover:underline">Step 1: Write your model (the load / get_move contract)</a></li>
+      <li><a href="#step-config" class="text-brand hover:underline">Step 1b: The config files</a></li>
+      <li><a href="#step-repos" class="text-brand hover:underline">Step 2: Create your Hugging Face repositories</a></li>
+      <li><a href="#step-ownership" class="text-brand hover:underline">Step 3: Prove ownership and SHA pinning</a></li>
+      <li><a href="#step-register" class="text-brand hover:underline">Step 4: Register in the Gladiator tab</a></li>
+      <li><a href="#step-diagnostics" class="text-brand hover:underline">Step 5: Run Diagnostics</a></li>
+      <li><a href="#step-compete" class="text-brand hover:underline">Step 6: Compete in games and tournaments</a></li>
+      <li><a href="#best-practices" class="text-brand hover:underline">Best practices</a></li>
+      <li><a href="#troubleshooting" class="text-brand hover:underline">Troubleshooting</a></li>
+      <li><a href="#faq" class="text-brand hover:underline">FAQ</a></li>
+    </ol>
+  </div>
+
+  <!-- Quick start -->
+  <div id="quick-start" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Quick start</h2>
+    <p class="text-gray-400 text-sm mb-4">The shortest path from nothing to a working, registered model. Details for every step are further down this page.</p>
+    <ol class="space-y-3 text-sm">
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
+        <span><strong>Copy the example model.</strong> Open the example account linked <a href="#example" class="text-brand hover:underline">below</a> and duplicate one of its repos into your own Hugging Face account.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
+        <span><strong>Make your copy Gated.</strong> In your repo's <em>Settings</em>, enable <em>Access Requests</em>. The platform rejects a public model repo.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
+        <span><strong>Approve <code class="bg-surface px-1 rounded text-gold">ArtificialGladiatorLeague</code>.</strong> In the Access settings of your repo, approve that account (on the Gladiator tab the yellow button <strong>Open Access Settings</strong> takes you there).</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">4</span>
+        <span><strong>Enter the repo.</strong> Open the <strong>Gladiator</strong> tab on your <a href="{% url 'users:profile' %}" class="text-brand hover:underline">Profile</a>, type or paste your model repo, and click the gold button <strong>Save and verify</strong>.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">5</span>
+        <span><strong>Add <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code>.</strong> Put it at the root of your model repo (and of your data repo too, if you use one) with the code shown on the Gladiator tab, then click <strong>Verify Ownership</strong>.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">6</span>
+        <span><strong>Run Diagnostics.</strong> Open the <strong>Diagnostics</strong> tab and click <strong>Run diagnostics</strong>. Fix what it reports and run it again until it says <em>RESULT: your model works correctly</em>.</span>
+      </li>
+    </ol>
+  </div>
+
+  <!-- Working example -->
+  <div id="example" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Start from a working example</h2>
+    <div class="rounded-lg border border-brand/30 bg-surface p-5 text-sm">
+      <p class="text-gray-300 mb-3">
+        The easiest way to get a model that passes every platform check is to copy one that already does:
+      </p>
+      <ol class="list-decimal list-inside text-gray-400 space-y-1.5 text-xs">
+        <li>Open <a href="https://huggingface.co/chaim-duchovny" target="_blank" rel="noopener" class="text-brand hover:underline">https://huggingface.co/chaim-duchovny</a> and open a repo.</li>
+        <li>Use <strong class="text-gray-200">Duplicate this repo</strong> to copy it into your own account.</li>
+        <li>Make your copy <strong class="text-gray-200">Gated</strong> (Settings, Access Requests).</li>
+        <li>Edit the files to build your own Artificial Gladiator.</li>
+      </ol>
+    </div>
   </div>
 
   <!-- STEP 1 -->
-  <div class="card mb-6">
+  <div id="step-model" class="card mb-6">
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
       <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">Joining your AG Champion</h2>
+        <h2 class="text-xl font-bold mb-1">Write your model</h2>
         <p class="text-gray-400 text-sm mb-5">
-          Your AG Champion is a Python brain that receives a board position and returns a legal move string.
+          Your AG Champion is Python code that receives a board position and returns a legal move string.
           The logic inside is entirely up to you — Monte Carlo Vector Search (MCVS), random play, minimax, MCTS, a neural network, or anything else.
-          Your code is downloaded into a private cache and executed inside an isolated <strong class="text-white">Docker sandbox</strong>
+          Your code is downloaded to the platform and executed inside an isolated <strong class="text-white">Docker sandbox</strong>
           on the platform's own servers — no external hosting or always-on server required on your end.
         </p>
 
-        <!-- Interface: Docker sandbox entry point -->
+        <!-- The contract -->
         <div class="rounded-lg border border-brand/30 bg-surface p-5 mb-5">
-          <h3 class="text-sm font-semibold text-brand mb-1">Entry Point — <code class="bg-black/30 px-1 rounded">get_move</code></h3>
+          <h3 class="text-sm font-semibold text-brand mb-1">The contract: <code class="bg-black/30 px-1 rounded">load(ctx)</code> and <code class="bg-black/30 px-1 rounded">get_move(state, fen, player)</code></h3>
           <p class="text-xs text-gray-400 mb-3">
-            Your model repo's entry-point module must expose one of <code class="bg-black/30 px-1 rounded">get_move(fen, player, zone_db=None)</code>,
-            a <code class="bg-black/30 px-1 rounded">UCTSearcher</code> class with a <code class="bg-black/30 px-1 rounded">.search(fen, player)</code> method, or a
-            <code class="bg-black/30 px-1 rounded">predict(fen, player)</code> function. On every move, the platform launches a fresh sandbox
-            container, calls your function with the board position and active player, and reads back the move string it returns.
+            Your entry-point module must define both functions. There is no other interface.
           </p>
-          <div class="rounded-lg bg-black/30 p-4 text-sm font-mono mb-3 overflow-x-auto">
-            <div class="text-gray-500 mb-1"># my_model.py — in your model repo</div>
-            <div class="mt-3 text-gray-400 text-xs"># The platform sends the board position (and the active player).</div>
-            <div class="text-gray-400 text-xs"># Return your chosen move as a string in the format the game expects.</div>
-            <div class="mt-1"><span class="text-blue-300">def</span> <span class="text-brand">get_move</span>(fen: str, player: str, zone_db=<span class="text-purple-400">None</span>) -&gt; str:</div>
-            <div class="pl-4 text-gray-500 text-xs"># ---- your AI logic here ----</div>
-            <div class="pl-4 text-gray-500 text-xs"># minimax, MCTS, neural net, opening table — whatever you like</div>
-            <div class="pl-4"><span class="text-purple-400">return</span> <span class="text-green-400">"e2e4"</span>  <span class="text-gray-500"># return a valid move string</span></div>
-          </div>
+          <ul class="text-xs text-gray-400 space-y-1.5 mb-3 list-disc list-inside">
+            <li><code class="bg-black/30 px-1 rounded">state = load(ctx)</code> is called <strong class="text-gray-200">once</strong> when your model is loaded. Open your weights, opening books and other files here and return whatever you want to keep; it is passed back to you as <code class="bg-black/30 px-1 rounded">state</code>.</li>
+            <li><code class="bg-black/30 px-1 rounded">ctx.model_dir</code> and <code class="bg-black/30 px-1 rounded">ctx.data_dir</code> are real, read-only folders (<code>pathlib.Path</code>) holding your model repo files and your data repo files. <code class="bg-black/30 px-1 rounded">ctx.data_dir</code> is <code>None</code> when no data files are available. The platform never opens your data files for you; read them yourself inside <code>load()</code>.</li>
+            <li><code class="bg-black/30 px-1 rounded">move = get_move(state, fen, player)</code> is called for every move. <code>fen</code> is the position, <code>player</code> is <code>"w"</code> or <code>"b"</code> (the side to move). Return the move as a plain string.</li>
+          </ul>
+          <div class="rounded-lg bg-black/30 p-4 text-xs font-mono mb-3 overflow-x-auto"><pre class="whitespace-pre"># chess_mcvs.py - at the root of your model repo
+import random
+
+import chess
+
+
+def load(ctx):
+    # Called once. ctx.data_dir is None if no data files are available.
+    state = {"opening_book": None}
+    if ctx.data_dir is not None:
+        book = ctx.data_dir / "opening_book.txt"
+        if book.exists():
+            state["opening_book"] = book.read_text(encoding="utf-8").splitlines()
+    return state
+
+
+def get_move(state, fen, player):
+    # Return one legal move in UCI notation, for example "e2e4".
+    board = chess.Board(fen)
+    legal = list(board.legal_moves)
+    if not legal:
+        return ""
+    # ---- replace this with your real model ----
+    return random.choice(legal).uci()</pre></div>
+          <p class="text-xs text-gray-500 mb-3">
+            By default the platform imports <code class="bg-black/30 px-1 rounded">&lt;game&gt;_mcvs.py</code> (<code>chess_mcvs.py</code> for Chess, <code>breakthrough_mcvs.py</code> for Breakthrough). Use <code class="bg-black/30 px-1 rounded">entrypoint</code> in <code>config_model.json</code> to name a different file.
+          </p>
+
+          <h4 class="text-xs font-semibold text-gray-200 mb-1">Move format</h4>
+          <ul class="text-xs text-gray-400 space-y-1.5 mb-3 list-disc list-inside">
+            <li><strong class="text-gray-200">Chess</strong>: UCI notation, for example <code class="bg-black/30 px-1 rounded">e2e4</code>, or <code class="bg-black/30 px-1 rounded">e7e8q</code> for a promotion. Not SAN such as <code>Nf3</code>.</li>
+            <li><strong class="text-gray-200">Breakthrough</strong>: exactly four characters, the square you move from followed by the square you move to, for example <code class="bg-black/30 px-1 rounded">a2a3</code> or <code class="bg-black/30 px-1 rounded">b2c3</code>.
+              The position is a FEN-like string with rank 8 first, <code>W</code> for white pieces, <code>B</code> for black pieces, digits for empty squares and the side to move at the end; the start position is
+              <code class="bg-black/30 px-1 rounded">BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w</code>.
+              A piece moves one square forward, straight (only onto an empty square) or diagonally (onto an empty square or an enemy piece). White moves toward rank 8, black toward rank 1.</li>
+          </ul>
+
+          <div class="rounded-lg bg-black/30 p-4 text-xs font-mono mb-3 overflow-x-auto"><pre class="whitespace-pre"># breakthrough_mcvs.py - minimal skeleton
+def load(ctx):
+    return {}
+
+
+def get_move(state, fen, player):
+    # fen example: "BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w"
+    # Return "from-square" + "to-square", for example "a2a3".
+    return "a2a3"</pre></div>
+
           <ul class="text-xs text-gray-400 space-y-1.5">
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>No web server, no <code class="bg-black/30 px-1 rounded">requirements.txt</code> to keep alive — the sandbox image already has common ML libraries installed.</span></li>
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>The sandbox has no network access, a read-only filesystem, and strict CPU/memory/time limits.</span></li>
-            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">✓</span><span>Your model repo can be Gated — the platform only needs read access, never a public endpoint.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">-</span><span>No web server, Space, or hosted endpoint to run. Your model repo stays Gated; the platform only needs the read access you approve.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">-</span><span>The sandbox has no network access, a read-only filesystem (only a small temporary folder, <code>/tmp</code>, is writable) and strict CPU, memory and time limits. Calls such as <code>requests</code> or <code>urllib</code> will fail.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">-</span><span>The sandbox image is fixed and nothing is installed at match time. The project's sandbox image definition installs <code>numpy</code>, <code>python-chess</code> and <code>torch</code> (CPU only); do not depend on other third-party packages.</span></li>
+            <li class="flex items-start gap-2"><span class="text-brand mt-0.5">-</span><span>Save your files as UTF-8. The platform also tolerates common Windows encodings (cp1255, cp1252) and reports a warning when it has to fall back.</span></li>
           </ul>
         </div>
 
         <!-- Flexibility callout -->
         <div class="rounded-lg bg-brand/10 border border-brand/30 px-4 py-3 text-sm">
           <strong class="text-brand">Any algorithm is welcome.</strong>
-          <span class="text-gray-300"> Monte Carlo Vector Search (MCVS), Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches — if it returns a valid move string within the time limit, it qualifies.</span>
+          <span class="text-gray-300"> Monte Carlo Vector Search (MCVS), Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches — if it returns a legal move string within the time limit, it qualifies.</span>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- STEP 1b: config files -->
+  <div id="step-config" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">The config files</h2>
+    <p class="text-gray-400 text-sm mb-5">
+      Two small JSON files describe your repos. Add both: the sandbox only needs <code class="bg-black/30 px-1 rounded">config_model.json</code> fields it recognises, but the <strong>Repo File Status</strong> panel on the Gladiator tab and the Diagnostics tab also read <code class="bg-black/30 px-1 rounded">files</code> from <code class="bg-black/30 px-1 rounded">config_model.json</code> (model repo) and <code class="bg-black/30 px-1 rounded">config_data.json</code> (data repo) and report a problem when they cannot be read.
+    </p>
+
+    <div class="rounded-lg border border-borderDark bg-surface p-5 mb-4">
+      <h3 class="font-semibold text-brand mb-2"><code>config_model.json</code> <span class="text-xs font-normal text-gray-500">(root of the model repo)</span></h3>
+      <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto mb-3"><pre class="whitespace-pre">{
+  "schema_version": 1,
+  "entrypoint": "chess_mcvs.py",
+  "data_files": ["opening_book.txt"],
+  "requirements": ["numpy", "python-chess"],
+  "files": ["chess_mcvs.py"]
+}</pre></div>
+      <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+        <li><code class="bg-black/30 px-1 rounded">schema_version</code> (integer, optional): manifest format version. Use <code>1</code>.</li>
+        <li><code class="bg-black/30 px-1 rounded">entrypoint</code> (string, optional): the <code>.py</code> file to import. Default: <code>&lt;game&gt;_mcvs.py</code>. If that file does not exist either, every <code>.py</code> file in the repo is imported.</li>
+        <li><code class="bg-black/30 px-1 rounded">modules</code> (list of strings, optional): an older alternative to <code>entrypoint</code>. Every listed file is imported and the last one wins.</li>
+        <li><code class="bg-black/30 px-1 rounded">data_files</code> (list of strings, optional): files your model expects to find in your data repo. The model check fails if one of them is missing.</li>
+        <li><code class="bg-black/30 px-1 rounded">requirements</code> (list of strings, optional): informational only. Nothing is installed.</li>
+        <li><code class="bg-black/30 px-1 rounded">files</code> (list of strings): the files that must exist in the model repo. Used by the Repo File Status panel and by Diagnostics; the sandbox does not use it.</li>
+      </ul>
+      <p class="text-xs text-gray-500 mt-2">
+        The file must be valid JSON (no comments, no trailing commas). A listed <code>entrypoint</code> or <code>modules</code> file that does not exist is reported as a problem.
+      </p>
+    </div>
+
+    <div class="rounded-lg border border-borderDark bg-surface p-5">
+      <h3 class="font-semibold text-purple-400 mb-2"><code>config_data.json</code> <span class="text-xs font-normal text-gray-500">(root of the data repo)</span></h3>
+      <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto mb-3"><pre class="whitespace-pre">{
+  "files": ["opening_book.txt"]
+}</pre></div>
+      <p class="text-xs text-gray-400">
+        <code class="bg-black/30 px-1 rounded">files</code> lists every file that must exist in the data repo. It is read from the <code>main</code> branch and is used by the Repo File Status panel and by Diagnostics. Keep it consistent with <code>data_files</code> in <code>config_model.json</code>.
+      </p>
+    </div>
+  </div>
+
   <!-- STEP 2 -->
-  <div class="card mb-6">
+  <div id="step-repos" class="card mb-6">
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">2</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Create Your Hugging Face Repositories</h2>
         <p class="text-gray-400 text-sm mb-5">
-          You need up to <strong>two resources</strong> on Hugging Face — a model code repo, and an optional data repo.
-          Each has a different visibility requirement explained below.
+          You need a model repo, and optionally a data repo. Each has its own visibility requirement, explained below.
         </p>
 
         <!-- Repo 1 - Model -->
         <div class="rounded-lg border border-borderDark bg-surface p-5 mb-4">
-          <h3 class="font-semibold text-brand mb-2">Repo 1 — Model Repository <span class="text-xs font-normal text-gray-500">(HF Model repo)</span></h3>
+          <h3 class="font-semibold text-brand mb-2">Repo 1 — Model Repository <span class="text-xs font-normal text-gray-500">(HF Model repo, required)</span></h3>
           <p class="text-xs text-gray-400 mb-3">
-            Contains your Artificial Gladiator code files and a <code class="bg-black/30 px-1 rounded">config_model.json</code> that lists all Python files and the entry-point module.
-          </p>
-          <p class="text-xs text-gray-400 mb-3">
-            Even though your code runs inside the platform's Docker sandbox rather than a public endpoint, you still need
-            to create this repo and its <code class="bg-black/30 px-1 rounded">config_model.json</code> file — the platform
-            downloads it into a private cache and mounts it read-only into the sandbox for each move.
+            Contains your Artificial Gladiator code and <code class="bg-black/30 px-1 rounded">config_model.json</code>. Put the files on the <code>main</code> branch.
           </p>
 
           <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-2.5 text-xs text-amber-300 mb-3">
             <span>
-              <strong>Strongly recommended: Gated (Access Requests).</strong>
-              A Gated repo requires visitors to request access before downloading any files — protecting your Artificial Gladiator code from being copied.
-              The platform downloads your repo into a private per-user cache before running it in the sandbox, so gating only affects other visitors, not the platform.
-              Go to your repo's <em>Settings → Access Control → Gated</em> to enable it.
+              <strong>Required: Gated (Access Requests).</strong>
+              When you save a repo, the platform checks that it exists and is Gated, and rejects a public repo.
+              Go to your repo's <em>Settings</em> and enable <em>Access Requests</em>.
               <br><br>
-              <strong>Important:</strong> once Gated, you must grant access to the platform's Hugging Face account
-              <strong class="text-amber-200">ArtificialGladiatorLeague</strong> so it can download your files during caching and verification.
-              Without this grant, ownership checks and inference will fail even if the verification code is correct.
+              <strong>Also required:</strong> approve the platform's Hugging Face account
+              <strong class="text-amber-200">ArtificialGladiatorLeague</strong> in the repo's Access settings (the yellow button <strong>Open Access Settings</strong> on the Gladiator tab opens that page).
+              The platform uses that account to read your repo for the ownership check and to download it. Without the approval, saving, ownership checks and inference all fail.
             </span>
           </div>
 
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
             <div class="text-gray-500 mb-1">Suggested layout:</div>
             <div>your-username/my-bot/</div>
-            <div class="pl-4 text-gold">├── config_model.json    ← required</div>
-            <div class="pl-4 text-gray-300">├── my_model.py          ← your AI code (EndpointHandler class goes here)</div>
-            <div class="pl-4 text-gray-300">├── utils.py             ← optional helper modules</div>
-            <div class="pl-4 text-gray-400">├── requirements.txt     ← pip dependencies (EndpointHandler only)</div>
-            <div class="pl-4 text-gray-400">└── AGL_VERIFY.txt       ← added in Step 3</div>
+            <div class="pl-4 text-gold">|-- config_model.json    (see above)</div>
+            <div class="pl-4 text-gray-300">|-- chess_mcvs.py        (your AI code: load / get_move)</div>
+            <div class="pl-4 text-gray-300">|-- utils.py             (optional helper modules)</div>
+            <div class="pl-4 text-gray-400">|-- requirements.txt     (optional, for your own reference; not installed by the platform)</div>
+            <div class="pl-4 text-gray-400">`-- AGL_VERIFY.txt      (added in Step 3)</div>
           </div>
-          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto">
-            <div class="text-gray-500 mb-1">config_model.json</div>
-            <div>{</div>
-            <div class="pl-4">&quot;files&quot;: [&quot;my_model.py&quot;, &quot;utils.py&quot;],</div>
-            <div class="pl-4">&quot;main&quot;: &quot;my_model&quot;</div>
-            <div>}</div>
-          </div>
-          <p class="text-xs text-gray-500 mt-2">
-            <code class="bg-black/30 px-1 rounded">main</code> is the module filename without <code>.py</code> — this is the module that contains your <code>get_move</code>/<code>UCTSearcher</code>/<code>predict</code> entry point, called inside the Docker sandbox on every move.
-          </p>
         </div>
 
         <!-- Repo 2 - Data -->
         <div class="rounded-lg border border-borderDark bg-surface p-5 mb-4">
-          <h3 class="font-semibold text-purple-400 mb-2">Repo 2 — Data Repository <span class="text-xs font-normal text-gray-500">(HF Dataset repo)</span></h3>
+          <h3 class="font-semibold text-purple-400 mb-2">Repo 2 — Data Repository <span class="text-xs font-normal text-gray-500">(HF Dataset repo, optional)</span></h3>
           <p class="text-xs text-gray-400 mb-3">
-            Optional, but required if your Artificial Gladiator uses runtime data files — opening books, precomputed tables, trained weights, zone databases, etc.
+            Needed if your Artificial Gladiator uses runtime data files — opening books, precomputed tables, trained weights, etc. The platform copies it next to your model and your code reads it from <code class="bg-black/30 px-1 rounded">ctx.data_dir</code>.
           </p>
 
-          <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-2.5 text-xs text-red-300 mb-3 flex items-start gap-2">
-            <span class="shrink-0">⚠️</span>
+          <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-2.5 text-xs text-red-300 mb-3">
             <span>
-              <strong>Must be fully Public — no exceptions.</strong>
-              The platform's servers pull your data files using anonymous HTTP requests with no user token.
-              A private, gated, or restricted repo will return a 401/403 error and your Artificial Gladiator will be unable to gladiate any matches.
+              <strong>Warning: the data repo must be Public.</strong>
+              When you save it, the platform checks it anonymously, without any token. A private or gated data repo is rejected.
             </span>
           </div>
 
           <div class="rounded-lg bg-black/30 p-3 font-mono text-xs mb-3 overflow-x-auto">
             <div class="text-gray-500 mb-1">Example layout:</div>
             <div>your-username/my-bot-data/</div>
-            <div class="pl-4 text-purple-400">├── config_data.json     ← required</div>
-            <div class="pl-4 text-gray-300">├── weights.pt           ← trained model weights</div>
-            <div class="pl-4 text-gray-300">└── openings.npz         ← precomputed lookup table</div>
+            <div class="pl-4 text-purple-400">|-- config_data.json     (see above)</div>
+            <div class="pl-4 text-gray-300">|-- opening_book.txt     (any data files your load() reads)</div>
+            <div class="pl-4 text-gray-400">`-- AGL_VERIFY.txt      (added in Step 3)</div>
           </div>
-          <div class="rounded-lg bg-black/30 p-3 font-mono text-xs overflow-x-auto">
-            <div class="text-gray-500 mb-1">config_data.json</div>
-            <div>{</div>
-            <div class="pl-4">&quot;files&quot;: [&quot;weights.pt&quot;, &quot;openings.npz&quot;]</div>
-            <div>}</div>
-          </div>
-          <p class="text-xs text-gray-500 mt-2">
-            List every file you need downloaded. The platform mounts them read-only into the Docker sandbox alongside your
-            model repo, at a path passed to your entry point (e.g. via the optional <code class="bg-black/30 px-1 rounded">zone_db</code> argument
-            or read directly from the mounted data directory).
+          <p class="text-xs text-gray-500">
+            If you leave the data repo field empty, the platform looks for <code class="bg-black/30 px-1 rounded">your-username/&lt;game&gt;-data</code> (for example <code>your-username/chess-data</code>) when it checks your files. On the Gladiator tab the Chess data repo field is pre-filled that way when your model repo has an owner; you can edit it.
           </p>
         </div>
       </div>
@@ -168,74 +277,112 @@
   </div>
 
   <!-- STEP 3 -->
-  <div class="card mb-6">
+  <div id="step-ownership" class="card mb-6">
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">3</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Prove Ownership &amp; SHA Pinning</h2>
-        <p class="text-gray-400 text-sm mb-4">Before your AG can gladiate, you must prove you own the repository. The platform also pins the commit SHA to detect any changes during tournaments.</p>
+        <p class="text-gray-400 text-sm mb-4">Before your AG can gladiate, you must prove you own the repositories. The platform also pins the commit SHA to detect any changes during tournaments.</p>
 
-        <h3 class="text-sm font-semibold text-gray-200 mb-3">Ownership Verification (one-time per repo)</h3>
+        <h3 class="text-sm font-semibold text-gray-200 mb-3">Ownership Verification</h3>
         <ol class="space-y-3 text-sm mb-5">
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
-            <span>Register your repo on the <a href="{% url 'users:profile' %}" class="text-brand hover:underline">AG Champion</a> page. The platform generates a unique 32-character verification code.</span>
+            <span>Save your repo on the <strong>Gladiator</strong> tab of your <a href="{% url 'users:profile' %}" class="text-brand hover:underline">Profile</a>. The platform generates a unique 32-character verification code and shows it there (with <strong>Copy file name</strong> and <strong>Copy code</strong> buttons).</span>
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
-            <span>Create a file named <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> at the <strong>root of your HF model repo</strong> containing exactly the verification code — no trailing whitespace or extra characters.</span>
+            <span>Create a file named <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> at the <strong>root of your model repo</strong> (<code>main</code> branch) containing exactly the verification code. <strong>If you also set a data repo, add the same file with the same code to the root of the data repo.</strong> Surrounding whitespace or a trailing newline is ignored.</span>
           </li>
           <li class="flex items-start gap-3">
             <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
-            <span>Click <strong>"Verify Ownership"</strong>. The platform downloads and checks the file. Once confirmed, you're cleared to gladiate.</span>
+            <span>Click <strong>Verify Ownership</strong> (shown as <strong>Re-check Ownership</strong> once verified). The platform account reads the file from each repo. When the model repo and the data repo (if set) both match, you are verified. The platform then immediately runs the model check and, if it passes, pins the commit as your approved version.</span>
           </li>
         </ol>
 
+        <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-3 text-sm text-amber-300 mb-5">
+          Note: the platform does not ask you for a Hugging Face token. It reads your Gated model repo with its own account, <strong>ArtificialGladiatorLeague</strong>, which is why you must approve that account. The data repo must be Public.
+        </div>
+
         <h3 class="text-sm font-semibold text-gray-200 mb-2">SHA Pinning (ongoing)</h3>
         <ul class="space-y-2 text-sm text-gray-400 mb-4">
-          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">At tournament registration</strong> — the exact commit SHA of your model repo is recorded.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">▸</span><span><strong class="text-gray-200">During each round</strong> — the SHA is re-checked dozens of times. Any commit since registration triggers automatic disqualification.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">-</span><span><strong class="text-gray-200">At tournament registration</strong> — the exact commit SHA of your model repo is recorded.</span></li>
+          <li class="flex items-start gap-2"><span class="text-gold mt-0.5">-</span><span><strong class="text-gray-200">Before and during tournament games</strong> — the SHA is checked again. Any commit since registration triggers automatic disqualification.</span></li>
         </ul>
 
-        <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-3 text-sm text-red-300 mb-3">
-          ⚠️ <strong>Do not push changes</strong> to your AG Champion repo after joining a tournament. SHA mismatch = automatic disqualification.
-        </div>
-        <div class="rounded-lg bg-green-900/20 border border-green-700/50 px-4 py-3 text-sm text-green-300">
-          ✅ No Hugging Face token required. All checks use public repo access — no credentials needed from you.
+        <div class="rounded-lg bg-red-900/20 border border-red-700/50 px-4 py-3 text-sm text-red-300">
+          Warning: <strong>do not push changes</strong> to your AG Champion repo after joining a tournament. SHA mismatch = automatic disqualification.
         </div>
       </div>
     </div>
   </div>
 
   <!-- STEP 4 -->
-  <div class="card mb-6">
+  <div id="step-register" class="card mb-6">
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">4</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Register Your AG Champion in the Platform</h2>
         <p class="text-gray-400 text-sm mb-4">
-          Go to <a href="{% url 'users:profile' %}" class="text-brand hover:underline">Profile → AG Champions</a> and fill in the repo details for each game type you want to gladiate.
+          Open the <strong>Gladiator</strong> tab on your <a href="{% url 'users:profile' %}" class="text-brand hover:underline">Profile</a>. Each game (Chess, Breakthrough) has its own card with numbered steps (Enter repo, Approve platform account, Add AGL_VERIFY.txt, Verify), and a line at the top of the tab tells you the next step.
         </p>
 
         <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
-          <div class="font-semibold text-gray-200 mb-3">Fields per game type</div>
+          <div class="font-semibold text-gray-200 mb-3">Fields per game</div>
           <ul class="text-gray-400 space-y-2 text-xs">
-            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">AG Champion Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code> — your Artificial Gladiator code repository</span></li>
-            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">▸</span><span><strong class="text-gray-200">Data Repo ID</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG-data</code> — your data repository (leave blank if not used)</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">-</span><span><strong class="text-gray-200">Hugging Face Model Repo</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG</code>. You may paste a full huggingface.co link; it is converted to <code>username/my-AG</code>. A Space URL (<code>*.hf.space</code> or <code>huggingface.co/spaces/...</code>) is rejected.</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">-</span><span><strong class="text-gray-200">Hugging Face Data Repo</strong> — <code class="bg-black/30 px-1 rounded">username/my-AG-data</code>. Leave blank if you do not use one.</span></li>
+          </ul>
+        </div>
+
+        <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
+          <div class="font-semibold text-gray-200 mb-3">Buttons</div>
+          <ul class="text-gray-400 space-y-2 text-xs">
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">-</span><span><strong class="text-gray-200">Save and verify</strong> (gold): saves the repo and, if saving succeeded, immediately runs the same ownership check as <strong>Verify Ownership</strong>.</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">-</span><span><strong class="text-gray-200">Connect Repo</strong> / <strong class="text-gray-200">Update Repo &amp; Re-issue Code</strong>: saves the repo and issues a verification code (unless the repo is unchanged and already verified).</span></li>
+            <li class="flex items-start gap-2"><span class="text-green-400 mt-0.5">-</span><span><strong class="text-gray-200">Verify Ownership</strong> / <strong class="text-gray-200">Re-check Ownership</strong>: checks <code>AGL_VERIFY.txt</code> and runs the model check.</span></li>
           </ul>
         </div>
 
         <div class="rounded-lg bg-amber-900/20 border border-amber-700/50 px-4 py-3 text-sm text-amber-300">
-          ⚠️ After registering, you need <strong>30 rated games</strong> to gladiate with your AG Champion before you can enter tournaments. Changing your repo IDs resets this counter.
+          Warning: after registering, you need <strong>30 rated games</strong> with your AG Champion before you can enter tournaments. Changing your model repo ID resets this counter.
         </div>
       </div>
     </div>
   </div>
 
-  <!-- STEP 5 -->
-  <div class="card mb-6">
+  <!-- STEP 5: Diagnostics -->
+  <div id="step-diagnostics" class="card mb-6">
     <div class="flex items-start gap-4">
       <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">5</div>
+      <div class="flex-1">
+        <h2 class="text-xl font-bold mb-1">Run Diagnostics</h2>
+        <p class="text-gray-400 text-sm mb-4">
+          The <strong>Diagnostics</strong> tab on your Profile checks a registered model from start to finish and tells you in plain language what to fix. Pick the game, click <strong>Run diagnostics</strong> and read the report. It can take a few minutes, because the last step runs your model in the sandbox.
+        </p>
+        <div class="rounded-lg border border-borderDark bg-surface p-4 text-sm mb-4">
+          <div class="font-semibold text-gray-200 mb-3">The 7 steps</div>
+          <ol class="list-decimal list-inside text-gray-400 space-y-1.5 text-xs">
+            <li><strong class="text-gray-200">Registration</strong> — a model repo is registered for this game.</li>
+            <li><strong class="text-gray-200">Model repo access</strong> — the repo exists, is Gated, and the platform account has access.</li>
+            <li><strong class="text-gray-200">Ownership proof</strong> — the model repo (and the data repo, if set) are ownership-verified.</li>
+            <li><strong class="text-gray-200">Repository files</strong> — the files listed in <code>config_model.json</code> and <code>config_data.json</code> are present.</li>
+            <li><strong class="text-gray-200">Version and integrity</strong> — approved and current SHAs, the repo-change cooldown and your rated-games count.</li>
+            <li><strong class="text-gray-200">Stored contract result</strong> — whether the model check last stored active, pending or failed.</li>
+            <li><strong class="text-gray-200">Live contract test</strong> — runs your <code>load()</code> and <code>get_move()</code> in the sandbox on three sample positions and checks that every move is legal.</li>
+          </ol>
+        </div>
+        <div class="rounded-lg bg-green-900/20 border border-green-700/50 px-4 py-3 text-sm text-green-300">
+          Diagnostics is read-only: it never changes your model, your repos or your verification state. Repeat it until the report ends with <em>RESULT: your model works correctly</em>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div id="step-compete" class="card mb-6">
+    <div class="flex items-start gap-4">
+      <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">6</div>
       <div class="flex-1">
         <h2 class="text-xl font-bold mb-1">Compete in Games &amp; Tournaments</h2>
         <div class="grid sm:grid-cols-2 gap-4 mb-5">
@@ -252,100 +399,135 @@
           <div class="font-semibold mb-3 text-gray-200">How a move is generated</div>
           <div class="flex flex-wrap gap-2 items-center text-xs">
             <span class="bg-brand/20 text-brand px-2 py-1 rounded">Board FEN sent</span>
-            <span class="text-gray-600">→</span>
-            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Docker sandbox runs your <code>get_move</code></span>
-            <span class="text-gray-600">→</span>
+            <span class="text-gray-600">&gt;</span>
+            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Your <code>get_move</code> runs in the sandbox</span>
+            <span class="text-gray-600">&gt;</span>
             <span class="bg-gold/20 text-gold px-2 py-1 rounded">Move validated</span>
-            <span class="text-gray-600">→</span>
+            <span class="text-gray-600">&gt;</span>
             <span class="bg-green-900/30 text-green-400 px-2 py-1 rounded">Game state updated</span>
           </div>
-          <p class="text-xs text-gray-500 mt-3">Each call has a strict <strong class="text-white">time limit</strong>. Exceeding it forfeits the move. Keep inference fast.</p>
+          <ul class="text-xs text-gray-400 mt-3 space-y-1.5 list-disc list-inside">
+            <li>Your model stays loaded in a sandbox container between moves, so <code>load()</code> runs once and each move only pays for <code>get_move()</code>. Opening the Lobby or a game page starts it ahead of time.</li>
+            <li>Each move has a time limit set by the server (30 seconds by default). If your model exceeds it, returns nothing, raises an error or returns an illegal move, the platform plays a random legal move for you (captures preferred) instead.</li>
+            <li>Exception: if your model's last model check failed, no random move is played and you forfeit the game.</li>
+            <li>The time your model spends thinking also counts against your game clock.</li>
+          </ul>
+          <p class="text-xs text-gray-500 mt-3">See <a href="{% url 'core:how_it_works' %}" class="text-brand hover:underline">How it works</a> for the full picture.</p>
         </div>
       </div>
     </div>
   </div>
 
   <!-- Best Practices -->
-  <div class="card mb-6">
+  <div id="best-practices" class="card mb-6">
     <h2 class="text-xl font-bold mb-4">Best Practices</h2>
     <div class="grid sm:grid-cols-2 gap-4">
       <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-brand mb-2">Pre-load at startup</div>
-        <p class="text-xs text-gray-400">Load models, weights, and opening books at module level so they're ready as soon as your entry point is called. Never load files inside <code class="bg-black/30 px-1 rounded">get_move</code> — load time counts against your move clock and the sandbox timeout.</p>
+        <div class="text-sm font-semibold text-brand mb-2">Load everything in load()</div>
+        <p class="text-xs text-gray-400">Load models, weights and opening books inside <code class="bg-black/30 px-1 rounded">load(ctx)</code>, which runs once. Never read files inside <code class="bg-black/30 px-1 rounded">get_move</code> — that time is spent on every move and counts against your clock and the move timeout.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gold mb-2">Respect the time limit</div>
-        <p class="text-xs text-gray-400">The platform enforces a per-move timeout. Budget your search depth or inference time accordingly. Returning a random legal move as a fallback avoids timeouts that would forfeit the game entirely.</p>
+        <p class="text-xs text-gray-400">The platform enforces a per-move timeout (30 seconds by default). Budget your search depth or inference time well under it. A model that is too slow gets random moves played for it.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-purple-400 mb-2">Keep it lightweight</div>
-        <p class="text-xs text-gray-400">The sandbox has fixed CPU/memory limits and no network access. Keep your dependencies minimal and avoid anything that expects internet connectivity at inference time.</p>
+        <p class="text-xs text-gray-400">The sandbox has fixed CPU and memory limits (1 CPU and 512 MB by default) and no network access. Keep your dependencies minimal and avoid anything that expects internet connectivity.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-green-400 mb-2">Pin your dependencies</div>
-        <p class="text-xs text-gray-400">Use exact version pins in <code class="bg-black/30 px-1 rounded">requirements.txt</code> (e.g. <code class="bg-black/30 px-1 rounded">torch==2.2.0</code>) to prevent breakage from upstream updates between tournament rounds.</p>
+        <div class="text-sm font-semibold text-green-400 mb-2">Stick to the installed libraries</div>
+        <p class="text-xs text-gray-400">Nothing is pip-installed at match time. Use only what the sandbox image provides (numpy, python-chess, torch CPU). If you like, note the versions you tested with in your repo's <code class="bg-black/30 px-1 rounded">requirements.txt</code> for your own reference.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-amber-400 mb-2">Validate move format</div>
-        <p class="text-xs text-gray-400">Always return a valid move string. Invalid or empty responses are treated as illegal moves and may result in a forfeited turn. Check the expected move format for the game type in the Lobby — Chess uses UCI notation (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) and Breakthrough uses a coordinate string (e.g. <code class="bg-black/30 px-1 rounded">3,2-3,3</code>).</p>
+        <p class="text-xs text-gray-400">Always return a legal move as a plain string. Chess uses UCI notation (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) and Breakthrough uses four characters, from-square then to-square (e.g. <code class="bg-black/30 px-1 rounded">a2a3</code>). Anything else is treated as no move.</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gray-200 mb-2">Test before tournaments</div>
-        <p class="text-xs text-gray-400">Gladiate several quick matches in the Lobby to confirm your AG Champion responds correctly at game speed before entering a tournament. The 30-game qualification window is the ideal calibration period.</p>
+        <p class="text-xs text-gray-400">Run Diagnostics, then play several quick matches in the Lobby to confirm your AG Champion responds correctly at game speed before entering a tournament. The 30-game qualification window is the ideal calibration period.</p>
       </div>
     </div>
   </div>
 
   <!-- Troubleshooting -->
-  <div class="card mb-6">
+  <div id="troubleshooting" class="card mb-6">
     <h2 class="text-xl font-bold mb-4">Troubleshooting</h2>
     <div class="space-y-4 text-sm">
       <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="font-semibold text-red-400 mb-2">Move timed out / AG forfeited the turn</div>
-        <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Inference is too slow — reduce search depth, switch to a lighter model, or pre-cache results.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Your code raised an exception inside the sandbox — test it locally with the same entry point signature before registering.</span></li>
+        <div class="font-semibold text-red-400 mb-2">Move timed out / random moves are being played for my AG</div>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>A move that takes longer than the server's move timeout (30 seconds by default) is cancelled, the sandbox container is restarted, and a random legal move is played for that turn. Reduce search depth, use a lighter model, or pre-compute in <code>load()</code>.</li>
+          <li>Your code raised an exception, returned nothing or returned an illegal move: the platform plays a random legal move instead. Run Diagnostics to see the exact error.</li>
+          <li>If your model's last model check failed, no random move is played and you forfeit the game. Fix the problem and click <strong>Verify Ownership</strong> again.</li>
         </ul>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Ownership verification failed</div>
-        <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Ensure <code class="bg-black/30 px-1 rounded">AGL_VERIFY.txt</code> is at the <em>root</em> of your model repo — not inside a subfolder.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>The file content must match exactly — no trailing newline, no extra spaces.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>The model repo must be Public or Gated — if Gated, you must have granted access to <strong class="text-gray-200">ArtificialGladiatorLeague</strong> on Hugging Face.</span></li>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>Ensure <code class="bg-black/30 px-1 rounded">AGL_VERIFY.txt</code> is at the <em>root</em> of your model repo on the <code>main</code> branch — not inside a subfolder.</li>
+          <li>If you set a data repo, it needs its own <code class="bg-black/30 px-1 rounded">AGL_VERIFY.txt</code> with the same code.</li>
+          <li>The file must contain exactly the code shown on the Gladiator tab. If you re-saved a changed repo, a new code was issued: use the new one.</li>
+          <li>The model repo must be Gated and you must have approved <strong class="text-gray-200">ArtificialGladiatorLeague</strong> in its Access settings. The data repo must be Public.</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Diagnostics says the model or data files are not on the server yet</div>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>Log out and log in again, then run Diagnostics again. Logging in lands you on the Lobby, which loads your model and downloads your data repo files to the server in the background. Give it a minute before you re-run.</li>
+          <li>If it keeps saying the same thing, check the Repo File Status panel on the Gladiator tab for missing files.</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Diagnostics says the sandbox is unavailable</div>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>This is a platform issue, not a problem with your model. Try again later.</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Model check failed</div>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>The Gladiator tab shows the reason. Typical causes: a syntax error, a missing <code>load(ctx)</code>, invalid <code>config_model.json</code>, a file listed in <code>data_files</code> that is missing from the data repo, or a move that is not legal for one of the three sample positions.</li>
+          <li>Fix the repo, then click <strong>Verify Ownership</strong> (or <strong>Save and verify</strong>) again.</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-borderDark bg-surface p-4">
+        <div class="font-semibold text-red-400 mb-2">Repo ID rejected</div>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>Enter the repo as <code class="bg-black/30 px-1 rounded">username/repo-name</code>. A huggingface.co model or dataset link is converted automatically; a Space URL is rejected.</li>
+          <li>A public model repo is rejected: set it to Gated first. The data repo is the opposite: it must be Public.</li>
         </ul>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Disqualified — SHA mismatch</div>
-        <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>You pushed a commit to your AG Champion repo after registering for the tournament.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Even trivial changes (README edits, whitespace) produce a new SHA. Freeze the repo once registered.</span></li>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>You pushed a commit to your AG Champion repo after registering for the tournament.</li>
+          <li>Even trivial changes (README edits, whitespace) produce a new SHA. Freeze the repo once registered.</li>
         </ul>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Invalid move returned</div>
-        <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your move string matches the expected format for the game — UCI for Chess (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) or a coordinate string for Breakthrough (e.g. <code class="bg-black/30 px-1 rounded">3,2-3,3</code>).</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Make sure you return a plain string — not a list, not a JSON object, not <code class="bg-black/30 px-1 rounded">{"move": "..."}</code>.</span></li>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>Confirm your move string matches the expected format for the game — UCI for Chess (e.g. <code class="bg-black/30 px-1 rounded">e2e4</code>) or four characters from-square then to-square for Breakthrough (e.g. <code class="bg-black/30 px-1 rounded">a2a3</code>).</li>
+          <li>Make sure you return a plain string — not a list, not a JSON object, not <code class="bg-black/30 px-1 rounded">{"move": "..."}</code>.</li>
         </ul>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="font-semibold text-red-400 mb-2">Data files not loading</div>
-        <ul class="text-xs text-gray-400 space-y-1.5">
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Confirm your data repo is <strong class="text-gray-200">fully Public</strong> on Hugging Face — gated or private repos cannot be downloaded by the platform.</span></li>
-          <li class="flex items-start gap-2"><span class="text-gray-600">▸</span><span>Check that filenames in <code class="bg-black/30 px-1 rounded">config_data.json</code> match exactly (case-sensitive) the filenames in your repo.</span></li>
+        <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
+          <li>Confirm your data repo is <strong class="text-gray-200">Public</strong> on Hugging Face.</li>
+          <li>Check that filenames in <code class="bg-black/30 px-1 rounded">config_data.json</code> and in <code class="bg-black/30 px-1 rounded">data_files</code> of <code>config_model.json</code> match exactly (case-sensitive) the filenames in your repo, and that your <code>load()</code> reads them from <code>ctx.data_dir</code>.</li>
         </ul>
       </div>
     </div>
   </div>
 
   <!-- FAQ -->
-  <div class="card mb-10">
+  <div id="faq" class="card mb-10">
     <h2 class="text-xl font-bold mb-4">Frequently Asked Questions</h2>
     <div class="space-y-5 text-sm divide-y divide-borderDark">
       <div class="pt-4 first:pt-0">
-        <p class="font-semibold text-gray-200">Can I use PyTorch, TensorFlow, JAX, scikit-learn, or any other ML framework?</p>
-        <p class="text-gray-400 mt-1">Yes. List all pip packages your model repo needs; common ML libraries are already available in the Docker sandbox image, and any others can be documented in your repo's own requirements file for your own reference.</p>
+        <p class="font-semibold text-gray-200">Can I use PyTorch or other libraries?</p>
+        <p class="text-gray-400 mt-1">Only what the sandbox image contains. The project's sandbox image installs numpy, python-chess and torch (CPU). The sandbox has no network access, so packages can't be installed at match time; develop and test locally against the same libraries.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What game types are supported?</p>
@@ -353,23 +535,23 @@
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Do I need a Hugging Face account?</p>
-        <p class="text-gray-400 mt-1">Yes — to create your model repo (and optional data repo). No HF API token is required by the platform; all access is anonymous via public/gated resources.</p>
+        <p class="text-gray-400 mt-1">Yes — to create your model repo (and optional data repo). The platform does not ask you for an API token. It reads your Gated model repo with its own account, <strong class="text-gray-200">ArtificialGladiatorLeague</strong>, which you approve in the repo's Access settings.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Can I update my AG Champion between games (outside tournaments)?</p>
         <p class="text-gray-400 mt-1">
-          Yes, you can update your AG Champion or change your repository links outside of tournaments. 
-          However, <strong class="text-white">any change to your AG Champion's Repo or Data Repo will reset your rated games counter</strong>. 
+          Yes, you can update your AG Champion or change your repository links outside of tournaments.
+          However, <strong class="text-white">changing your model repo ID resets your rated games counter</strong>.
           You will need to play another <strong class="text-white">30 rated games</strong> before you can enter tournaments again.
         </p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Should my AG Champion's model repo be Gated?</p>
-        <p class="text-gray-400 mt-1">Yes. <em>Gated (Access Requests)</em> is recommended to protect your AG Champion from being copied by other users. The platform downloads your repo into a private cache before running it in the sandbox, so gating only affects other visitors, not the platform. You must grant access to the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can download and verify it; without this, ownership verification and inference will fail.</p>
+        <p class="font-semibold text-gray-200">Does my AG Champion's model repo have to be Gated?</p>
+        <p class="text-gray-400 mt-1">Yes. When you save the repo the platform rejects a public model repo. Gating also protects your code from being copied by other visitors. You must approve the <strong class="text-gray-200">ArtificialGladiatorLeague</strong> Hugging Face account so the platform can verify and download it; without this, saving, ownership verification and inference fail.</p>
       </div>
       <div class="pt-4">
-        <p class="font-semibold text-gray-200">Why must the data repo be fully Public?</p>
-        <p class="text-gray-400 mt-1">The platform's servers make anonymous HTTP requests to it when downloading data files into the sandbox cache. No user token is passed. Private or gated access on this resource will cause failures at match time.</p>
+        <p class="font-semibold text-gray-200">Why must the data repo be Public?</p>
+        <p class="text-gray-400 mt-1">The platform checks it anonymously, without a token, when you save it, and rejects a data repo that is not public.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">Why do I need 30 rated games before entering tournaments?</p>
@@ -377,11 +559,11 @@
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">How strict is the per-move time limit?</p>
-        <p class="text-gray-400 mt-1">Exceeding the limit forfeits the move. The exact time depends on the game and match settings — check the Lobby or tournament details. Always implement a fast fallback (e.g. a random legal move) so your bot never times out completely.</p>
+        <p class="text-gray-400 mt-1">Each move has a server-side limit (30 seconds by default). Exceeding it does not forfeit the game: a random legal move is played for that turn (unless your model's last model check failed, which forfeits). Your thinking time is also deducted from your game clock. Always keep <code>get_move</code> fast.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What is "AI thinking time" and is it guaranteed?</p>
-        <p class="text-gray-400 mt-1">"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on your model's inference speed inside the Docker sandbox — heavier models or deep searches take longer. If a move arrives faster than the target, the platform waits to reach the target before showing it; if the model responds slower, the move is still accepted and used. Only if the sandbox times out or errors entirely does the platform fall back to a random legal move rather than forfeiting the turn. Both the game creator and the joining player each set their own thinking-time target independently for their own AI.</p>
+        <p class="text-gray-400 mt-1">"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on your model's inference speed inside the Docker sandbox — heavier models or deep searches take longer. If a move arrives faster than the target, the platform waits to reach the target before showing it; if the model responds slower, the move is still accepted and used. Both the game creator and the joining player each set their own thinking-time target independently for their own AI.</p>
       </div>
       <div class="pt-4">
         <p class="font-semibold text-gray-200">What ranking titles are used on the AGL platform?</p>

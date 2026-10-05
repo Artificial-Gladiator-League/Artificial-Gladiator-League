@@ -116,12 +116,10 @@ class TournamentTermsLinkTest(TestCase):
         t = _tournament()
         self.assertIsNone(t.terms)
 
-    def test_clean_allows_terms_only_on_money_like_types(self):
+    def test_clean_allows_terms_on_every_type_including_qa(self):
         terms = _terms()
-        for ttype in Tournament.MONEY_LIKE_TYPES:
+        for ttype in Tournament.Type.values:
             _tournament(type=ttype, terms=terms).clean()
-        with self.assertRaises(ValidationError):
-            _tournament(type=Tournament.Type.QA, terms=terms).clean()
 
     def test_linked_terms_cannot_be_deleted(self):
         from django.db.models import ProtectedError

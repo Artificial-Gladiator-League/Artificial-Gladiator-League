@@ -9,9 +9,14 @@
       We've sent an activation link to the email you provided.<br>
       Click the link to activate your account and start battling.
     </p>
+    <p class="text-gray-500 text-xs mb-2">Didn't receive it?</p>
+    <ul class="text-gray-500 text-xs leading-relaxed text-left list-disc list-inside space-y-1 mb-3">
+      <li>Check your spam or junk folder. The email comes from agladiator.com.</li>
+      <li>Wait a few minutes. Delivery can take up to 10 minutes.</li>
+      <li>Still nothing? <a href="{% url 'core:contact' %}" class="text-brand hover:underline">Contact support</a>.</li>
+    </ul>
     <p class="text-gray-500 text-xs">
-      Didn't receive it? Check your spam folder, or
-      <a href="{% url 'users:register' %}" class="text-brand hover:underline">register again</a>.
+      Your username is reserved while you wait, so you do not need to register again.
     </p>
   </div>
 </div>

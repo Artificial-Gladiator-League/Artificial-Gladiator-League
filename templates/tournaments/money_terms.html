@@ -33,9 +33,15 @@
   <div class="rounded-lg border border-blue-600/40 bg-blue-900/20 p-4 mb-6">
     <p class="text-sm font-semibold text-blue-300 mb-1">Eligibility restriction</p>
     <p class="text-sm text-gray-300">
+      {% if open_to_all %}
+      This tournament is open to <strong>players from all countries</strong>.
+      Winners must pass an eligibility check before any prize is paid, and a
+      winner found to be ineligible may forfeit the prize.
+      {% else %}
       This tournament is open to {% if israel_only %}<strong>Israeli residents only</strong>{% else %}<strong>residents of {{ residency_countries }} only</strong>{% endif %}.
       Your location will be verified at registration. Participants found to be
       ineligible after winning may forfeit the prize.
+      {% endif %}
     </p>
   </div>
   {% endif %}

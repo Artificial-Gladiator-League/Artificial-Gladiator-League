@@ -195,11 +195,9 @@ class TournamentAdminTermsDropdownTest(TestCase):
         resp = self.client.get(reverse("admin:tournaments_tournament_add"))
         self.assertEqual(self._choices(resp), {self.active})
 
-    def test_dropdown_is_hidden_client_side_for_non_money_types_in_sync_with_the_model(self):
+    def test_terms_dropdown_is_shown_for_every_type_in_the_admin(self):
         js = ADMIN_JS.read_text(encoding="utf-8")
-        listed = set(re.search(r"MONEY_LIKE\s*=\s*\[([^\]]*)\]", js).group(1).replace("'", "").replace('"', "").replace(" ", "").split(","))
-        self.assertEqual(listed, {str(t) for t in Tournament.MONEY_LIKE_TYPES})
-        self.assertIn("termsRow.style.display", js)
+        self.assertNotIn("termsRow.style.display", js)
 
         t = _tournament(Tournament.Type.GAUNTLET, "Page")
         resp = self.client.get(reverse("admin:tournaments_tournament_change", args=[t.pk]))
@@ -224,12 +222,8 @@ class TournamentAdminTermsDropdownTest(TestCase):
         data.update(extra)
         return form_class(data)
 
-    def test_server_side_a_non_money_type_cannot_keep_a_terms_record(self):
-        form = self._form(Tournament.Type.QA, self.active)
-        self.assertFalse(form.is_valid())
-        self.assertIn("Gauntlet / Gladiatormania", " ".join(form.errors["terms"]))
-
-        for ttype in Tournament.MONEY_LIKE_TYPES:
+    def test_server_side_every_type_can_keep_a_terms_record(self):
+        for ttype in Tournament.Type.values:
             self.assertTrue(self._form(ttype, self.active).is_valid(), ttype)
 
 

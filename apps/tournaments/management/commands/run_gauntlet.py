@@ -121,6 +121,7 @@ class Command(BaseCommand):
                 f"Top {len(eligible)} AIs compete over {rounds} rounds."
             ),
             type=Tournament.Type.GAUNTLET,
+            allowed_countries=[],  # open to all countries unless restricted in the admin
             format="swiss",
             capacity=len(eligible),
             rounds_total=rounds,

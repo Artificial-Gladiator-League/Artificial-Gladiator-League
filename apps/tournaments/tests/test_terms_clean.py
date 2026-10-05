@@ -60,11 +60,7 @@ class TournamentCleanTermsRulesTest(TestCase):
         _tournament(_terms(slug="free", has_prize=False), prize_amount=None).clean()
 
     def test_all_problems_are_reported_together(self):
-        t = _tournament(
-            _terms(slug="bad", has_prize=False, requires_israeli_residency=False),
-            type=Tournament.Type.QA,
-        )
+        t = _tournament(_terms(slug="bad", has_prize=False, requires_israeli_residency=False))
         message = self._errors(t)
-        self.assertIn("Gauntlet / Gladiatormania", message)
         self.assertIn("Not supported yet", message)
         self.assertIn("no prize", message)
