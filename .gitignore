@@ -46,3 +46,4 @@ user_models/**/*.npz
 user_models/**/*.pkl
 user_models/
 celerybeat-schedule.dat
+celerybeat-schedule*

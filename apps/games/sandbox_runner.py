@@ -570,10 +570,11 @@ def _run_predict_one_shot(
 
     with tempfile.TemporaryDirectory(prefix="agl_sandbox_runner_") as runner_tmp:
         runner_dir = Path(runner_tmp)
+        os.chmod(runner_dir, 0o755)
         (runner_dir / "run_predict.py").write_text(_RUNNER_SCRIPT, encoding="utf-8")
 
         volumes = {
-            str(model_dir.resolve()): {"bind": "/model", "mode": "ro"},
+            str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
             str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         }
         if data_dir is not None:
@@ -829,7 +830,7 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
     t_prep = time.monotonic()
 
     volumes = {
-        str(model_dir.resolve()): {"bind": "/model", "mode": "ro"},
+        str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
         str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         str(ipc_dir.resolve()): {"bind": "/ipc", "mode": "rw"},
     }
@@ -1170,10 +1171,11 @@ def run_check_in_sandbox(
 
     with tempfile.TemporaryDirectory(prefix="agl_sandbox_check_") as runner_tmp:
         runner_dir = Path(runner_tmp)
+        os.chmod(runner_dir, 0o755)
         (runner_dir / "run_check.py").write_text(_CHECK_RUNNER_SCRIPT, encoding="utf-8")
 
         volumes = {
-            str(model_dir.resolve()): {"bind": "/model", "mode": "ro"},
+            str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
             str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         }
         if data_dir is not None:
@@ -1266,3 +1268,43 @@ def run_check_in_sandbox(
         "warnings": list(data.get("warnings") or []),
         "moves": list(data.get("moves") or []),
     }
+
+
+def _real_model_dir(model_dir):
+    """Return a directory with real files (symlinks followed) for mounting.
+
+    HF cache snapshots are symlinks into ../../blobs, which do not exist inside
+    the container. Build one real-file copy per distinct content and reuse it.
+    Directories without symlinks are returned unchanged.
+    """
+    import hashlib
+    from django.conf import settings
+
+    src = Path(model_dir).resolve()
+    if not any(f.is_symlink() for f in src.rglob("*")):
+        return src
+
+    sig = hashlib.sha1()
+    for f in sorted(src.rglob("*")):
+        if f.is_file():
+            st = f.stat()
+            sig.update(f"{f.relative_to(src)}|{st.st_size}|{int(st.st_mtime)}".encode())
+    root = Path(settings.USER_MODELS_BASE_DIR).parent / "sandbox_real"
+    root.mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0o755)
+    dest = root / sig.hexdigest()
+    if dest.is_dir():
+        return dest
+
+    tmp = Path(tempfile.mkdtemp(prefix="tmp_", dir=root))
+    try:
+        shutil.copytree(src, tmp / "m", symlinks=False)
+        for d in [tmp / "m", *(tmp / "m").rglob("*")]:
+            os.chmod(d, 0o755 if d.is_dir() else 0o644)
+        try:
+            os.rename(tmp / "m", dest)
+        except OSError:
+            pass  # another process created it first
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return dest
