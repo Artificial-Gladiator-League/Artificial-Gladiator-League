@@ -51,8 +51,8 @@ COUNTRY_WARNING = (
     "Your country of residence cannot be changed later. Choose carefully. "
     "To correct a mistake you will have to contact support."
 )
-COUNTRY_CONFIRM_LABEL = "I confirm this is my country of residence and I understand it cannot be changed later."
-
+COUNTRY_CONFIRM_LABEL = "I confirm this is my country of residence and I understand it cannot be changed later only after contacting support."
+NAMES_CONFIRM_LABEL = "I understand that my username and my AG Champion name cannot be changed after registration."
 
 class _UpperChoiceField(forms.ChoiceField):
     """ChoiceField that accepts the code in any case (the select always posts upper case)."""
@@ -144,6 +144,12 @@ class RegistrationForm(CountryChoiceMixin, forms.Form):
             "placeholder": "e.g. DeepPawn-v3",
         }),
         help_text="Display name for your AI bot. Cannot be changed after registration.",
+    )
+    names_confirm = forms.BooleanField(
+        required=True,
+        label=NAMES_CONFIRM_LABEL,
+        error_messages={"required": "Please confirm that you understand your username and AG Champion name cannot be changed."},
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
     )
     captcha = _get_recaptcha_field()
     consent = forms.BooleanField(

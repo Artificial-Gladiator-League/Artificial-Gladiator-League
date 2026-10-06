@@ -149,6 +149,21 @@
               {% endif %}
             </div>
 
+            <!-- Username / AG name confirmation -->
+            <div class="mb-3">
+              <div class="form-check">
+                {{ form.names_confirm }}
+                <label class="form-check-label small text-muted-light" for="id_names_confirm">
+                  {{ form.names_confirm.label }}
+                </label>
+              </div>
+              {% if form.names_confirm.errors %}
+                <div class="text-danger small mt-1">
+                  {% for e in form.names_confirm.errors %}{{ e }}{% endfor %}
+                </div>
+              {% endif %}
+            </div>
+
             <!-- Terms of Service consent -->
             <div class="mb-3">
               <div class="form-check">
