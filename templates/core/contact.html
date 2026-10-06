@@ -4,19 +4,110 @@
 {% block content %}
 <div class="animate-fade-in max-w-2xl mx-auto">
 
-  <div class="mb-8">
+  <!-- Header -->
+  <div class="mb-6">
     <h1 class="text-3xl font-extrabold flex items-center gap-2">
-        Contact
+      Contact
     </h1>
     <p class="text-gray-400 text-sm mt-1">
-      Welcome to Artificial Gladiator League!!
+      Welcome to Artificial Gladiator League!
     </p>
     <p class="text-gray-400 text-sm mt-1">
-      Your opinion and insights are very important.
-    </p>
-    <p class="text-gray-400 text-sm mt-1">
-      Should you have any questions or any feedback feel free to reach us directly <a href="mailto:contact@agladiator.com" class="text-brand no-underline hover:underline font-semibold text-lg tracking-wide">contact@agladiator.com</a>
+      Your opinion and insights are very important. Should you have any questions or any feedback,
+      feel free to reach us directly.
     </p>
   </div>
+
+  <!-- Main contact -->
+  <div class="card mb-4">
+    <h2 class="text-lg font-bold mb-2">Email</h2>
+    <p class="text-gray-400 text-sm">
+      <a href="mailto:contact@agladiator.com"
+         class="text-brand no-underline hover:underline font-semibold text-lg tracking-wide">contact@agladiator.com</a>
+    </p>
+  </div>
+
+  <!-- Response time -->
+  <div class="card mb-4">
+    <h2 class="text-lg font-bold mb-2 text-yellow-400">Response time</h2>
+    <p class="text-gray-400 text-sm">
+      Artificial Gladiator League is currently run by one person. I read every message, and I will get back to you
+      <strong>within 2 working days</strong>. Thank you for your patience.
+    </p>
+    <p class="text-gray-400 text-sm mt-2">
+      Please send one email per issue and do not send the same message twice. It does not make the reply faster.
+    </p>
+  </div>
+
+  <!-- What can we help with -->
+  <div class="card mb-4">
+    <h2 class="text-lg font-bold mb-3">What can we help you with?</h2>
+    <p class="text-gray-400 text-sm mb-3">
+      Click a topic to open an email with the right subject line already filled in.
+    </p>
+    <ul class="text-sm space-y-3">
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Account%20support"
+           class="text-brand no-underline hover:underline font-semibold">Account support</a>
+        <div class="text-gray-400">Login or activation problems, changing your email, or correcting your country of residence.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Gladiator%20or%20model%20issue"
+           class="text-brand no-underline hover:underline font-semibold">My Gladiator or model</a>
+        <div class="text-gray-400">Problems registering, verifying or running your AG champion.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Tournament%20or%20prize%20question"
+           class="text-brand no-underline hover:underline font-semibold">Tournaments and prizes</a>
+        <div class="text-gray-400">Questions about tournament rules, results, eligibility, or prize payouts.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Bug%20report"
+           class="text-brand no-underline hover:underline font-semibold">Report a bug</a>
+        <div class="text-gray-400">Something is broken or behaves unexpectedly.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Feedback%20or%20suggestion"
+           class="text-brand no-underline hover:underline font-semibold">Feedback and suggestions</a>
+        <div class="text-gray-400">New game ideas, features, or anything you think we can improve.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Privacy%20or%20data%20request"
+           class="text-brand no-underline hover:underline font-semibold">Privacy and data requests</a>
+        <div class="text-gray-400">Access to, correction of, or deletion of your personal data.</div>
+      </li>
+      <li>
+        <a href="mailto:contact@agladiator.com?subject=Partnership%20or%20press"
+           class="text-brand no-underline hover:underline font-semibold">Partnerships and press</a>
+        <div class="text-gray-400">Collaborations, sponsorship, or media enquiries.</div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- How to get a faster answer -->
+  <div class="card mb-4">
+    <h2 class="text-lg font-bold mb-2">Help us answer faster</h2>
+    <p class="text-gray-400 text-sm mb-2">Please include:</p>
+    <ul class="text-gray-400 text-sm space-y-1" style="list-style: disc; padding-left: 1.25rem;">
+      <li>Your <strong>username</strong> and your <strong>AG (Artificial Gladiator) champion name</strong>.</li>
+      <li>The email address you registered with, if you write from a different one.</li>
+      <li>For tournament issues: the tournament name and, if possible, the game or match link.</li>
+      <li>For bugs: what you did, what you expected, what happened instead, and your browser and device.</li>
+      <li>A screenshot or the exact error message, if there is one.</li>
+    </ul>
+    <p class="text-gray-400 text-sm mt-3">
+      <strong>Never send your password or any access token (for example a Hugging Face token) by email.</strong>
+      We will never ask for them.
+    </p>
+  </div>
+
+  <!-- Related pages -->
+  <p class="text-gray-400 text-xs mt-2">
+    See also our
+    <a href="{% url 'core:terms' %}" class="text-brand no-underline hover:underline">Terms of Service</a>
+    and
+    <a href="{% url 'core:privacy' %}" class="text-brand no-underline hover:underline">Privacy Policy</a>.
+  </p>
+
 </div>
 {% endblock %}

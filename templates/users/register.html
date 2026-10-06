@@ -40,7 +40,7 @@
 
       <!-- Header -->
       <div class="text-center mb-4">
-        <h1 class="h3 fw-bold text-white">Sign up with username</h1>
+        <h1 class="h3 fw-bold text-white">Register</h1>
         <p class="text-muted-light small mb-1">Pick a username, enter your email, and set a password.</p>
         <p class="small text-muted-light">
           Already have an account?
@@ -130,7 +130,11 @@
                 </div>
               {% endif %}
               <div class="alert alert-warning py-2 small mt-2 mb-2" role="note">
-                <strong>Warning:</strong> your country of residence cannot be changed later. Choose carefully. To correct a mistake you will have to contact support.
+                <strong>Warning:</strong>
+                <ol style="list-style: decimal; padding-left: 1.25rem; margin: .5rem 0 0;">
+                  <li>Your country of residence cannot be changed later. To change your country of residence, you will have to contact support.</li>
+                  <li>Your username nor your AG (Artificial Gladiator) name cannot be changed later at any point.</li>
+                </ol>
               </div>
               <div class="form-check">
                 {{ form.country_confirm }}

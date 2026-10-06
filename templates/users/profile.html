@@ -49,6 +49,10 @@
   .lichess-profile .lp-side, .lichess-profile .lp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .lichess-profile .lp-main .tab-panel > * + * { margin-top: 12px; }
 
+  .lichess-profile .lp-panels { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; }
+  .lichess-profile .lp-panels > .tab-panel { grid-area: 1 / 1; min-width: 0; }
+  .lichess-profile .lp-panels > .tab-panel.hidden { display: block !important; visibility: hidden; }
+
   /* Ratings (perfs) list */
   .lichess-profile .lp-perf { display: flex; align-items: center; gap: 0.6rem; padding: 0.55rem 0.9rem; border-top: 1px solid var(--lp-border); }
   .lichess-profile .lp-perf:first-of-type { border-top: 0; }
@@ -350,6 +354,8 @@
         {% endif %}
       </div>
 
+      <div class="lp-panels">{# all tab panels share one grid cell #}
+
       <!-- ═══════════════════════════════════════
            TAB 1: Edit Profile (own profile only)
            ═══════════════════════════════════════ -->
@@ -402,7 +408,7 @@
               <input type="hidden" name="action" value="flag">
               <label class="flex items-center gap-2 text-sm text-gray-300">
                 <input type="checkbox" name="show_flag" value="1"{% if user_profile.show_flag %} checked{% endif %}>
-                Show my flag on my profile
+                Show my flag on my profile (your flag will <strong>not</strong> be visible to others).
               </label>
               <button type="submit" class="btn-outline btn-sm text-sm mt-3">Save</button>
             </form>
@@ -1274,6 +1280,8 @@
         {% endfor %}
       </div>
       </div>{# /tab-rivalries #}
+
+      </div>{# /lp-panels #}  
 
     </div>{# /right col #}
   </div>
