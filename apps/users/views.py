@@ -1745,6 +1745,8 @@ def gdpr_delete(request):
     user_id = user.pk
 
     # Remove the user's model folder (user_{id}) before deleting the DB record.
+    from apps.users.model_lifecycle import delete_hf_cache_for_user
+    delete_hf_cache_for_user(user_id)  # needs the user's repo ids, so run before user.delete()
     user_folder = Path(settings.USER_MODELS_BASE_DIR) / f"user_{user_id}"
     if user_folder.exists():
         try:

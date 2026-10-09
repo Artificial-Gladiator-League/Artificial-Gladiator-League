@@ -1015,6 +1015,35 @@ def _stop_all_workers() -> None:
             pass
 
 
+def stop_workers_under(paths) -> int:
+    """Stop warm workers whose model/data dir lies inside any of *paths*.
+
+    Releases Windows file locks before the caller deletes those folders.
+    Returns the number of workers stopped.
+    """
+    roots = [Path(p).resolve() for p in paths]
+
+    def _inside(raw) -> bool:
+        if not raw:
+            return False
+        p = Path(raw)
+        return any(p == r or r in p.parents for r in roots)
+
+    with _pool_lock:
+        victims = [w for b, w in _workers.items() if _inside(b[0]) or _inside(b[1])]
+    stopped = 0
+    for w in victims:
+        with _key_lock(w.base):
+            with _pool_lock:
+                if _workers.get(w.base) is not w:
+                    continue
+                _workers.pop(w.base, None)
+            log.info("Stopping sandbox worker before deleting files: %s", w.base[0])
+            w.stop()
+            stopped += 1
+    return stopped
+
+
 def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type):
     """Return ``(worker | None, cold)``. The caller MUST hold ``_key_lock(base)``.
 

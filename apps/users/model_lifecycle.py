@@ -21,6 +21,9 @@ import logging
 import os
 import re
 import shutil
+import stat
+import sys
+import time
 from pathlib import Path
 
 from celery import shared_task
@@ -403,6 +406,107 @@ _DEAD_CODE_PLACEHOLDER = None  # replaced old HF-download body
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Task 2 — Logout: cleanup files & cache
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_HF_REPO_ID_RE = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+
+
+def _hf_cache_folder_name(kind: str, repo_id: str) -> str:
+    return f"{kind}--{repo_id.replace('/', '--')}"
+
+
+def _make_writable_and_retry(func, path, _exc) -> None:
+    """rmtree error handler: clear the read-only bit (Windows) and retry once."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def _rmtree_with_retries(target: Path, attempts: int = 3) -> bool:
+    """Delete *target*, handling read-only files and transient Windows locks."""
+    handler = (
+        {"onexc": _make_writable_and_retry}
+        if sys.version_info >= (3, 12)
+        else {"onerror": _make_writable_and_retry}
+    )
+    for attempt in range(1, attempts + 1):
+        try:
+            shutil.rmtree(target, **handler)
+        except FileNotFoundError:
+            return True
+        except OSError:
+            log.warning("rmtree attempt %d/%d failed for %s", attempt, attempts, target, exc_info=True)
+        if not target.exists():
+            return True
+        time.sleep(0.2 * attempt)
+    return False
+
+
+def _other_users_reference(user_id: int, kind: str, repo_id: str) -> bool:
+    """True when another user's rows still point at *repo_id* (case-insensitive)."""
+    from apps.users.models import CustomUser, UserGameModel
+
+    field = "hf_model_repo_id" if kind == "models" else "hf_data_repo_id"
+    if UserGameModel.objects.filter(**{f"{field}__iexact": repo_id}).exclude(user_id=user_id).exists():
+        return True
+    if kind == "models":
+        return CustomUser.objects.filter(hf_model_repo_id__iexact=repo_id).exclude(pk=user_id).exists()
+    return False
+
+
+def delete_hf_cache_for_user(user_id: int) -> list[str]:
+    """Delete this user's model/dataset repo folders from the shared HF hub cache.
+
+    Repos still referenced by another user are kept. Idempotent and never raises.
+    Returns the folders that were removed.
+    """
+    removed: list[str] = []
+    try:
+        from apps.games.local_inference import _hf_cache_root
+        from apps.users.models import CustomUser, UserGameModel
+
+        pairs: set[tuple[str, str]] = set()
+        for model_id, data_id in UserGameModel.objects.filter(user_id=user_id).values_list(
+            "hf_model_repo_id", "hf_data_repo_id"
+        ):
+            pairs.add(("models", (model_id or "").strip()))
+            pairs.add(("datasets", (data_id or "").strip()))
+        legacy = CustomUser.objects.filter(pk=user_id).values_list("hf_model_repo_id", flat=True).first()
+        pairs.add(("models", (legacy or "").strip()))
+
+        root = _hf_cache_root().resolve()
+        targets: list[tuple[str, str, Path]] = []
+        for kind, repo_id in sorted(pairs):
+            if not repo_id:
+                continue
+            if not _HF_REPO_ID_RE.fullmatch(repo_id):
+                log.warning("HF cache cleanup: skipping invalid repo id %r (user=%s)", repo_id, user_id)
+                continue
+            if _other_users_reference(user_id, kind, repo_id):
+                log.info("HF cache cleanup: keeping %s %s, still used by another user", kind, repo_id)
+                continue
+            target = (root / _hf_cache_folder_name(kind, repo_id)).resolve()
+            if target.parent != root:
+                log.warning("HF cache cleanup: refusing path outside cache: %s", target)
+                continue
+            targets.append((kind, repo_id, target))
+
+        try:
+            from apps.games.sandbox_runner import stop_workers_under
+            stop_workers_under([_user_base_dir(user_id), *(t for _k, _r, t in targets)])
+        except Exception:
+            log.exception("HF cache cleanup: could not stop sandbox workers for user=%s", user_id)
+
+        for kind, repo_id, target in targets:
+            if not target.exists():
+                continue
+            if _rmtree_with_retries(target):
+                removed.append(str(target))
+                log.info("HF cache cleanup: deleted %s %s (%s) for user=%s", kind, repo_id, target, user_id)
+            else:
+                log.error("HF cache cleanup: could not delete %s for user=%s", target, user_id)
+    except Exception:
+        log.exception("HF cache cleanup failed for user=%s", user_id)
+    return removed
+
+
 def cleanup_for_user(user_id: int) -> None:
     """Synchronous logout cleanup: delete model files and clear cache for *user_id*.
 
@@ -410,6 +514,8 @@ def cleanup_for_user(user_id: int) -> None:
     on a running Celery worker (mirrors ``download_and_scan_for_user``).
     """
     from apps.users.models import UserGameModel
+
+    delete_hf_cache_for_user(user_id)
 
     user_dir = _user_base_dir(user_id)
     if user_dir.exists():

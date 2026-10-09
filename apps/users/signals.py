@@ -527,6 +527,12 @@ def clear_breakthrough_on_logout(sender, request, user, **kwargs):
             return
 
         try:
+            from apps.users.model_lifecycle import delete_hf_cache_for_user
+            delete_hf_cache_for_user(user_id)
+        except Exception:
+            log.exception("Failed to remove HF cache for user %s on logout", user.username)
+
+        try:
             clear_user_models(user_id)
             log.info("Removed preloaded models for user %s on logout", user.username)
         except Exception:
