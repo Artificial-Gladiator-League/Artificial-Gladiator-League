@@ -305,3 +305,94 @@ sudo -u agladiator /opt/agladiator/venv/bin/python manage.py dbshell
 # Supervisor status
 sudo supervisorctl status
 ```
+
+---
+
+## 15. Guest mode (optional, off by default)
+
+Guest mode lets a visitor sign in with Hugging Face (scopes `openid profile` only), connect their own **public** model/data repos and play **unrated** games against other guests. It is additive: with `GUEST_MODE_ENABLED=False` (the default) no guest page, link, route or background task does anything.
+
+### 15.1 Before enabling
+
+1. Review the guest paragraph in `templates/core/terms.html` (section S2, shown only when the flag is on) and update your Termly privacy and cookie policies yourself.
+2. Make sure the Hugging Face OAuth app (`HF_OAUTH_CLIENT_ID`, `HF_OAUTH_CLIENT_SECRET`) is configured. Guest sign-in reuses the existing OAuth callback (`oauth/hf/callback/`), so no new redirect URI is needed.
+3. Run the database migrations (they are additive and reversible):
+
+```bash
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py migrate users 0042
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py migrate games 0012
+```
+
+4. The Docker sandbox must work (guest model code never runs outside it). `SANDBOX_ENABLE_LOCAL_FALLBACK` is forced to `False` while guest mode is on, and `manage.py check` fails with `users.E001` if it is not.
+
+### 15.2 Settings (environment variables in `.env`)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GUEST_MODE_ENABLED` | `False` | Master switch. |
+| `GUEST_TTL_DAYS` | `3` | A guest account is purged after this many days of inactivity (minimum 1). |
+| `GUEST_SNAPSHOT_IDLE_MINUTES` | `120` | Downloaded repo snapshots are deleted after this idle time (never during an ongoing game) and always at logout. |
+| `GUEST_CELERY_QUEUE` | `celery` | Queue used for guest tasks and the guest beat entries. |
+| `GUEST_MAX_ACTIVE` | `200` | Maximum number of active guest accounts. |
+| `GUEST_MAX_REPO_MB` / `GUEST_MAX_REPO_FILES` | `300` / `200` | Size and file-count limit, checked before anything is downloaded. |
+| `GUEST_RATE_SIGNIN_PER_IP` / `_PER_SUB` | `20/h` / `10/h` | Sign-in rate limits. |
+| `GUEST_RATE_CONNECT_PER_USER` | `12/h` | Repo connect limit per guest. |
+| `GUEST_RATE_UPGRADE_PER_USER` | `5/h` | Upgrade e-mail limit per guest. |
+| `TRUSTED_PROXY_HEADER` | empty | Header holding the real client IP, used for the per-IP limit. Leave empty if the app is reachable directly. |
+| `SANDBOX_GUEST_MEMORY_LIMIT_MB` | `256` | Guest sandbox memory. |
+| `SANDBOX_GUEST_CPU_LIMIT` | `0.5` | Guest sandbox CPUs. |
+| `SANDBOX_GUEST_PIDS_LIMIT` | `64` | Guest sandbox processes/threads. |
+| `SANDBOX_GUEST_MOVE_TIMEOUT` | `15` | Seconds per move. |
+| `SANDBOX_GUEST_VERIFY_TIMEOUT` | `120` | Seconds for a model check. |
+| `SANDBOX_GUEST_START_TIMEOUT` | `60` | Seconds for a cold start. |
+| `SANDBOX_GUEST_MAX_WORKERS` | `2` | Maximum warm guest containers (a busy pool refuses new guests instead of evicting registered users). |
+| `SANDBOX_GUEST_FSIZE_MB` | `8` | Largest file a guest process may write. |
+| `SANDBOX_DOCKER_RUNTIME` | empty | Optional OCI runtime for all sandbox containers, for example `runsc` (gVisor) for stronger isolation. |
+
+Registered-account sandbox limits are unchanged.
+
+### 15.3 Client IP behind a proxy
+
+The per-IP rate limit needs the real client address. Set `TRUSTED_PROXY_HEADER` only to a header that **your proxy always overwrites**:
+
+* nginx as the only proxy (the config in section 10): `TRUSTED_PROXY_HEADER=X-Forwarded-For`
+* Cloudflare in front of nginx: `TRUSTED_PROXY_HEADER=CF-Connecting-IP` and allow only Cloudflare addresses to reach the server.
+
+If the app is reachable without the proxy, leave it empty; otherwise a client could forge the header.
+
+### 15.4 Celery worker and beat
+
+Guest work uses the queue named by `GUEST_CELERY_QUEUE`. The default (`celery`) needs no change. To keep guest model checks away from registered traffic, set `GUEST_CELERY_QUEUE=guest` and run a second worker, and make the main worker listen to both queues:
+
+```ini
+[program:agladiator-celery]
+command=/opt/agladiator/venv/bin/celery -A agladiator worker -l info -c 2 -Q celery,guest
+
+[program:agladiator-celery-guest]
+command=/opt/agladiator/venv/bin/celery -A agladiator worker -l info -c 1 -Q guest -n guest@%%h
+directory=/opt/agladiator/app
+user=agladiator
+autostart=true
+autorestart=true
+```
+
+The beat schedule adds `purge-expired-guests` (hourly) and `cleanup-idle-guest-snapshots` (every 10 minutes). Restart `agladiator-celerybeat` after deploying so the database scheduler picks them up.
+
+### 15.5 Enable, check, roll back
+
+```bash
+# Dry run: lists what the purge would delete, deletes nothing
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py purge_guests --dry-run
+
+# Enable
+echo 'GUEST_MODE_ENABLED=True' | sudo -u agladiator tee -a /opt/agladiator/app/.env
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py check
+sudo supervisorctl restart agladiator-gunicorn agladiator-daphne agladiator-celery agladiator-celerybeat
+```
+
+To switch off, set `GUEST_MODE_ENABLED=False` and restart; the guest sign-in blocks and guest pages disappear. The purge and snapshot-cleanup tasks keep running regardless of the flag, so existing guest accounts are still deleted once they have been idle for `GUEST_TTL_DAYS`; `manage.py purge_guests` runs the same purge on demand (it only touches expired guests). To remove the schema as well, wait until no guest accounts remain (check with `purge_guests --dry-run`), then reverse the migrations (this drops the guest columns):
+
+```bash
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py migrate games 0011
+sudo -u agladiator /opt/agladiator/venv/bin/python manage.py migrate users 0041
+```
