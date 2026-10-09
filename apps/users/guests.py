@@ -14,6 +14,8 @@ from django.shortcuts import render
 log = logging.getLogger(__name__)
 
 GUEST_BLOCK_MESSAGE = "Create a permanent account to compete"
+RESERVED_USERNAME_PREFIX = "guest_"
+RESERVED_USERNAME_MESSAGE = "Usernames starting with 'guest_' are reserved for guest accounts."
 
 
 def guest_mode_enabled() -> bool:

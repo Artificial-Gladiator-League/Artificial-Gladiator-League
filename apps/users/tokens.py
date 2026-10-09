@@ -23,3 +23,17 @@ class EmailChangeTokenGenerator(PasswordResetTokenGenerator):
 
 
 email_change_token = EmailChangeTokenGenerator()
+
+
+class GuestUpgradeTokenGenerator(PasswordResetTokenGenerator):
+    """HMAC token for a GuestUpgradeRequest (passed in place of ``user``).
+
+    The hash covers the request's nonce and used_at, so the link works exactly once;
+    it also stops working if the account stops being a guest.
+    """
+
+    def _make_hash_value(self, req, timestamp):
+        return f"{req.pk}{req.nonce}{req.used_at}{req.user.is_guest}{timestamp}"
+
+
+guest_upgrade_token = GuestUpgradeTokenGenerator()

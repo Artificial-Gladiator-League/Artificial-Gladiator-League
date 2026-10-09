@@ -3,7 +3,7 @@ from . import views
 from .webhooks import hf_webhook
 from .hf_oauth import hf_oauth_start, hf_oauth_callback, hf_oauth_complete
 from .guest_oauth import guest_hf_start
-from .guest_views import guest_delete_data
+from .guest_views import guest_delete_data, guest_upgrade, guest_upgrade_confirm, guest_upgrade_sent
 
 app_name = "users"
 
@@ -15,6 +15,9 @@ urlpatterns = [
     path("oauth/hf/complete/", hf_oauth_complete, name="hf_oauth_complete"),
     path("oauth/hf/guest/", guest_hf_start, name="guest_hf_start"),
     path("guest/delete-data/", guest_delete_data, name="guest_delete_data"),
+    path("guest/upgrade/", guest_upgrade, name="guest_upgrade"),
+    path("guest/upgrade/sent/", guest_upgrade_sent, name="guest_upgrade_sent"),
+    path("guest/upgrade/confirm/<uidb64>/<token>/", guest_upgrade_confirm, name="guest_upgrade_confirm"),
     path("register/", views.register, name="register"),
     path("activate/<uidb64>/<token>/", views.activate, name="activate"),
     path("activation-sent/", views.activation_sent, name="activation_sent"),

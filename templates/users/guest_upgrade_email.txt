@@ -1,0 +1,9 @@
+Hi {{ username }},
+
+Confirm your Artificial Gladiator League account by opening this link (valid for {{ hours }} hours, works once):
+
+{{ confirm_url }}
+
+Your guest account, repos and model pins carry over. If you did not ask for this, ignore this email.
+
+Artificial Gladiator League

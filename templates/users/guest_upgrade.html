@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Create a permanent account • agladiator.com{% endblock %}
+
+{% block extra_head %}
+  {% if recaptcha_site_key %}
+  <script src="https://www.google.com/recaptcha/api.js?render={{ recaptcha_site_key }}" defer></script>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto animate-fade-in py-10">
+  <div class="card">
+    <h1 class="text-2xl font-bold mb-1">Create a permanent account</h1>
+    <p class="text-gray-400 text-sm mb-5">
+      Your guest account, your repos and your model pins are kept. We will email you a link to confirm.
+      Country of residence, username and AG name cannot be changed later.
+    </p>
+    <form method="post" id="upgradeForm" novalidate>
+      {% csrf_token %}
+      {% if form.non_field_errors %}
+      <div class="text-red-400 text-sm mb-3">{% for e in form.non_field_errors %}<div>{{ e }}</div>{% endfor %}</div>
+      {% endif %}
+      {% for field in form.visible_fields %}
+      <div class="mb-3">
+        {% if field.field.widget.input_type == "checkbox" %}
+        <label class="flex items-start gap-2 text-sm text-gray-300">{{ field }} <span>{{ field.label }}</span></label>
+        {% else %}
+        <label for="{{ field.id_for_label }}" class="block text-sm font-semibold mb-1">{{ field.label }}</label>
+        {{ field }}
+        {% endif %}
+        {% for e in field.errors %}<div class="text-red-400 text-xs mt-1">{{ e }}</div>{% endfor %}
+      </div>
+      {% endfor %}
+      {{ form.captcha }}
+      <button type="submit" id="upgrade-submit" class="btn-brand w-full py-2">Send confirmation email</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if recaptcha_site_key %}
+<script>
+  (function () {
+    var form = document.getElementById('upgradeForm');
+    if (!form || typeof grecaptcha === 'undefined') return;
+    var submitting = false;
+    form.addEventListener('submit', function (ev) {
+      if (submitting) return;
+      ev.preventDefault();
+      grecaptcha.ready(function () {
+        grecaptcha.execute("{{ recaptcha_site_key }}", {action: 'guest_upgrade'}).then(function (token) {
+          var field = form.querySelector('[name="captcha"]');
+          if (field) field.value = token;
+          submitting = true;
+          form.submit();
+        });
+      });
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

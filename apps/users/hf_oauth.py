@@ -41,6 +41,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 
+from .guests import RESERVED_USERNAME_MESSAGE, RESERVED_USERNAME_PREFIX
 from .models import CustomUser, validate_hf_repo_id
 
 log = logging.getLogger(__name__)
@@ -301,6 +302,8 @@ def hf_oauth_complete(request):
         errors = {}
         if not username:
             errors["username"] = "Username is required."
+        elif username.lower().startswith(RESERVED_USERNAME_PREFIX):
+            errors["username"] = RESERVED_USERNAME_MESSAGE
         elif CustomUser.objects.filter(username=username).exists():
             errors["username"] = "This username is already taken."
         if not ai_name:

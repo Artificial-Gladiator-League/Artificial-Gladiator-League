@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm
 
 from .countries import country_choices, is_valid_country
+from .guests import RESERVED_USERNAME_MESSAGE, RESERVED_USERNAME_PREFIX
 from .models import CustomUser, GDPRRequest, validate_hf_repo_id
 
 
@@ -222,6 +223,8 @@ class RegistrationForm(CountryChoiceMixin, forms.Form):
             validator(username)
         except forms.ValidationError as exc:
             raise forms.ValidationError(exc.messages) from exc
+        if username.lower().startswith(RESERVED_USERNAME_PREFIX):
+            raise forms.ValidationError(RESERVED_USERNAME_MESSAGE)
         if CustomUser.objects.filter(username__iexact=username).exists():
             raise forms.ValidationError("This username is already taken.")
         return username
@@ -247,6 +250,23 @@ class RegistrationForm(CountryChoiceMixin, forms.Form):
         if password and confirm_password and password != confirm_password:
             self.add_error("confirm_password", "Passwords do not match.")
         return cleaned
+
+
+class GuestUpgradeForm(RegistrationForm):
+    """Registration rules (username, password, email, AG name, country, consent, captcha) for a guest."""
+
+    def __init__(self, *args, guest=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.guest = guest
+
+    def clean_ai_name(self):
+        ai_name = self.cleaned_data.get("ai_name", "").strip()
+        taken = CustomUser.objects.filter(ai_name__iexact=ai_name)
+        if self.guest is not None:
+            taken = taken.exclude(pk=self.guest.pk)  # a guest may keep the name taken from Hugging Face
+        if taken.exists():
+            raise forms.ValidationError("This AI name is already taken. Please choose a different one.")
+        return ai_name
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
