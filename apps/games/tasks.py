@@ -24,6 +24,7 @@ except ImportError:
 
 # Fire-and-forget — never block the beat worker on a slow/unreachable Space.
 _KEEP_WARM_TIMEOUT = 5
+_import_failure_logged = False
 
 
 def _ping_endpoint(base_url: str) -> None:
@@ -47,14 +48,23 @@ def keep_warm_ongoing_games() -> str:
     Fires roughly every 5 minutes via Celery Beat so the serverless HF
     Spaces backing live bot games don't go cold between moves.
     """
-    from apps.games.bot_runner import _get_repo_for_user
-    from apps.games.models import Game
-    from apps.games.predict_breakthrough import _space_base_url as _bt_space_url
-    from apps.games.predict_chess import _space_url_for as _chess_space_url
+    global _import_failure_logged
+    try:
+        from apps.games.bot_runner import _get_repo_for_user
+        from apps.games.models import Game
+        from apps.games.predict_breakthrough import _space_base_url as _bt_space_url
+        from apps.games.predict_chess import _space_url_for as _chess_space_url
+    except ImportError as exc:
+        if not _import_failure_logged:
+            _import_failure_logged = True
+            log.debug("keep_warm_ongoing_games disabled: Space URL helpers unavailable (%s)", exc)
+        return "Skipped: Space URL helpers unavailable."
 
     pinged = 0
     games = Game.objects.filter(status=Game.Status.ONGOING).select_related("white", "black")
     for game in games:
+        if getattr(game, "is_guest_game", False):
+            continue
         for user in (game.white, game.black):
             if user is None:
                 continue
