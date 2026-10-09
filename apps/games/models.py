@@ -154,8 +154,27 @@ class Game(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)
     last_move_at = models.DateTimeField(null=True, blank=True)
 
+    # ── Guest isolation ─────────────────────────
+    # Set when the game is created (or the table is joined) and never cleared, so a
+    # guest game can never become rated, even after the guest upgrades.
+    is_guest_game = models.BooleanField(default=False, db_index=True)
+
     class Meta:
         ordering = ["-timestamp"]
+
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        instance = super().from_db(db, field_names, values)
+        if "is_guest_game" in field_names:
+            instance._loaded_guest_game = instance.is_guest_game
+        return instance
+
+    def save(self, *args, **kwargs):
+        if getattr(self, "_loaded_guest_game", False):
+            self.is_guest_game = True
+        super().save(*args, **kwargs)
+        if self.is_guest_game:
+            self._loaded_guest_game = True
 
     def __str__(self):
         w = self.white.username if self.white else "???"

@@ -11,6 +11,7 @@ class UsersConfig(AppConfig):
 
     def ready(self):
         import apps.users.signals  # noqa: F401 — register post_save handlers
+        import apps.users.checks  # noqa: F401 — register system checks
 
         # Loud startup check: surface a missing/broken huggingface_hub at
         # process boot instead of only on the first request that needs it.

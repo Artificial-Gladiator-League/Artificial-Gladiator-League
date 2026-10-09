@@ -228,6 +228,20 @@ class CustomUser(AbstractUser):
 
     is_official_bot = models.BooleanField(default=False)
 
+    # ── Guest mode ─────────────────────────────────────────────
+    # A guest is a real row that signed in with Hugging Face only. hf_username is
+    # deliberately left blank for guests so the registered-user OAuth login can never
+    # match them; the HF identity lives in hf_sub (stable) and guest_hf_username.
+    is_guest = models.BooleanField(default=False, db_index=True)
+    guest_created_at = models.DateTimeField(null=True, blank=True)
+    guest_last_seen = models.DateTimeField(null=True, blank=True)
+    guest_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    hf_sub = models.CharField(
+        max_length=128, unique=True, null=True, blank=True,
+        help_text="Stable Hugging Face account id (OIDC 'sub'). Kept after a guest upgrades.",
+    )
+    guest_hf_username = models.CharField(max_length=255, blank=True, default="")
+
     # ── Country of residence (convenience layer) ─────────────
     # Set once (registration, or once from profile settings for older accounts) and
     # then locked. It never replaces the IP geo gate, the per-tournament residency
@@ -687,6 +701,17 @@ class UserGameModel(models.Model):
         help_text="Latest commit timestamp of the repo at tournament registration. Used to detect post-registration changes.",
     )
 
+    class VerificationMethod(models.TextChoices):
+        FILE = "file", "AGL_VERIFY.txt in a gated repo"
+        OAUTH_NAMESPACE = "oauth_namespace", "Hugging Face sign-in (public repo)"
+
+    verification_method = models.CharField(
+        max_length=20,
+        choices=VerificationMethod.choices,
+        default=VerificationMethod.FILE,
+        help_text="How ownership was proven. Tournaments and prizes require 'file'.",
+    )
+
     class Meta:
         unique_together = ("user", "game_type")
         verbose_name = "User Game Model"
@@ -832,3 +857,27 @@ class GDPRRequest(models.Model):
 
     def __str__(self):
         return f"{self.get_request_type_display()} — {self.user.username} ({self.status})"
+
+
+class GuestUpgradeRequest(models.Model):
+    """Pending guest -> permanent upgrade, confirmed through a single-use e-mail link."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="guest_upgrades",
+    )
+    nonce = models.CharField(max_length=64, unique=True)
+    username = models.CharField(max_length=150)
+    ai_name = models.CharField(max_length=120)
+    email = models.EmailField(max_length=254)
+    country = models.CharField(max_length=2)
+    password_hash = models.CharField(max_length=256)
+    consented_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"upgrade #{self.pk} user={self.user_id} used={bool(self.used_at)}"

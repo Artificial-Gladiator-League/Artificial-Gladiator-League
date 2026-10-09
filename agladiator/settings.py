@@ -344,6 +344,45 @@ HF_OAUTH_AUTHORIZE_URL = "https://huggingface.co/oauth/authorize"
 HF_OAUTH_TOKEN_URL = "https://huggingface.co/oauth/token"
 HF_OAUTH_USERINFO_URL = "https://huggingface.co/oauth/userinfo"
 
+# ── Guest mode (Hugging Face sign-in, unrated practice play) ───────────────
+# Everything below is inert unless GUEST_MODE_ENABLED is true. Keep it False until
+# the guest paragraph in terms.html and the Termly policies have been reviewed.
+def _env_bool(name, default="False"):
+    return os.environ.get(name, default).lower() in ("true", "1", "yes")
+
+GUEST_MODE_ENABLED = _env_bool("GUEST_MODE_ENABLED")
+GUEST_TTL_DAYS = int(os.environ.get("GUEST_TTL_DAYS", "3"))
+GUEST_SNAPSHOT_IDLE_MINUTES = int(os.environ.get("GUEST_SNAPSHOT_IDLE_MINUTES", "120"))
+# Celery queue for guest tasks. Same queue by default; to isolate guest work start a
+# second worker with "-Q celery,guest" (or "-Q guest") and set GUEST_CELERY_QUEUE=guest.
+GUEST_CELERY_QUEUE = os.environ.get("GUEST_CELERY_QUEUE", "celery")
+GUEST_OAUTH_SCOPES = "openid profile"
+GUEST_MAX_ACTIVE = int(os.environ.get("GUEST_MAX_ACTIVE", "200"))
+GUEST_MAX_REPO_MB = int(os.environ.get("GUEST_MAX_REPO_MB", "300"))
+GUEST_MAX_REPO_FILES = int(os.environ.get("GUEST_MAX_REPO_FILES", "200"))
+# Rates use the django-ratelimit "N/period" syntax.
+GUEST_RATE_SIGNIN_PER_IP = os.environ.get("GUEST_RATE_SIGNIN_PER_IP", "20/h")
+GUEST_RATE_SIGNIN_PER_SUB = os.environ.get("GUEST_RATE_SIGNIN_PER_SUB", "10/h")
+GUEST_RATE_CONNECT_PER_USER = os.environ.get("GUEST_RATE_CONNECT_PER_USER", "12/h")
+GUEST_RATE_UPGRADE_PER_USER = os.environ.get("GUEST_RATE_UPGRADE_PER_USER", "5/h")
+# Header carrying the real client IP when behind a trusted proxy ("X-Forwarded-For"
+# for nginx only, "CF-Connecting-IP" for Cloudflare). Unset = use REMOTE_ADDR.
+TRUSTED_PROXY_HEADER = os.environ.get("TRUSTED_PROXY_HEADER", "")
+
+# Guest sandbox profile (used only for guest models; registered limits are unchanged).
+SANDBOX_GUEST_MEMORY_LIMIT_MB = int(os.environ.get("SANDBOX_GUEST_MEMORY_LIMIT_MB", "256"))
+SANDBOX_GUEST_CPU_LIMIT = float(os.environ.get("SANDBOX_GUEST_CPU_LIMIT", "0.5"))
+SANDBOX_GUEST_PIDS_LIMIT = int(os.environ.get("SANDBOX_GUEST_PIDS_LIMIT", "64"))
+SANDBOX_GUEST_MOVE_TIMEOUT = int(os.environ.get("SANDBOX_GUEST_MOVE_TIMEOUT", "15"))
+SANDBOX_GUEST_VERIFY_TIMEOUT = int(os.environ.get("SANDBOX_GUEST_VERIFY_TIMEOUT", "120"))
+SANDBOX_GUEST_MAX_WORKERS = int(os.environ.get("SANDBOX_GUEST_MAX_WORKERS", "2"))
+# Optional OCI runtime for sandbox containers (e.g. "runsc" for gVisor). Unset = Docker default.
+SANDBOX_DOCKER_RUNTIME = os.environ.get("SANDBOX_DOCKER_RUNTIME", "")
+
+# Guests must never run model code outside Docker.
+if GUEST_MODE_ENABLED:
+    SANDBOX_ENABLE_LOCAL_FALLBACK = False
+
 # ── AI model preloading ───────────────────────────────
 # Downloaded once at startup into HF_HUB_CACHE; no per-user copies.
 # Override via AGL_CHESS_PRELOAD / AGL_BREAKTHROUGH_PRELOAD env vars
