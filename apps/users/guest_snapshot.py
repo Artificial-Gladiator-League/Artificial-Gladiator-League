@@ -285,3 +285,9 @@ def prepare_pinned_snapshots(user) -> None:
             schedule_guest_prepare(
                 gm.pk, gm.approved_full_sha, (gm.approved_data_repo_sha or None), pin=False,
             )
+
+
+def ensure_guest_snapshots(user) -> None:
+    """Re-download missing pinned snapshots (e.g. after the idle clean-up); at most once a minute."""
+    if cache.add(f"guest-ensure:{user.pk}", 1, timeout=60):
+        prepare_pinned_snapshots(user)

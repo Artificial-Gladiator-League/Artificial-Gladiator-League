@@ -589,7 +589,7 @@ class UserLogoutView(LogoutView):
         # `cleanup_on_logout` asynchronously.
         # As a best-effort additional cleanup, remove preloaded models now.
         try:
-            if user and getattr(user, "pk", None) is not None:
+            if user and getattr(user, "pk", None) is not None and not is_guest(user):
                 from apps.games.model_preloader import clear_user_models
                 try:
                     clear_user_models(user.pk)
@@ -1411,6 +1411,9 @@ class ProfileView(LoginRequiredMixin, UpdateView):
             game_configs.append(entry)
         ctx["game_configs"] = game_configs
         ctx["ai_next_step"] = next_step_line(game_configs, guest=is_guest(user))
+        if is_guest(user):
+            from .guest_snapshot import ensure_guest_snapshots
+            ensure_guest_snapshots(user)
 
         # ── Tournament readiness per game type ─────────────
         from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES

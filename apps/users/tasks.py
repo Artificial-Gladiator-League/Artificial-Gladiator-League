@@ -65,3 +65,10 @@ def prepare_guest_snapshot_task(gm_id: int, model_sha=None, data_sha=None, pin: 
         prepare_guest_snapshot(gm_id, model_sha, data_sha, pin=pin)
     except SoftTimeLimitExceeded:
         log.error("Guest snapshot preparation timed out for gm=%s", gm_id)
+
+
+@shared_task
+def cleanup_idle_guest_snapshots_task() -> int:
+    from apps.users.guest_lifecycle import cleanup_idle_guest_snapshots
+
+    return cleanup_idle_guest_snapshots()

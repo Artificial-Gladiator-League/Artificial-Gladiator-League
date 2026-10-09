@@ -526,6 +526,12 @@ def clear_breakthrough_on_logout(sender, request, user, **kwargs):
         if user_id is None:
             return
 
+        if getattr(user, "is_guest", False):
+            # Synchronous; leaves everything in place while the guest is in a game.
+            from apps.users.guest_lifecycle import delete_guest_snapshots
+            delete_guest_snapshots(user_id)
+            return
+
         try:
             from apps.users.model_lifecycle import delete_hf_cache_for_user
             delete_hf_cache_for_user(user_id)
