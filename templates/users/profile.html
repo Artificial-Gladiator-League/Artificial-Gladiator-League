@@ -347,7 +347,7 @@
         <button class="profile-tab" data-tab="diagnostics">Diagnostics</button>
         <button class="profile-tab" data-tab="rivalries">Rivalries</button>
         <button class="profile-tab" data-tab="stats">Activity</button>
-        <button class="profile-tab" data-tab="paypal">PayPal</button>
+        {% if not user_profile.is_guest %}<button class="profile-tab" data-tab="paypal">PayPal</button>{% endif %}
         {% else %}
         <button class="profile-tab" data-tab="rivalries">Rivalries</button>
         <button class="profile-tab active" data-tab="stats">Activity</button>
@@ -361,6 +361,32 @@
            ═══════════════════════════════════════ -->
       {% if is_own_profile %}
       <div id="tab-edit" class="tab-panel space-y-3">
+        {% if user_profile.is_guest %}
+        <div class="card" id="guestAccountCard">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Guest account</h2>
+          <p class="text-sm text-gray-200 mb-1">Signed in with Hugging Face as <strong>{{ user_profile.guest_hf_username }}</strong>.</p>
+          <p class="text-xs text-gray-400 mb-3">
+            Your games are unrated and you can play other guests only. This account is deleted
+            {% if user_profile.guest_expires_at %}on {{ user_profile.guest_expires_at|date:"M j, Y" }}{% else %}after a few days{% endif %}
+            unless you come back, and models downloaded for you are removed when you log out.
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <a href="{% url 'users:guest_upgrade' %}" class="btn-gold btn-sm text-sm">Create permanent account</a>
+            <form method="post" action="{% url 'users:guest_delete_data' %}"
+                  onsubmit="return confirm('Delete your guest account and all its data now? This cannot be undone.');">
+              {% csrf_token %}
+              <button type="submit" class="btn-outline btn-sm text-sm">Delete my guest data</button>
+            </form>
+          </div>
+        </div>
+        <div class="card" id="guestUpgradeCard">
+          <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Keep your progress</h2>
+          <p class="text-xs text-gray-400">
+            A permanent account adds an email address and password, keeps your connected repos and lets you
+            play rated games. Choose your country and names carefully, they cannot be changed afterwards.
+          </p>
+        </div>
+        {% else %}
         <div class="card">
           <form method="post" enctype="multipart/form-data" id="profileForm" novalidate>
             {% csrf_token %}
@@ -393,7 +419,9 @@
             {# Save Changes button removed per UI update #}
           </form>
         </div>
+        {% endif %}
 
+        {% if not user_profile.is_guest %}
         <!-- ── Country of residence ──────────────────── -->
         <div class="card" id="countryCard">
           <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Country of residence</h2>
@@ -535,12 +563,14 @@
             </div>
           </div>
         </div>
+        {% endif %}
 
       </div>{# /tab-edit #}
 
       <!-- ═══════════════════════════════════════
            TAB: PayPal Payout Email (own profile)
            ═══════════════════════════════════════ -->
+      {% if not user_profile.is_guest %}
       <div id="tab-paypal" class="tab-panel hidden space-y-3">
         <div class="card">
           <h2 class="text-sm capitalize tracking-widest text-gray-500 font-semibold mb-1">Payout Email</h2>
@@ -594,6 +624,7 @@
           </form>
         </div>
       </div>{# /tab-paypal #}
+      {% endif %}
 
       <!-- ═══════════════════════════════════════
            TAB: AI Models (own profile only)
@@ -617,6 +648,85 @@
 
         {% for game in game_configs %}
         <div id="ai-game-{{ game.type }}" class="ai-subtab-panel {% if not forloop.first %}hidden{% endif %}">
+          {% if user_profile.is_guest %}
+          <div class="card">
+            <div class="flex items-center justify-between mb-4">
+              <h2 class="text-xl font-semibold">{{ game.label }}</h2>
+              {% if game.model and game.model.status == 'active' %}
+                <span class="text-sm text-green-400">Ready</span>
+              {% elif game.model and game.model.status == 'failed' %}
+                <span class="text-sm text-red-400">Model check failed</span>
+              {% elif game.model %}
+                <span class="text-sm text-yellow-400">Preparing your model</span>
+              {% else %}
+                <span class="text-sm text-gray-500">Not connected</span>
+              {% endif %}
+            </div>
+
+            <p class="text-sm text-gray-300 mb-3">
+              Your repos must be <strong>public</strong> and belong to your Hugging Face account
+              ({{ user_profile.guest_hf_username }}).
+            </p>
+
+            {% if game.model %}
+            <div class="text-sm text-gray-300 mb-4 space-y-1">
+              <p><span class="text-gray-500">Model repo:</span> <code class="text-gray-200">{{ game.model.hf_model_repo_id }}</code></p>
+              <p><span class="text-gray-500">Model SHA:</span> <code class="text-gray-200">{{ game.model.approved_full_sha|truncatechars:16 }}</code></p>
+              {% if game.model.hf_data_repo_id %}
+              <p><span class="text-gray-500">Data repo:</span> <code class="text-gray-200">{{ game.model.hf_data_repo_id }}</code></p>
+              <p><span class="text-gray-500">Data SHA:</span> <code class="text-gray-200">{{ game.model.approved_data_repo_sha|truncatechars:16 }}</code></p>
+              {% endif %}
+            </div>
+
+            {% if game.model.status == 'failed' %}
+            <div class="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 mb-3 text-sm text-red-300">
+              <strong>Model check failed. This version is not used in games.</strong>
+              {{ game.model.last_error }}
+            </div>
+            {% elif game.model.status == 'pending' %}
+            <div class="rounded-lg border border-yellow-700 bg-yellow-900/20 px-4 py-2.5 mb-3 text-sm text-yellow-300">
+              <strong>Preparing your model...</strong> The platform is downloading your public repos and checking them. Reload this page in a minute.
+              {% if game.model.last_error %}<br>{{ game.model.last_error }}{% endif %}
+            </div>
+            {% endif %}
+
+            {% if game.model.last_sandbox_error %}
+            <div class="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 mb-3 text-sm text-red-300">
+              <strong>Sandbox error:</strong> {{ game.model.last_sandbox_error }}
+            </div>
+            {% endif %}
+            {% endif %}
+
+            <div class="guided-steps mb-4 space-y-1 text-sm" data-game="{{ game.type }}">
+              {% for s in game.steps %}
+              <p class="guided-step guided-step-{{ s.state }} px-3" style="color: var(--lp-muted);">{{ s.marker }} {{ s.num }}. {{ s.title }}</p>
+              {% endfor %}
+            </div>
+
+            <form method="post" class="space-y-4">
+              {% csrf_token %}
+              <input type="hidden" name="ai_model_form" value="1">
+              <input type="hidden" name="game_type" value="{{ game.type }}">
+              <input type="hidden" name="action" value="connect">
+              <div class="form-group">
+                <label for="id_repo_{{ game.type }}">Hugging Face Model Repo (public)</label>
+                <input type="text" id="id_repo_{{ game.type }}" name="hf_model_repo_id"
+                       value="{{ game.model.hf_model_repo_id|default:'' }}"
+                       placeholder="e.g. {{ user_profile.guest_hf_username }}/MyModel"
+                       class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+              </div>
+              <div class="form-group">
+                <label for="id_data_repo_{{ game.type }}">Hugging Face Data Repo (public)</label>
+                <input type="text" id="id_data_repo_{{ game.type }}" name="hf_data_repo_id"
+                       value="{{ game.model.hf_data_repo_id|default:'' }}"
+                       placeholder="e.g. {{ user_profile.guest_hf_username }}/{{ game.type }}-data"
+                       class="w-full rounded-lg border border-gray-600 bg-gray-800 text-gray-100 placeholder-gray-500 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand focus:border-brand transition">
+                <span class="text-xs text-gray-500 mt-1 block">It should contain a <code>config_data.json</code> that lists the required data files.</span>
+              </div>
+              <button type="submit" class="btn-gold w-full py-2.5">Save and check</button>
+            </form>
+          </div>
+          {% else %}
           <div class="card">
           <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-semibold">
@@ -924,6 +1034,7 @@
           {% endif %}
 
           </div>
+          {% endif %}
         </div>
         {% endfor %}
 
@@ -1366,7 +1477,7 @@
         ' won\u2019t function properly\u2014one or more files are missing. Check the repository\u2019s file status for details</p>';
     }
     /* Model repo section */
-    html += '<div><h4 class="text-sm font-medium text-gray-400 mb-2">Model Repo (gated) \u2014 ' +
+    html += '<div><h4 class="text-sm font-medium text-gray-400 mb-2">Model Repo{% if not user_profile.is_guest %} (gated){% endif %} \u2014 ' +
       '<code class="text-gray-300">' + esc(modelRepo) + '</code></h4>';
     if (data.model_files && data.model_files.length) {
       html += '<ul class="space-y-1 text-sm">';

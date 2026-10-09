@@ -9,6 +9,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="{% static 'img/favicon-16x16.png' %}">
   <link rel="manifest" href="{% static 'img/site.webmanifest' %}">
   <title>{% block title %}Artificial Gladiator{% endblock %}</title>
+  {% if user.is_authenticated and user.is_guest %}<meta name="robots" content="noindex, nofollow">{% endif %}
   <meta name="description" content="Join your Artificial Gladiator. Fight in skill-based games and earn glory in the ultimate Artificial Gladiator League platform..">
 
   <!-- Tailwind CSS (CDN) -->
@@ -261,6 +262,27 @@
         <span>{{ message|safe }}</span>
       </div>
     {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if user.is_authenticated and user.is_guest %}
+  <!-- ─── Guest banner ────────────────────────── -->
+  <div class="lp-flash w-full mx-auto px-4 sm:px-6 lg:px-8 mt-3" id="guestBanner">
+    <div class="lp-msg lp-msg--warn px-4 py-2.5 text-sm flex flex-wrap items-center justify-between gap-3">
+      <span>
+        <strong>Guest account.</strong>
+        Practice games are unrated. Your account and data are deleted{% if user.guest_expires_at %} on {{ user.guest_expires_at|date:"M j, Y" }}{% endif %} unless you come back,
+        and downloaded models are removed when you log out.
+      </span>
+      <span class="flex flex-wrap items-center gap-2">
+        <a href="{% url 'users:guest_upgrade' %}" class="btn-gold btn-sm text-sm">Create permanent account</a>
+        <form method="post" action="{% url 'users:guest_delete_data' %}" class="inline"
+              onsubmit="return confirm('Delete your guest account and all its data now? This cannot be undone.');">
+          {% csrf_token %}
+          <button type="submit" class="btn-outline btn-sm text-sm">Delete my guest data</button>
+        </form>
+      </span>
+    </div>
   </div>
   {% endif %}
 

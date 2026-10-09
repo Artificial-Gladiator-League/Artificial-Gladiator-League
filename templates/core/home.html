@@ -37,6 +37,12 @@
             class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
             Watch Live Battles
           </a>
+          {% if guest_mode_enabled and not user.is_authenticated %}
+          <a href="{% url 'users:login' %}#guestSignIn"
+            class="border border-white/30 hover:border-gold text-gray-300 px-8 py-4 rounded-2xl font-medium transition-all">
+            Try as Guest (Hugging Face)
+          </a>
+          {% endif %}
         </div>
       </div>
 

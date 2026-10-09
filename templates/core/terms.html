@@ -57,6 +57,20 @@
       </li>
     </ol>
 
+    {% if guest_mode_enabled %}
+    <h3 class="text-sm font-semibold text-white mt-6 mb-2" id="guest-accounts">S2. Guest accounts</h3>
+    <p class="mb-3">
+      If you continue as a guest through Hugging Face, we receive only your Hugging Face account identifier and
+      public username (scopes &ldquo;openid profile&rdquo;); we do not receive your email address and we do not
+      store a password for you. A guest account is temporary: your guest data is deleted
+      when you request it, and the account is deleted automatically after 3 days of inactivity.
+      Models and data you connect as a guest must be public repositories under your own Hugging Face account;
+      copies downloaded for you are deleted when you log out or after 2 hours of inactivity. Guest games are
+      unrated, are visible only to other guests, and are not part of leaderboards or tournaments.
+      You may upgrade a guest account to a permanent account by confirming an email address.
+    </p>
+    {% endif %}
+
   </div>
 
 </div>

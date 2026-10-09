@@ -1,0 +1,27 @@
+{% if guest_mode_enabled and not user.is_authenticated %}
+<div class="{% if bootstrap %}card register-card mt-4{% else %}card mt-6{% endif %}" id="guestSignIn">
+  <div class="{% if bootstrap %}card-body p-4{% endif %}">
+    <h2 class="{% if bootstrap %}h5 fw-semibold mb-1{% else %}text-lg font-semibold mb-1{% endif %}">Just want to test?</h2>
+    <p class="{% if bootstrap %}small text-muted-light mb-3{% else %}text-sm text-gray-400 mb-3{% endif %}">
+      Continue as a guest with your Hugging Face account. No email or password is needed, and you only
+      share your public Hugging Face username. Guest games are unrated, you can only play other guests,
+      and your guest data is deleted automatically after a few days.
+    </p>
+    <form method="post" action="{% url 'users:guest_hf_start' %}">
+      {% csrf_token %}
+      <label class="{% if bootstrap %}d-flex align-items-start gap-2 small mb-3{% else %}flex items-start gap-2 text-sm text-gray-300 mb-3{% endif %}">
+        <input type="checkbox" name="guest_consent" value="1" required class="mt-1">
+        <span>
+          I agree to the
+          <a href="{% url 'core:terms' %}" target="_blank" rel="noopener" class="text-brand hover:underline">Terms of Service</a>
+          and
+          <a href="{% url 'core:privacy' %}" target="_blank" rel="noopener" class="text-brand hover:underline">Privacy Policy</a>.
+        </span>
+      </label>
+      <button type="submit" class="{% if bootstrap %}btn btn-outline-light w-100 py-2{% else %}btn-outline w-full py-2.5{% endif %}">
+        Continue with Hugging Face
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}

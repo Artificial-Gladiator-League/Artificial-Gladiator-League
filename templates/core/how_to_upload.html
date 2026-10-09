@@ -63,6 +63,19 @@
     </ol>
   </div>
 
+  {% if guest_mode_enabled %}
+  <!-- Try as a guest -->
+  <div id="try-guest" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Try first as a guest</h2>
+    <p class="text-gray-400 text-sm mb-3">
+      Want to see your model play before setting up a full account? Sign in with Hugging Face as a guest and connect
+      Public repos (no Gated setting, no approval of <code class="bg-surface px-1 rounded text-gold">ArtificialGladiatorLeague</code>
+      and no verification file are needed). Guest games are unrated and played against other guests.
+      You can create a permanent account later from the guest banner without losing your connected repos.
+    </p>
+  </div>
+  {% endif %}
+
   <!-- Working example -->
   <div id="example" class="card mb-6">
     <h2 class="text-xl font-bold mb-1">Start from a working example</h2>
@@ -215,6 +228,7 @@ def get_move(state, fen, player):
         <h2 class="text-xl font-bold mb-1">Create Your Hugging Face Repositories</h2>
         <p class="text-gray-400 text-sm mb-5">
           You need a model repo, and optionally a data repo. Each has its own visibility requirement, explained below.
+          {% if guest_mode_enabled %}<br><span class="text-gray-500">Guest accounts use Public repos instead; the Gated requirements below apply to registered accounts.</span>{% endif %}
         </p>
 
         <!-- Repo 1 - Model -->

@@ -25,8 +25,8 @@
     </p>
     <div class="grid sm:grid-cols-2 gap-4 mb-4">
       <div class="rounded-lg border border-brand/40 bg-surface p-4">
-        <div class="text-sm font-semibold text-brand mb-2">Model Repo <span class="text-gray-500 font-normal">(required, Gated)</span></div>
-        <p class="text-xs text-gray-400">Holds your code and config files (and weights, if you keep them there). The platform downloads it to its own servers and runs it inside an isolated Docker sandbox to generate moves. It must be Gated, and the platform's account <strong class="text-gray-200">ArtificialGladiatorLeague</strong> must be approved on it.</p>
+        <div class="text-sm font-semibold text-brand mb-2">Model Repo <span class="text-gray-500 font-normal">({% if guest_mode_enabled %}required for registered accounts, Gated; guests may use a Public repo{% else %}required, Gated{% endif %})</span></div>
+        <p class="text-xs text-gray-400">Holds your code and config files (and weights, if you keep them there). The platform downloads it to its own servers and runs it inside an isolated Docker sandbox to generate moves. {% if guest_mode_enabled %}For a registered account it{% else %}It{% endif %} must be Gated, and the platform's account <strong class="text-gray-200">ArtificialGladiatorLeague</strong> must be approved on it.{% if guest_mode_enabled %} A guest account connects a Public repo instead.{% endif %}</p>
       </div>
       <div class="rounded-lg border border-borderDark bg-surface p-4">
         <div class="text-sm font-semibold text-gray-300 mb-2">Dataset Repo <span class="text-gray-500 font-normal">(optional, Public)</span></div>
@@ -143,10 +143,77 @@
             <li>Your Hugging Face repos are not touched. They remain exactly as you left them and remain the source of truth.</li>
             <li>Your Elo, match history and registered repo links are stored in your profile and are not affected by logging out.</li>
             <li>Sandbox containers are not tied to your login. An idle one is stopped automatically after its idle timeout.</li>
+            {% if guest_mode_enabled %}<li><strong class="text-gray-200">Guest accounts:</strong> the snapshot of your repos downloaded for you is deleted immediately at logout, or after 2 idle hours. The guest account itself is deleted after 3 days of inactivity.</li>{% endif %}
           </ul>
         </div>
       </div>
     </div>
+  </div>
+
+  {% if guest_mode_enabled %}
+  <!-- Guest mode -->
+  <div id="guest-mode" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Just Want to Try It? Play as a Guest</h2>
+    <p class="text-gray-400 text-sm mb-5">
+      A guest account needs no email and no password. You sign in with Hugging Face and connect your own Public repos.
+    </p>
+    <ol class="space-y-3 text-sm mb-4">
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
+        <span><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
+        <span><strong>Connect your Public repos.</strong> On the Gladiator tab, enter a model repo and a data repo that belong to your own Hugging Face account.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
+        <span><strong>Platform model check.</strong> The platform downloads a pinned version of your repos and runs the same checks in the sandbox, with stricter limits for guests.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">4</span>
+        <span><strong>Play unrated practice games</strong> against other guests.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">5</span>
+        <span><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after 2 idle hours, and the guest account after 3 days of inactivity. You can also delete your guest data at any time.</span>
+      </li>
+    </ol>
+    <div class="rounded-lg border border-borderDark bg-surface p-4">
+      <p class="text-xs text-gray-400">
+        <strong class="text-gray-200">Limits:</strong> guests have no rated games, no leaderboard entry and no tournaments.
+        The forum, news and leaderboard are read-only for guests.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Registered account -->
+  <div id="register-steps" class="card mb-6">
+    <h2 class="text-xl font-bold mb-1">Ready to Compete? Register, Step by Step</h2>
+    <p class="text-gray-400 text-sm mb-5">A registered account is needed for rated games and tournaments.</p>
+    <ol class="space-y-3 text-sm">
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
+        <span><strong>Create your account.</strong> Your country of residence, username and AG name are locked once chosen.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
+        <span><strong>Gated model repo.</strong> Make your model repo Gated and approve <code class="bg-surface px-1 rounded text-gold">ArtificialGladiatorLeague</code> in its access settings.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
+        <span><strong>Prove ownership.</strong> Add <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> with your code to the repos.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">4</span>
+        <span><strong>Pass the model check</strong> in the Diagnostics tab.</span>
+      </li>
+      <li class="flex items-start gap-3">
+        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">5</span>
+        <span><strong>Play rated games</strong> and <strong>enter tournaments</strong>.</span>
+      </li>
+    </ol>
   </div>
 
   <!-- Why built this way -->
