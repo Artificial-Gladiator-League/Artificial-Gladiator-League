@@ -92,6 +92,8 @@ class LobbyConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         self.user = self.scope.get("user")
+        if getattr(self.user, "is_authenticated", False) and getattr(self.user, "is_guest", False):
+            self.GROUP = "lobby_guest"  # guests never see, or are seen by, the registered lobby
         username = getattr(self.user, "username", "anonymous")
         log.info("[LOBBY CONNECT]  user=%s channel=%s", username, self.channel_name)
         await self.channel_layer.group_add(self.GROUP, self.channel_name)
@@ -146,7 +148,14 @@ class LobbyConsumer(AsyncWebsocketConsumer):
         # commit hasn't changed since they were locked at 30 games.
         hf_token = data.get("hf_token", "")
         game_type = data.get("game_type", "chess")
-        allowed, reason = await self._check_rated_permission(hf_token, game_type=game_type)
+        guest = bool(getattr(self.user, "is_guest", False))
+        if guest:
+            # Guests play unrated: no rating-lock check, no HF token, own queue.
+            if game_type not in ("chess", "breakthrough"):
+                game_type = "chess"
+            allowed, reason = True, ""
+        else:
+            allowed, reason = await self._check_rated_permission(hf_token, game_type=game_type)
         if not allowed:
             await self.send(text_data=json.dumps({
                 "type": "error", "message": reason,
@@ -170,10 +179,18 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             return
 
         # Snapshot the latest commit so we can lock it at game 30
-        if hf_token:
+        if hf_token and not guest:
             await self._snapshot_commit(hf_token, game_type=game_type)
 
-        queue = _queues.setdefault(tc, [])
+        if guest:
+            from apps.users.guests import guest_snapshot_block
+            wait = await database_sync_to_async(guest_snapshot_block)(self.user, game_type)
+            if wait:
+                await self.send(text_data=json.dumps({"type": "error", "message": wait}))
+                return
+
+        qkey = f"guest:{game_type}:{tc}" if guest else tc
+        queue = _queues.setdefault(qkey, [])
 
         # Don't double‑queue
         if any(e["user_id"] == self.user.id for e in queue):
@@ -190,6 +207,8 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             "channel": self.channel_name,
             "user_id": self.user.id,
             "username": self.user.username,
+            "guest": guest,
+            "game_type": game_type,
         }
 
         # Try to match with someone waiting
@@ -226,13 +245,13 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             })
 
             # Broadcast updated queue size
-            await self._broadcast_queue_size(tc)
+            await self._broadcast_queue_size(tc, qkey)
         else:
             queue.append(entry)
             await self.send(text_data=json.dumps({
                 "type": "queued", "time_control": tc, "position": len(queue),
             }))
-            await self._broadcast_queue_size(tc)
+            await self._broadcast_queue_size(tc, qkey)
 
     async def _handle_cancel(self, data):
         tc = data.get("time_control")
@@ -303,6 +322,16 @@ class LobbyConsumer(AsyncWebsocketConsumer):
         base_sec = int(parts[0]) * 60 if parts else 180
         inc = int(parts[1]) if len(parts) > 1 else 0
 
+        guest_fields = {}
+        if entry.get("guest"):
+            from . import breakthrough_engine as bt
+            game_type = entry.get("game_type", "chess")
+            guest_fields = {
+                "is_guest_game": True,
+                "game_type": game_type,
+                "current_fen": bt.STARTING_FEN if game_type == "breakthrough" else chess.STARTING_FEN,
+            }
+
         game = Game.objects.create(
             white_id=white_id,
             black_id=black_id,
@@ -312,6 +341,7 @@ class LobbyConsumer(AsyncWebsocketConsumer):
             increment=inc,
             status=Game.Status.WAITING,
             ai_thinking_seconds=1.0,
+            **guest_fields,
         )
         return {
             "id": game.pk,
@@ -334,8 +364,8 @@ class LobbyConsumer(AsyncWebsocketConsumer):
         return result
 
     # ── Broadcast helpers ──────────────────────
-    async def _broadcast_queue_size(self, tc):
-        size = len(_queues.get(tc, []))
+    async def _broadcast_queue_size(self, tc, qkey=None):
+        size = len(_queues.get(qkey or tc, []))
         await self.channel_layer.group_send(self.GROUP, {
             "type": "queue.size",
             "data": {"time_control": tc, "size": size},
@@ -365,7 +395,33 @@ class LobbyConsumer(AsyncWebsocketConsumer):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  GameConsumer — server‑validated chess moves
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-class GameConsumer(AsyncWebsocketConsumer):
+class _GameAccessMixin:
+    """Guest-game isolation shared by the game and spectate consumers."""
+
+    @database_sync_to_async
+    def _can_view_game(self):
+        from apps.users.guests import can_view_game
+        from .models import Game
+
+        try:
+            game = Game.objects.only("white_id", "black_id", "is_guest_game").get(pk=self.game_id)
+        except Game.DoesNotExist:
+            return True  # the normal "game not found" state is shown instead
+        return can_view_game(self.user, game)
+
+    @database_sync_to_async
+    def _is_guest_game(self):
+        from .models import Game
+
+        return Game.objects.filter(pk=self.game_id, is_guest_game=True).exists()
+
+    async def _lobby_group(self):
+        if getattr(self, "_lobby_group_name", None) is None:
+            self._lobby_group_name = "lobby_guest" if await self._is_guest_game() else "lobby"
+        return self._lobby_group_name
+
+
+class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
     """
     Real‑time game WebSocket.
 
@@ -391,6 +447,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.game_id = int(self.scope["url_route"]["kwargs"]["game_id"])
         self.group_name = f"game_{self.game_id}"
         self.user = self.scope.get("user")
+        if not await self._can_view_game():
+            self._rejected = True
+            await self.close(code=4403)
+            return
         username = getattr(self.user, "username", "anonymous")
         log.info(
             "[CONNECT] game=%s user=%s channel=%s",
@@ -442,6 +502,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         })
 
     async def disconnect(self, close_code):
+        if getattr(self, "_rejected", False):
+            return
         username = getattr(self.user, "username", "anonymous") if hasattr(self, "user") else "unknown"
         log.info(
             "[DISCONNECT] game=%s user=%s channel=%s close_code=%s",
@@ -606,6 +668,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             }))
             return
 
+        # ── Guests start only once their pinned snapshot is ready ────────────
+        from apps.users.guests import guest_snapshot_block
+        wait = await database_sync_to_async(guest_snapshot_block)(self.user, game_type_for_check)
+        if wait:
+            await self.send(text_data=json.dumps({"type": "error", "message": wait}))
+            return
+
         # ── Verify user is actually a player in this game ────────────────────
         white_id, black_id = await self._get_player_ids()
         if white_id is None or black_id is None:
@@ -660,7 +729,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Notify the lobby that a new live game has started.
         # Notify the lobby to remove from Open Tables and add to Ongoing Games.
         try:
-            await self.channel_layer.group_send("lobby", {
+            await self.channel_layer.group_send(await self._lobby_group(), {
                 "type": "lobby_update",
                 "data": {
                     "type": "remove_waiting_game",
@@ -672,7 +741,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         try:
             game_data = await self._get_lobby_game_data()
             if game_data:
-                await self.channel_layer.group_send("lobby", {
+                await self.channel_layer.group_send(await self._lobby_group(), {
                     "type": "lobby_update",
                     "data": {
                         "type": "ongoing_game_added",
@@ -704,7 +773,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps(data))
         # Notify the lobby that this live game is now finished.
         try:
-            await self.channel_layer.group_send("lobby", {
+            await self.channel_layer.group_send(await self._lobby_group(), {
                 "type": "lobby_update",
                 "data": {
                     "type": "ongoing_game_removed",
@@ -1751,7 +1820,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  SpectateConsumer — live spectator count
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-class SpectateConsumer(AsyncWebsocketConsumer):
+class SpectateConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
     """
     Tracks how many spectators are watching a game and broadcasts
     the count to everyone in the spectate group.
@@ -1760,6 +1829,11 @@ class SpectateConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.game_id = int(self.scope["url_route"]["kwargs"]["game_id"])
         self.group_name = f"spectate_{self.game_id}"
+        self.user = self.scope.get("user")
+        if not await self._can_view_game():
+            self._rejected = True
+            await self.close(code=4403)
+            return
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
@@ -1767,6 +1841,8 @@ class SpectateConsumer(AsyncWebsocketConsumer):
         await self._broadcast_count()
 
     async def disconnect(self, close_code):
+        if getattr(self, "_rejected", False):
+            return
         count = _spectator_counts.get(self.game_id, 1)
         _spectator_counts[self.game_id] = max(0, count - 1)
         if _spectator_counts[self.game_id] == 0:

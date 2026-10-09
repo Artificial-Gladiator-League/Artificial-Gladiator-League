@@ -100,6 +100,8 @@ def update_stats_after_game(sender, instance, **kwargs):
     """
     if instance.result in ("*", ""):
         return  # game not finished yet
+    if getattr(instance, "is_guest_game", False):
+        return  # guest games are unrated: no ELO, stats or counters
     if instance.white is None or instance.black is None:
         return  # no opponent paired yet
 
@@ -316,6 +318,8 @@ def auto_pin_sha_after_first_game(sender, instance, **kwargs):
     so the HF lookup happens at most once per (user, game_type).
     """
     if instance.result in ("*", ""):
+        return
+    if getattr(instance, "is_guest_game", False):
         return
     if instance.white is None or instance.black is None:
         return

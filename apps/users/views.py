@@ -616,7 +616,7 @@ def _rivalry_context(user):
             rec["last"] = ts
 
     games = Game.objects.filter(
-        Q(white=user) | Q(black=user), winner__isnull=False,
+        Q(white=user) | Q(black=user), winner__isnull=False, is_guest_game=False,
     ).values_list("white_id", "white__username", "black_id", "black__username", "winner_id", "timestamp")
     for w_id, w_name, b_id, b_name, win_id, ts in games:
         if w_id == user.pk:
@@ -1267,11 +1267,13 @@ class ProfileView(LoginRequiredMixin, UpdateView):
         casual_as_white = Game.objects.filter(
             white=user,
             is_tournament_game=False,
+            is_guest_game=False,
             status__in=COMPLETED,
         ).select_related("black")
         casual_as_black = Game.objects.filter(
             black=user,
             is_tournament_game=False,
+            is_guest_game=False,
             status__in=COMPLETED,
         ).select_related("white")
 
@@ -1432,6 +1434,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 .filter(Q(white=user) | Q(black=user))
                 .exclude(result__in=(Game.Result.NONE, ""))
                 .exclude(is_tournament_game=True)
+                .exclude(is_guest_game=True)
                 .count()
             )
             games_needed_overall = max(0, TOURNAMENT_MIN_RATED_GAMES - rated_count)
@@ -2012,11 +2015,11 @@ def activity_heatmap(request):
         Game.Status.TIMEOUT_WHITE, Game.Status.TIMEOUT_BLACK,
     ]
     c_as_w = Game.objects.filter(
-        white=user, is_tournament_game=False,
+        white=user, is_tournament_game=False, is_guest_game=False,
         status__in=COMPLETED, timestamp__date__gte=start,
     ).select_related("black")
     c_as_b = Game.objects.filter(
-        black=user, is_tournament_game=False,
+        black=user, is_tournament_game=False, is_guest_game=False,
         status__in=COMPLETED, timestamp__date__gte=start,
     ).select_related("white")
 

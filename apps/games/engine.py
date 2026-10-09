@@ -287,7 +287,7 @@ def update_player_stats(game: Game) -> None:
 
     white = game.white
     black = game.black
-    if white is None or black is None:
+    if white is None or black is None or getattr(game, "is_guest_game", False):
         return
 
     # ELO deltas

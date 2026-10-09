@@ -7,7 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db.models import Prefetch, Q
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -15,7 +15,9 @@ from django.urls import reverse
 from .models import Comment, Game
 
 from apps.core.utils import parse_thinking_seconds as _parse_thinking_seconds
-from apps.users.guests import registered_required
+from apps.users.guests import (
+    can_view_game, guest_snapshot_block, is_guest, registered_required,
+)
 from apps.tournaments.models import Tournament
 
 log = logging.getLogger(__name__)
@@ -101,23 +103,24 @@ def _broadcast_lobby_update(action: str, game) -> None:
         channel_layer = get_channel_layer()
         if channel_layer is None:
             return
+        group = "lobby_guest" if getattr(game, "is_guest_game", False) else "lobby"
 
         if action == "new_waiting_game":
             data = _build_waiting_game_data(game)
             if data:
-                async_to_sync(channel_layer.group_send)("lobby", {
+                async_to_sync(channel_layer.group_send)(group, {
                     "type": "lobby_update",
                     "data": {"type": "new_waiting_game", "game": data},
                 })
         elif action == "update_waiting_game":
             data = _build_waiting_game_data(game)
             if data:
-                async_to_sync(channel_layer.group_send)("lobby", {
+                async_to_sync(channel_layer.group_send)(group, {
                     "type": "lobby_update",
                     "data": {"type": "update_waiting_game", "game": data},
                 })
         elif action == "remove_waiting_game":
-            async_to_sync(channel_layer.group_send)("lobby", {
+            async_to_sync(channel_layer.group_send)(group, {
                 "type": "lobby_update",
                 "data": {
                     "type": "remove_waiting_game",
@@ -136,6 +139,17 @@ def _wants_json(request) -> bool:
     )
 
 
+def _guest_not_ready_response(request, game_type, ajax):
+    """For guests whose snapshot is not ready: the refusal response; otherwise None."""
+    reason = guest_snapshot_block(request.user, game_type)
+    if reason is None:
+        return None
+    if ajax:
+        return JsonResponse({"error": reason, "preparing": True}, status=403)
+    messages.error(request, reason)
+    return redirect("games:lobby")
+
+
 def has_valid_repo(user) -> bool:
     """Return True if *user* has a valid repo for at least chess.
 
@@ -146,17 +160,18 @@ def has_valid_repo(user) -> bool:
     return has_repo_for_game_type(user, "chess")
 
 
-def _live_ai_games_queryset(*, exclude_game_id: int | None = None):
+def _live_ai_games_queryset(*, exclude_game_id: int | None = None, guest: bool = False):
     qs = (
         Game.objects.filter(
             status=Game.Status.ONGOING,
             white__isnull=False,
             black__isnull=False,
+            is_guest_game=guest,
         )
-        .exclude(white__hf_model_repo_id="")
-        .exclude(black__hf_model_repo_id="")
         .select_related("white", "black", "winner")
     )
+    if not guest:  # guests keep their repos on UserGameModel, never on the legacy field
+        qs = qs.exclude(white__hf_model_repo_id="").exclude(black__hf_model_repo_id="")
     if exclude_game_id is not None:
         qs = qs.exclude(pk=exclude_game_id)
     return qs
@@ -174,10 +189,10 @@ def _serialize_live_ai_games(games):
     return items
 
 
-def _random_finished_game():
+def _random_finished_game(guest: bool = False):
     qs = (
         Game.objects.exclude(result=Game.Result.NONE)
-        .filter(white__isnull=False, black__isnull=False)
+        .filter(white__isnull=False, black__isnull=False, is_guest_game=guest)
         .select_related("white", "black", "winner")
     )
     total = qs.count()
@@ -294,7 +309,7 @@ def _placeholder_display_game(idx=0):
     }
 
 
-def _build_display_games():
+def _build_display_games(guest: bool = False):
     # "Real" finished statuses — exclude ABORTED (never properly played)
     real_finished_statuses = [
         s for s in Game.TERMINAL_STATUSES
@@ -306,6 +321,7 @@ def _build_display_games():
             status__in=[Game.Status.ONGOING, "active"],
             white__isnull=False,
             black__isnull=False,
+            is_guest_game=guest,
         )
         .select_related("white", "black")
         .order_by("-last_move_at", "-timestamp")[:10]
@@ -315,6 +331,7 @@ def _build_display_games():
             status__in=real_finished_statuses,
             white__isnull=False,
             black__isnull=False,
+            is_guest_game=guest,
         )
         .select_related("white", "black")
         .order_by("-last_move_at", "-timestamp")[:10]
@@ -347,6 +364,7 @@ def _build_waiting_games(user):
     waiting_games = (
         Game.objects.filter(
             status=Game.Status.WAITING,
+            is_guest_game=is_guest(user),
         )
         .filter(
             Q(white__isnull=True, black__isnull=False)
@@ -373,6 +391,7 @@ def _build_my_active_games(user):
         .filter(
             _Q(white=user) | _Q(black=user) | _Q(host=user),
             status=Game.Status.WAITING,
+            is_guest_game=is_guest(user),
         )
         .select_related("white", "black")
         .order_by("-last_move_at", "-timestamp")
@@ -401,12 +420,13 @@ def _build_my_active_games(user):
     return items
 
 
-def _build_ongoing_games():
+def _build_ongoing_games(guest: bool = False):
     ongoing_games = (
         Game.objects.filter(
             status=Game.Status.ONGOING,
             white__isnull=False,
             black__isnull=False,
+            is_guest_game=guest,
         )
         .select_related("white", "black", "host")
         .order_by("-last_move_at", "-timestamp")[:20]
@@ -449,8 +469,9 @@ def lobby(request):
     Authenticated-only sections (create game, join game, active games) are
     handled in the template via {% if user.is_authenticated %}.
     """
-    display_games = _build_display_games()
-    ongoing_count = Game.objects.filter(status=Game.Status.ONGOING).count()
+    guest = is_guest(request.user)
+    display_games = _build_display_games(guest)
+    ongoing_count = Game.objects.filter(status=Game.Status.ONGOING, is_guest_game=guest).count()
     live_gladiators_count = ongoing_count * 2
     active_tournaments_count = Tournament.objects.filter(
         status__in=[Tournament.Status.OPEN, Tournament.Status.ONGOING]
@@ -475,11 +496,11 @@ def lobby(request):
             "category": request.user.get_category(),
             "fide_title": fide,
             "waiting_games": _build_waiting_games(request.user),
-            "ongoing_games": _build_ongoing_games(),
+            "ongoing_games": _build_ongoing_games(guest),
             "my_active_games": _build_my_active_games(request.user),
         })
     else:
-        ctx["ongoing_games"] = _build_ongoing_games()
+        ctx["ongoing_games"] = _build_ongoing_games(False)
 
     return render(request, "games/lobby.html", ctx)
 
@@ -513,6 +534,9 @@ def create_lobby_game(request):
             return JsonResponse({"error": _msg}, status=403)
         messages.error(request, _msg)
         return redirect("games:lobby")
+    blocked = _guest_not_ready_response(request, game_type, ajax)
+    if blocked is not None:
+        return blocked
     base_minutes = request.POST.get("base_minutes", "3")
     increment_sec = request.POST.get("increment_seconds", "1")
     try:
@@ -549,6 +573,7 @@ def create_lobby_game(request):
         white=white_player,
         black=black_player,
         host=request.user,
+        is_guest_game=is_guest(request.user),
         time_control=tc,
         white_time=float(base_sec),
         black_time=float(base_sec),
@@ -592,6 +617,9 @@ def create_game(request):
             return JsonResponse({"error": _msg}, status=403)
         messages.error(request, _msg)
         return redirect("games:lobby")
+    blocked = _guest_not_ready_response(request, game_type, ajax)
+    if blocked is not None:
+        return blocked
     tc = request.POST.get("time_control", "3+1")
     parts = tc.split("+")
     base_sec = int(parts[0]) * 60 if parts else 180
@@ -602,6 +630,7 @@ def create_game(request):
     game = Game.objects.create(
         white=request.user,
         host=request.user,
+        is_guest_game=is_guest(request.user),
         time_control=tc,
         white_time=float(base_sec),
         black_time=float(base_sec),
@@ -626,6 +655,7 @@ def join_game(request, game_id):
         Game.objects.select_related("white", "black"),
         pk=game_id,
         result=Game.Result.NONE,
+        is_guest_game=is_guest(request.user),
     )
     # Already in this game
     if request.user in (game.white, game.black):
@@ -653,6 +683,9 @@ def join_game(request, game_id):
             return JsonResponse({"error": _msg}, status=403)
         messages.error(request, _msg)
         return redirect("games:lobby")
+    blocked = _guest_not_ready_response(request, game.game_type, ajax)
+    if blocked is not None:
+        return blocked
     if game.black is None:
         game.black = request.user
         game.black_thinking_seconds = _parse_thinking_seconds(request)
@@ -744,6 +777,8 @@ def game_detail(request, game_id):
         Game.objects.select_related("white", "black", "winner"),
         pk=game_id,
     )
+    if not can_view_game(request.user, game):
+        raise Http404
 
     parts = game.time_control.split("+")
     base_sec = int(parts[0]) * 60 if parts else 180
@@ -784,7 +819,7 @@ def game_detail(request, game_id):
 
 def game_history(request):
     """List of completed games with stats."""
-    completed = Game.objects.exclude(result=Game.Result.NONE)
+    completed = Game.objects.exclude(result=Game.Result.NONE).filter(is_guest_game=is_guest(request.user))
     return render(request, "games/history.html", {"games": completed})
 
 
@@ -794,16 +829,18 @@ def spectate_game(request, game_id):
         Game.objects.select_related("white", "black", "winner"),
         pk=game_id,
     )
+    if not can_view_game(request.user, game):
+        raise Http404
     parts = game.time_control.split("+")
     base_sec = int(parts[0]) * 60 if parts else 180
     increment = int(parts[1]) if len(parts) > 1 else 0
 
     from apps.users.models import CustomUser
     white_rank = CustomUser.objects.filter(
-        elo__gt=game.white.elo, is_active=True
+        elo__gt=game.white.elo, is_active=True, is_guest=False
     ).count() + 1 if game.white else None
     black_rank = CustomUser.objects.filter(
-        elo__gt=game.black.elo, is_active=True
+        elo__gt=game.black.elo, is_active=True, is_guest=False
     ).count() + 1 if game.black else None
 
     return render(request, "games/spectate.html", {
@@ -817,7 +854,7 @@ def spectate_game(request, game_id):
 
 def next_live_ai_game(request, game_id):
     next_game = (
-        _live_ai_games_queryset(exclude_game_id=game_id)
+        _live_ai_games_queryset(exclude_game_id=game_id, guest=is_guest(request.user))
         .order_by("-last_move_at", "-timestamp")
         .first()
     )
@@ -836,6 +873,8 @@ def next_live_ai_game(request, game_id):
 def game_comments(request, game_id):
     """Return a page of top-level comments (for HTMX pagination)."""
     game = get_object_or_404(Game, pk=game_id)
+    if not can_view_game(request.user, game):
+        raise Http404
     replies_qs = Comment.objects.select_related("user").order_by("created_at")
     top_comments = (
         game.comments

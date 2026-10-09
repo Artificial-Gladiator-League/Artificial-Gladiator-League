@@ -81,3 +81,26 @@ def registered_required(view):
             return guest_blocked_response(request)
         return view(request, *args, **kwargs)
     return wrapper
+
+
+def can_view_game(user, game) -> bool:
+    """Guest games are visible to guests (and their players) only; other games never to guests."""
+    if getattr(user, "is_authenticated", False) and user.pk in (game.white_id, game.black_id):
+        return True
+    return bool(game.is_guest_game) == is_guest(user)
+
+
+def guest_snapshot_block(user, game_type: str) -> str | None:
+    """Why a guest cannot start or join a game yet ("Preparing your model..."), else None.
+
+    Also re-queues a missing pinned download (e.g. after the idle clean-up).
+    """
+    if not is_guest(user):
+        return None
+    from apps.users.guest_snapshot import ensure_guest_snapshots, guest_snapshot_ready
+
+    ready, reason = guest_snapshot_ready(user, game_type)
+    if ready:
+        return None
+    ensure_guest_snapshots(user)
+    return reason

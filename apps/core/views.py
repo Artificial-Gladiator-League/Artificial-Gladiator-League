@@ -105,17 +105,17 @@ def _category_counts():
 
 def home(request):
     # ── Live counters ───────────────────────────
-    ongoing_games = Game.objects.filter(status=Game.Status.ONGOING).count()
+    ongoing_games = Game.objects.filter(status=Game.Status.ONGOING, is_guest_game=False).count()
     live_gladiators_count = ongoing_games * 2
     active_tournaments_count = Tournament.objects.filter(
         status__in=[Tournament.Status.OPEN, Tournament.Status.ONGOING]
     ).count()
     total_players = CustomUser.objects.filter(is_active=True, is_guest=False, total_games__gt=0).count()
-    total_games = Game.objects.count()
+    total_games = Game.objects.filter(is_guest_game=False).count()
 
     # ── Latest live game for hero preview ───────
     latest_game = (
-        Game.objects.filter(status=Game.Status.ONGOING)
+        Game.objects.filter(status=Game.Status.ONGOING, is_guest_game=False)
         .select_related("white", "black")
         .first()
     )
@@ -154,7 +154,8 @@ def home(request):
                 Game.Status.WHITE_WINS,
                 Game.Status.BLACK_WINS,
                 Game.Status.DRAW,
-            ]
+            ],
+            is_guest_game=False,
         )
         .select_related("white", "black", "winner")
         .order_by("-timestamp")[:10]
@@ -246,35 +247,35 @@ def _per_game_stats(player_ids, game_type):
     ]
     wins_map = dict(
         Game.objects
-        .filter(winner_id__in=player_ids, game_type=game_type)
+        .filter(winner_id__in=player_ids, game_type=game_type, is_guest_game=False)
         .values('winner_id')
         .annotate(c=Count('pk'))
         .values_list('winner_id', 'c')
     )
     draws_as_white = dict(
         Game.objects
-        .filter(white_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW)
+        .filter(white_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW, is_guest_game=False)
         .values('white_id')
         .annotate(c=Count('pk'))
         .values_list('white_id', 'c')
     )
     draws_as_black = dict(
         Game.objects
-        .filter(black_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW)
+        .filter(black_id__in=player_ids, game_type=game_type, status=Game.Status.DRAW, is_guest_game=False)
         .values('black_id')
         .annotate(c=Count('pk'))
         .values_list('black_id', 'c')
     )
     played_as_white = dict(
         Game.objects
-        .filter(white_id__in=player_ids, game_type=game_type, status__in=terminal)
+        .filter(white_id__in=player_ids, game_type=game_type, status__in=terminal, is_guest_game=False)
         .values('white_id')
         .annotate(c=Count('pk'))
         .values_list('white_id', 'c')
     )
     played_as_black = dict(
         Game.objects
-        .filter(black_id__in=player_ids, game_type=game_type, status__in=terminal)
+        .filter(black_id__in=player_ids, game_type=game_type, status__in=terminal, is_guest_game=False)
         .values('black_id')
         .annotate(c=Count('pk'))
         .values_list('black_id', 'c')
@@ -289,6 +290,7 @@ def _per_game_stats(player_ids, game_type):
         .filter(
             game_type=game_type,
             status__in=terminal,
+            is_guest_game=False,
         )
         .filter(Q(white_id__in=player_ids) | Q(black_id__in=player_ids))
         .order_by('-last_move_at', '-timestamp')
