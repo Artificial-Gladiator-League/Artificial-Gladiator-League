@@ -13,7 +13,7 @@ from django.contrib.auth.views import LoginView, LogoutView
 from django.core.exceptions import ValidationError
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.template.loader import render_to_string
 from django.urls import reverse, reverse_lazy
@@ -38,6 +38,7 @@ from .countries import country_name as _country_name
 from .diagnostics import get_missing_model_message
 from .models import CustomUser, DiagnosticRun, GDPRRequest, UserGameModel, validate_hf_repo_id
 from .repo_id import normalize_hf_repo_id
+from .guests import registered_required, is_guest, guest_blocked_response
 from .guided_steps import build_steps, next_step_line
 from apps.games.models import Game
 from apps.tournaments.models import Match
@@ -87,7 +88,7 @@ def user_search(request):
     from django.db.models import Q
     users = (
         CustomUser.objects
-        .filter(Q(username__icontains=q) | Q(ai_name__icontains=q))
+        .filter(Q(username__icontains=q) | Q(ai_name__icontains=q), is_guest=False)
         .exclude(pk=request.user.pk)
         .only("pk", "username", "elo")[:8]
     )
@@ -685,6 +686,8 @@ def save_gladiator_field(request):
 def public_profile(request, username):
     """View another user's public profile with friend/chat actions."""
     profile_user = get_object_or_404(CustomUser, username=username)
+    if profile_user.is_guest and profile_user.pk != request.user.pk:
+        raise Http404
     # If viewing own profile, redirect to the edit version
     if profile_user == request.user:
         return redirect("users:profile")
@@ -958,6 +961,7 @@ def _build_breakthrough_file_status(user, gm):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @login_required
+@registered_required
 def save_paypal_email(request):
     """POST: validate and save the user's payout email to their profile.
 
@@ -1001,6 +1005,7 @@ def save_paypal_email(request):
 
 
 @login_required
+@registered_required
 def delete_paypal_email(request):
     """POST: clear the user's PayPal payout email."""
     if request.method != "POST":
@@ -1014,6 +1019,7 @@ def delete_paypal_email(request):
 
 
 @login_required
+@registered_required
 def save_country(request):
     """POST only: set the country of residence ONCE, or toggle the profile-flag preference.
 
@@ -1068,6 +1074,7 @@ def save_country(request):
 #  Email change
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @login_required
+@registered_required
 def request_email_change(request):
     profile_url = reverse("users:profile") + "?tab=edit"
     if request.method != "POST":
@@ -1143,6 +1150,7 @@ def confirm_email_change(request, uidb64, token):
 
 
 @login_required
+@registered_required
 def change_password(request):
     """POST: set a new password and keep the session alive."""
     profile_url = reverse("users:profile") + "?tab=edit"
@@ -1461,6 +1469,8 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
     def post(self, request, *args, **kwargs):
         """Handle both profile-edit and AI-model form submissions."""
+        if is_guest(request.user) and not request.POST.get("ai_model_form"):
+            return guest_blocked_response(request)
         if request.POST.get("ai_model_form"):
             return self._handle_ai_model_post(request)
         return super().post(request, *args, **kwargs)
@@ -1617,6 +1627,7 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 #  GDPR — Data Access & Deletion
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @login_required
+@registered_required
 def gdpr_portal(request):
     """GDPR portal: submit data-access or deletion requests, view history."""
     user = request.user
@@ -1654,6 +1665,7 @@ def gdpr_portal(request):
 
 
 @login_required
+@registered_required
 def gdpr_export(request):
     """Return user's full data as JSON (GDPR Art. 15 — Right of Access)."""
     from django.db.models import Q
@@ -1735,6 +1747,7 @@ def gdpr_export(request):
 
 
 @login_required
+@registered_required
 def gdpr_delete(request):
     """Process account deletion (GDPR Art. 17 — Right to Erasure)."""
     if request.method != "POST":

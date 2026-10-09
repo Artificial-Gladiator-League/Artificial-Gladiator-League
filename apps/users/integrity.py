@@ -615,6 +615,9 @@ def can_join_tournament(
     """
     from apps.users.models import UserGameModel
 
+    if getattr(user, "is_guest", False):
+        return False, "Create a permanent account to compete"
+
     gm = UserGameModel.objects.filter(
         user=user, game_type=game_type,
     ).first()
@@ -623,6 +626,12 @@ def can_join_tournament(
         return False, (
             f"No {game_type} model registered. "
             "Upload a model before joining this tournament."
+        )
+
+    if gm.verification_method != UserGameModel.VerificationMethod.FILE:
+        return False, (
+            "Tournaments need a gated repo verified with AGL_VERIFY.txt. "
+            "Complete those steps in the Gladiator tab first."
         )
 
     if not gm.hf_model_repo_id:
@@ -713,6 +722,9 @@ def is_eligible_for_tournament(
     from apps.users.models import UserGameModel
     from apps.games.models import Game
 
+    if getattr(user, "is_guest", False):
+        return False, "Create a permanent account to compete"
+
     # ── Rule 1: Experience gate ────────────────────────────
     rated_qs = (
         Game.objects
@@ -720,6 +732,7 @@ def is_eligible_for_tournament(
         .filter(models.Q(white=user) | models.Q(black=user))
         .exclude(result__in=(Game.Result.NONE, ""))
         .exclude(is_tournament_game=True)  # tournament games don't count toward qualification
+        .exclude(is_guest_game=True)  # guest games are unrated
         .order_by("-timestamp")
     )
     rated_count = rated_qs.count()

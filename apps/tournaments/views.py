@@ -4,6 +4,8 @@ from channels.layers import get_channel_layer
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+
+from apps.users.guests import registered_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.http import Http404, HttpResponse
@@ -105,7 +107,10 @@ def tournament_list(request):
                     f"No {t.game_type} model registered. "
                     "Upload a model before joining."
                 )
-            elif not gm.is_verified:
+            elif request.user.is_guest:
+                t.join_blocked = True
+                t.join_blocked_reason = "Create a permanent account to compete"
+            elif not gm.is_verified or gm.verification_method != "file":
                 t.join_blocked = True
                 t.join_blocked_reason = "ownership_unverified"
             elif not gm.model_integrity_ok:
@@ -358,7 +363,10 @@ def tournament_detail(request, pk):
                     f"No {tournament.game_type} model registered. "
                     "Upload a model before joining."
                 )
-            elif not gm.is_verified:
+            elif request.user.is_guest:
+                can_join = False
+                join_blocked_reason = "Create a permanent account to compete"
+            elif not gm.is_verified or gm.verification_method != "file":
                 can_join = False
                 join_blocked_reason = "ownership_unverified"
                 user_is_verified = False
@@ -477,6 +485,7 @@ def live_match(request, pk, match_id):
 
 
 @login_required
+@registered_required
 def resign_match(request, pk, match_id):
     """Handle a player resigning from a live tournament match.
 
@@ -588,6 +597,7 @@ def _profile_country_stop(request, tournament, return_path):
 
 
 @login_required
+@registered_required
 @require_POST
 def join_tournament(request, pk):
     """Register the current user for *pk* tournament.
@@ -672,7 +682,7 @@ def join_tournament(request, pk):
         return redirect("games:lobby")
 
     # ── Gate B: ownership verified ────────────────────────────────
-    if not game_model.is_verified:
+    if not game_model.is_verified or game_model.verification_method != "file":
         log.warning(
             "join_tournament BLOCKED (unverified): user=%s t=%s",
             request.user.username, tournament.pk,
@@ -1081,6 +1091,7 @@ def join_tournament(request, pk):
 
 
 @login_required
+@registered_required
 def leave_tournament(request, pk):
     """Allow a player to leave a tournament before it starts."""
     if request.method != "POST":
@@ -1136,6 +1147,7 @@ def leave_tournament(request, pk):
 
 
 @login_required
+@registered_required
 def ready_tournament(request, pk):
     """Mark the current player as ready in a QA tournament.
 
@@ -1258,6 +1270,7 @@ def _round_label(round_num, total_rounds):
 
 
 @login_required
+@registered_required
 def money_tournament_terms(request, pk):
     """Show money-tournament terms of participation.
 
@@ -1579,6 +1592,7 @@ def preview_disqualified(request):
 
 
 @login_required
+@registered_required
 def prize_claim(request, pk):
     """Congratulations page where the winner submits their claim code."""
     tournament = get_object_or_404(Tournament, pk=pk)
@@ -1703,6 +1717,7 @@ def prize_claim(request, pk):
 
 
 @login_required
+@registered_required
 def payout_confirm(request, pk):
     """Winner confirms how their prize is paid before it can be paid out.
 

@@ -3,6 +3,8 @@ from collections import defaultdict
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+
+from apps.users.guests import registered_required
 from django.core.paginator import Paginator
 from django.db.models import Count, F, Max, OuterRef, Q, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
@@ -140,6 +142,7 @@ def topic_detail(request, category_slug, pk):
 
 
 @login_required
+@registered_required
 def new_topic(request, category_slug):
     """Form to create a new topic in the given category."""
     category = get_object_or_404(Category, slug=category_slug)
@@ -160,6 +163,7 @@ def new_topic(request, category_slug):
 
 
 @login_required
+@registered_required
 @require_POST
 def add_reply(request, category_slug, pk):
     """Post a reply to a topic (or nested under an existing post)."""
@@ -192,6 +196,7 @@ def add_reply(request, category_slug, pk):
 
 
 @login_required
+@registered_required
 @require_POST
 def toggle_like(request, pk):
     """Toggle the current user's like on a post."""

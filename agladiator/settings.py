@@ -50,6 +50,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.users.guest_middleware.GuestAccessMiddleware",
     "apps.users.middleware.ModelIntegrityMiddleware",
     "apps.tournaments.middleware.DisqualificationInterceptMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",

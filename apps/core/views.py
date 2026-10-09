@@ -89,14 +89,14 @@ def _ranked_qs(tab: str, game_type: str = "chess"):
         filt[new_key] = v
     return (
         CustomUser.objects
-        .filter(**filt, is_active=True, total_games__gt=0)
+        .filter(**filt, is_active=True, is_guest=False, total_games__gt=0)
         .order_by(f"-{elo_field}", "-wins", "username")[:LEADERBOARD_LIMIT]
     )
 
 
 def _category_counts():
     """Return player counts per category for the tab badges."""
-    base = CustomUser.objects.filter(is_active=True, total_games__gt=0)
+    base = CustomUser.objects.filter(is_active=True, is_guest=False, total_games__gt=0)
     return {
         key: base.filter(**filt).count() if filt else base.count()
         for key, filt in CATEGORY_FILTERS.items()
@@ -110,7 +110,7 @@ def home(request):
     active_tournaments_count = Tournament.objects.filter(
         status__in=[Tournament.Status.OPEN, Tournament.Status.ONGOING]
     ).count()
-    total_players = CustomUser.objects.filter(is_active=True, total_games__gt=0).count()
+    total_players = CustomUser.objects.filter(is_active=True, is_guest=False, total_games__gt=0).count()
     total_games = Game.objects.count()
 
     # ── Latest live game for hero preview ───────
@@ -141,7 +141,7 @@ def home(request):
     # ── Top players for leaderboard preview ─────
     top_players = (
         CustomUser.objects
-        .filter(is_active=True, total_games__gt=0)
+        .filter(is_active=True, is_guest=False, total_games__gt=0)
         .order_by("-elo", "-wins")[:10]
     )
     highest_elo = top_players[0].elo if top_players else 1200

@@ -15,6 +15,7 @@ from django.urls import reverse
 from .models import Comment, Game
 
 from apps.core.utils import parse_thinking_seconds as _parse_thinking_seconds
+from apps.users.guests import registered_required
 from apps.tournaments.models import Tournament
 
 log = logging.getLogger(__name__)
@@ -858,6 +859,7 @@ def game_comments(request, game_id):
 
 
 @login_required
+@registered_required
 def add_comment(request, game_id):
     """Create a comment or reply (POST, returns HTMX partial)."""
     if request.method != "POST":
