@@ -356,6 +356,13 @@ def _lookup_game_model(user_id: int | str, game_type: str):
         return None
 
 
+def _profile_kwargs(game_model) -> dict:
+    """Sandbox profile arguments: stricter limits for guest accounts, nothing for everyone else."""
+    if game_model is not None and getattr(game_model.user, "is_guest", False):
+        return {"profile": "guest"}
+    return {}
+
+
 def _resolve_data_token(game_model) -> str | None:
     """Best-available HF token for downloading a (usually public) data repo."""
     try:
@@ -579,7 +586,7 @@ def get_move_local(
 
     _require_data_file_if_configured(model_dir, data_dir, game_model, game_type=game_type)
 
-    move = run_predict_in_sandbox(model_dir, data_dir, fen, player, game_type)
+    move = run_predict_in_sandbox(model_dir, data_dir, fen, player, game_type, **_profile_kwargs(game_model))
     if move:
         _clear_sandbox_error(game_model)
     return move
@@ -606,7 +613,7 @@ def prewarm_local(
         if model_dir is None:
             return False
         _require_data_file_if_configured(model_dir, data_dir, game_model, game_type=game_type)
-        return prewarm_worker(model_dir, data_dir, game_type)
+        return prewarm_worker(model_dir, data_dir, game_type, **_profile_kwargs(game_model))
     except Exception:
         log.warning(
             "prewarm_local failed for user=%s game=%s repo=%s",

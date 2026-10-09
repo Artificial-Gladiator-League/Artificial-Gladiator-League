@@ -38,6 +38,12 @@ def delete_guest_snapshots(user_id: int) -> bool:
             return False
         delete_hf_cache_for_user(user_id)
         clear_user_models(user_id)
+        from apps.games.sandbox_runner import guest_real_dir_root
+        from apps.users.model_lifecycle import _hf_cache_folder_name
+
+        for repo_id in UserGameModel.objects.filter(user_id=user_id).values_list("hf_model_repo_id", flat=True):
+            if repo_id:
+                shutil.rmtree(guest_real_dir_root() / _hf_cache_folder_name("models", repo_id.strip()), ignore_errors=True)
         UserGameModel.objects.filter(user_id=user_id).update(cached_path="", cached_commit="", cached_at=None)
         log.info("Guest snapshots deleted for user=%s", user_id)
         return True

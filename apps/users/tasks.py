@@ -42,9 +42,15 @@ def preload_user_models_task(user_id: int) -> None:
 )
 def run_diagnostics_task(run_id: int) -> None:
     from apps.users.diagnostics import fail_run, run_diagnostics
+    from apps.users.models import DiagnosticRun
 
     try:
-        run_diagnostics(run_id)
+        owner = DiagnosticRun.objects.select_related("user").filter(pk=run_id).first()
+        if owner is not None and owner.user.is_guest:
+            from apps.users.guest_diagnostics import run_guest_diagnostics
+            run_guest_diagnostics(run_id)
+        else:
+            run_diagnostics(run_id)
     except SoftTimeLimitExceeded:
         log.error("Diagnostics run %s exceeded the soft time limit", run_id)
         fail_run(run_id, "Diagnostics timed out before finishing. Please try again later.")

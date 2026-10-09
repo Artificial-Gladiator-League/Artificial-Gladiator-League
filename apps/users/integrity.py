@@ -346,7 +346,10 @@ def record_original_sha(
         ]
     else:
         try:
-            problems = check_model(model_dir, data_dir, game_model.game_type)
+            problems = check_model(
+                model_dir, data_dir, game_model.game_type,
+                **({"profile": "guest"} if game_model.user.is_guest else {}),
+            )
         except SandboxUnavailableError as exc:
             log.error(
                 "Contract check unavailable while pinning %s/%s: %s",

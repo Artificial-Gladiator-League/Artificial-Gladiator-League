@@ -1938,7 +1938,10 @@ def run_diagnostics_start(request, game_type):
         run = DiagnosticRun.objects.create(user=request.user, game_type=game_type)
 
     try:
-        run_diagnostics_task.delay(run.pk)
+        if is_guest(request.user):
+            run_diagnostics_task.apply_async(args=[run.pk], queue=settings.GUEST_CELERY_QUEUE)
+        else:
+            run_diagnostics_task.delay(run.pk)
     except Exception:
         log.exception("Could not enqueue diagnostics run %s", run.pk)
         run.state = DiagnosticRun.State.ERROR

@@ -532,6 +532,58 @@ def _docker_client():
     return client
 
 
+GUEST = "guest"
+_GUEST_IPC_MAX_BYTES = 1024 * 1024
+
+
+def _limits(profile: str | None) -> dict:
+    """Resource arguments for ``containers.create``.
+
+    The registered profile (``None``) is exactly the long-standing settings-driven set.
+    The ``guest`` profile is stricter: lower memory/CPU/pids, no swap, file-size and
+    open-file ulimits. ``SANDBOX_DOCKER_RUNTIME`` (e.g. ``runsc`` for gVisor) applies to both
+    when set.
+    """
+    if profile == GUEST:
+        from docker.types import Ulimit
+
+        mem = int(getattr(settings, "SANDBOX_GUEST_MEMORY_LIMIT_MB", 256))
+        fsize = int(getattr(settings, "SANDBOX_GUEST_FSIZE_MB", 8)) * 1024 * 1024
+        limits = {
+            "mem_limit": f"{mem}m",
+            "memswap_limit": f"{mem}m",
+            "nano_cpus": int(float(getattr(settings, "SANDBOX_GUEST_CPU_LIMIT", 0.5)) * 1_000_000_000),
+            "pids_limit": int(getattr(settings, "SANDBOX_GUEST_PIDS_LIMIT", 64)),
+            "ulimits": [
+                Ulimit(name="nofile", soft=256, hard=256),
+                Ulimit(name="fsize", soft=fsize, hard=fsize),
+                Ulimit(name="core", soft=0, hard=0),
+            ],
+        }
+    else:
+        limits = {
+            "mem_limit": f"{int(getattr(settings, 'SANDBOX_MEMORY_LIMIT_MB', 512))}m",
+            "nano_cpus": int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000),
+            "pids_limit": int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128)),
+        }
+    runtime = (getattr(settings, "SANDBOX_DOCKER_RUNTIME", "") or "").strip()
+    if runtime:
+        limits["runtime"] = runtime
+    return limits
+
+
+def _default_move_timeout(profile: str | None) -> int:
+    if profile == GUEST:
+        return int(getattr(settings, "SANDBOX_GUEST_MOVE_TIMEOUT", 15))
+    return int(getattr(settings, "SANDBOX_MOVE_TIMEOUT", 30))
+
+
+def _default_verify_timeout(profile: str | None) -> int:
+    if profile == GUEST:
+        return int(getattr(settings, "SANDBOX_GUEST_VERIFY_TIMEOUT", 120))
+    return int(getattr(settings, "SANDBOX_VERIFY_TIMEOUT", 300))
+
+
 def _run_predict_one_shot(
     model_dir: Path,
     data_dir: Path | None,
@@ -540,6 +592,7 @@ def _run_predict_one_shot(
     game_type: str,
     *,
     timeout: int | None = None,
+    profile: str | None = None,
 ) -> str | None:
     """Run the user's model inside an isolated Docker container and return a move.
 
@@ -554,11 +607,8 @@ def _run_predict_one_shot(
     from docker.errors import APIError, ImageNotFound, NotFound
     import requests as _requests
 
-    timeout = timeout or int(getattr(settings, "SANDBOX_MOVE_TIMEOUT", 30))
+    timeout = timeout or _default_move_timeout(profile)
     image = getattr(settings, "SANDBOX_DOCKER_IMAGE", "python:3.11-slim")
-    mem_limit_mb = int(getattr(settings, "SANDBOX_MEMORY_LIMIT_MB", 512))
-    nano_cpus = int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000)
-    pids_limit = int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128))
 
     _t_begin = time.monotonic()
     client = _docker_client()
@@ -574,7 +624,7 @@ def _run_predict_one_shot(
         (runner_dir / "run_predict.py").write_text(_RUNNER_SCRIPT, encoding="utf-8")
 
         volumes = {
-            str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
+            str(_real_model_dir(model_dir, profile)): {"bind": "/model", "mode": "ro"},
             str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         }
         if data_dir is not None:
@@ -595,9 +645,7 @@ def _run_predict_one_shot(
                     },
                     volumes=volumes,
                     network_disabled=True,
-                    mem_limit=f"{mem_limit_mb}m",
-                    nano_cpus=nano_cpus,
-                    pids_limit=pids_limit,
+                    **_limits(profile),
                     read_only=True,
                     tmpfs={"/tmp": "size=64m"},
                     user="nobody",
@@ -738,14 +786,20 @@ def _fingerprint(path) -> int | None:
 
 
 class _Worker:
-    def __init__(self, base, fp, container, root: Path):
+    def __init__(self, base, fp, container, root: Path, profile: str | None = None):
         self.base = base
         self.fp = fp
         self.container = container
         self.root = root
+        self.profile = profile
         self.ipc_dir = root / "ipc"
         self.seq = 0
         self.last_used = time.monotonic()
+
+    @property
+    def ipc_cap(self) -> int | None:
+        """Largest response file the host will read from this worker (guests only)."""
+        return _GUEST_IPC_MAX_BYTES if self.profile == GUEST else None
 
     def alive(self) -> bool:
         try:
@@ -766,20 +820,32 @@ class _Worker:
         shutil.rmtree(str(self.root), ignore_errors=True)
 
 
-def _read_json(path: Path):
+_TOO_LARGE = object()
+
+
+def _read_json(path: Path, max_bytes: int | None = None):
+    """Parse *path*; with *max_bytes* never read more than that (returns ``_TOO_LARGE``)."""
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        if max_bytes is None:
+            return json.loads(path.read_text(encoding="utf-8"))
+        with open(path, "rb") as fh:
+            raw = fh.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            return _TOO_LARGE
+        return json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
         return None
 
 
-def _wait_for_json(path: Path, timeout: float, container):
-    """Poll for *path*. Returns (data, reason) where reason is 'ok'|'timeout'|'died'."""
+def _wait_for_json(path: Path, timeout: float, container, max_bytes: int | None = None):
+    """Poll for *path*. Returns (data, reason) where reason is 'ok'|'timeout'|'died'|'oversized'."""
     deadline = time.monotonic() + timeout
     next_alive_check = time.monotonic() + 0.5
     while True:
         if path.exists():
-            data = _read_json(path)
+            data = _read_json(path, max_bytes)
+            if data is _TOO_LARGE:
+                return None, "oversized"
             if data is not None:
                 return data, "ok"
         now = time.monotonic()
@@ -790,7 +856,9 @@ def _wait_for_json(path: Path, timeout: float, container):
                 container.reload()
                 if container.status != "running":
                     # one last look: it may have written the file just before exiting
-                    data = _read_json(path) if path.exists() else None
+                    data = _read_json(path, max_bytes) if path.exists() else None
+                    if data is _TOO_LARGE:
+                        return None, "oversized"
                     return (data, "ok") if data is not None else (None, "died")
             except Exception:
                 return None, "died"
@@ -798,7 +866,7 @@ def _wait_for_json(path: Path, timeout: float, container):
         time.sleep(0.005)
 
 
-def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: str):
+def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: str, profile: str | None = None):
     """Create + start a worker container and wait until load() finished.
 
     Returns a ready _Worker, or None if the model failed to initialise.
@@ -807,11 +875,10 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
     from docker.errors import APIError, ImageNotFound, NotFound
 
     image = getattr(settings, "SANDBOX_DOCKER_IMAGE", "python:3.11-slim")
-    mem_limit_mb = int(getattr(settings, "SANDBOX_MEMORY_LIMIT_MB", 512))
-    nano_cpus = int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000)
-    pids_limit = int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128))
     idle_s = float(getattr(settings, "SANDBOX_WORKER_IDLE_SECONDS", 900))
     start_timeout = float(getattr(settings, "SANDBOX_WORKER_START_TIMEOUT", 120))
+    if profile == GUEST:
+        start_timeout = min(start_timeout, float(getattr(settings, "SANDBOX_GUEST_START_TIMEOUT", 60)))
 
     t0 = time.monotonic()
     client = _docker_client()
@@ -830,7 +897,7 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
     t_prep = time.monotonic()
 
     volumes = {
-        str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
+        str(_real_model_dir(model_dir, profile)): {"bind": "/model", "mode": "ro"},
         str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         str(ipc_dir.resolve()): {"bind": "/ipc", "mode": "rw"},
     }
@@ -850,12 +917,10 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
                     "PYTHONUTF8": "1",
                     "PYTHONDONTWRITEBYTECODE": "1",
                 },
-                labels={"agl.sandbox.worker": "1"},
+                labels={"agl.sandbox.worker": "1", **({"agl.sandbox.profile": profile} if profile else {})},
                 volumes=volumes,
                 network_disabled=True,
-                mem_limit=f"{mem_limit_mb}m",
-                nano_cpus=nano_cpus,
-                pids_limit=pids_limit,
+                **_limits(profile),
                 read_only=True,
                 tmpfs={"/tmp": "size=64m"},
                 user="nobody",
@@ -874,7 +939,10 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
             raise SandboxUnavailableError(f"Docker daemon error: {exc}") from exc
 
         t_started = time.monotonic()
-        ready, reason = _wait_for_json(ipc_dir / "ready.json", start_timeout, container)
+        ready, reason = _wait_for_json(
+            ipc_dir / "ready.json", start_timeout, container,
+            _GUEST_IPC_MAX_BYTES if profile == GUEST else None,
+        )
         t_ready = time.monotonic()
     except BaseException:
         if container is not None:
@@ -885,7 +953,7 @@ def _start_worker(base, fp, model_dir: Path, data_dir: Path | None, game_type: s
         shutil.rmtree(str(root), ignore_errors=True)
         raise
 
-    worker = _Worker(base, fp, container, root)
+    worker = _Worker(base, fp, container, root, profile)
     if ready is None or "error" in ready:
         logs = ""
         try:
@@ -931,7 +999,9 @@ def _worker_request(worker: _Worker, fen: str, player: str, timeout: float):
     next_alive_check = time.monotonic() + 0.5
     while True:
         if resp_path.exists():
-            data = _read_json(resp_path)
+            data = _read_json(resp_path, worker.ipc_cap)
+            if data is _TOO_LARGE:
+                return None, "oversized"
             if data is not None and data.get("seq") == seq:
                 return data, "ok"
         now = time.monotonic()
@@ -944,13 +1014,17 @@ def _worker_request(worker: _Worker, fen: str, player: str, timeout: float):
         time.sleep(0.005)
 
 
-def _evict_one(exclude_base) -> None:
-    """Free a slot by stopping the least-recently-used idle worker."""
+def _evict_one(exclude_base, *, only_guest: bool = False, prefer_guest: bool = False) -> bool:
+    """Free a slot by stopping the least-recently-used idle worker. True if one was stopped.
+
+    ``only_guest``: guests may only ever evict guest workers.
+    ``prefer_guest``: registered requests evict idle guest workers before any registered one.
+    """
     with _pool_lock:
-        candidates = sorted(
-            (w for b, w in _workers.items() if b != exclude_base),
-            key=lambda w: w.last_used,
-        )
+        candidates = [w for b, w in _workers.items() if b != exclude_base]
+    if only_guest:
+        candidates = [w for w in candidates if w.profile == GUEST]
+    candidates.sort(key=lambda w: (0 if (prefer_guest and w.profile == GUEST) else 1, w.last_used))
     for w in candidates:
         lock = _key_lock(w.base)
         if lock.acquire(blocking=False):
@@ -961,9 +1035,10 @@ def _evict_one(exclude_base) -> None:
                     else:
                         continue
                 w.stop()
-                return
+                return True
             finally:
                 lock.release()
+    return False
 
 
 def _reaper_loop() -> None:
@@ -1044,7 +1119,7 @@ def stop_workers_under(paths) -> int:
     return stopped
 
 
-def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type):
+def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type, profile=None):
     """Return ``(worker | None, cold)``. The caller MUST hold ``_key_lock(base)``.
 
     Reuses the running worker when it is alive and the model files are unchanged;
@@ -1064,9 +1139,15 @@ def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type):
     max_workers = int(getattr(settings, "SANDBOX_MAX_WORKERS", 8))
     with _pool_lock:
         full = len(_workers) >= max_workers
-    if full:
-        _evict_one(base)
-    worker = _start_worker(base, fp, model_dir, data_dir, game_type)
+        guests = sum(1 for w in _workers.values() if w.profile == GUEST)
+    if profile == GUEST:
+        # Guests have their own small cap and can never push a registered worker out.
+        guest_cap = int(getattr(settings, "SANDBOX_GUEST_MAX_WORKERS", 2))
+        if (guests >= guest_cap or full) and not _evict_one(base, only_guest=True):
+            raise SandboxUnavailableError("The guest sandbox is busy. Please try again in a moment.")
+    elif full:
+        _evict_one(base, prefer_guest=True)
+    worker = _start_worker(base, fp, model_dir, data_dir, game_type, profile)
     if worker is None:
         return None, True
     with _pool_lock:
@@ -1074,7 +1155,7 @@ def _ensure_worker_locked(base, fp, model_dir, data_dir, game_type):
     return worker, True
 
 
-def prewarm_worker(model_dir: Path, data_dir: Path | None, game_type: str) -> bool:
+def prewarm_worker(model_dir: Path, data_dir: Path | None, game_type: str, profile: str | None = None) -> bool:
     """Start (or confirm) the warm worker for this model WITHOUT asking for a move.
 
     Call this before a game starts so the first move does not pay the cold start
@@ -1092,14 +1173,14 @@ def prewarm_worker(model_dir: Path, data_dir: Path | None, game_type: str) -> bo
     fp = (_fingerprint(model_dir), _fingerprint(data_dir))
     _ensure_reaper()
     with _key_lock(base):
-        worker, _cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type)
+        worker, _cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type, profile)
         if worker is None:
             return False
         worker.last_used = time.monotonic()  # restart the idle timer
         return True
 
 
-def _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout) -> str | None:
+def _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout, profile=None) -> str | None:
     t_begin = time.monotonic()
     base = (
         str(model_dir.resolve()),
@@ -1110,7 +1191,7 @@ def _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout) ->
     _ensure_reaper()
 
     with _key_lock(base):
-        worker, cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type)
+        worker, cold = _ensure_worker_locked(base, fp, model_dir, data_dir, game_type, profile)
         if worker is None:
             return None
 
@@ -1151,6 +1232,7 @@ def run_predict_in_sandbox(
     game_type: str,
     *,
     timeout: int | None = None,
+    profile: str | None = None,
 ) -> str | None:
     """Return a move from the user's model, running it inside the Docker sandbox.
 
@@ -1162,9 +1244,9 @@ def run_predict_in_sandbox(
     if the model produced no valid move (timeout, crash, bad output).
     """
     if not getattr(settings, "SANDBOX_REUSE_CONTAINERS", True):
-        return _run_predict_one_shot(model_dir, data_dir, fen, player, game_type, timeout=timeout)
-    timeout = timeout or int(getattr(settings, "SANDBOX_MOVE_TIMEOUT", 30))
-    return _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout)
+        return _run_predict_one_shot(model_dir, data_dir, fen, player, game_type, timeout=timeout, profile=profile)
+    timeout = timeout or _default_move_timeout(profile)
+    return _run_predict_pooled(model_dir, data_dir, fen, player, game_type, timeout, profile)
 
 
 def run_check_in_sandbox(
@@ -1173,6 +1255,7 @@ def run_check_in_sandbox(
     game_type: str,
     *,
     timeout: int | None = None,
+    profile: str | None = None,
 ) -> dict:
     """Run apps.games.model_check's contract test suite inside the sandbox.
 
@@ -1187,11 +1270,8 @@ def run_check_in_sandbox(
     from docker.errors import APIError, ImageNotFound, NotFound
     import requests as _requests
 
-    timeout = timeout or int(getattr(settings, "SANDBOX_VERIFY_TIMEOUT", 300))
+    timeout = timeout or _default_verify_timeout(profile)
     image = getattr(settings, "SANDBOX_DOCKER_IMAGE", "python:3.11-slim")
-    mem_limit_mb = int(getattr(settings, "SANDBOX_MEMORY_LIMIT_MB", 512))
-    nano_cpus = int(float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)) * 1_000_000_000)
-    pids_limit = int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128))
 
     client = _docker_client()
 
@@ -1204,7 +1284,7 @@ def run_check_in_sandbox(
         (runner_dir / "run_check.py").write_text(_CHECK_RUNNER_SCRIPT, encoding="utf-8")
 
         volumes = {
-            str(_real_model_dir(model_dir)): {"bind": "/model", "mode": "ro"},
+            str(_real_model_dir(model_dir, profile)): {"bind": "/model", "mode": "ro"},
             str(runner_dir.resolve()): {"bind": "/runner", "mode": "ro"},
         }
         if data_dir is not None:
@@ -1223,9 +1303,7 @@ def run_check_in_sandbox(
                     },
                     volumes=volumes,
                     network_disabled=True,
-                    mem_limit=f"{mem_limit_mb}m",
-                    nano_cpus=nano_cpus,
-                    pids_limit=pids_limit,
+                    **_limits(profile),
                     read_only=True,
                     tmpfs={"/tmp": "size=64m"},
                     user="nobody",
@@ -1299,12 +1377,20 @@ def run_check_in_sandbox(
     }
 
 
-def _real_model_dir(model_dir):
+def guest_real_dir_root() -> Path:
+    """Where guest model copies live (one folder per guest repo, removed with the snapshot)."""
+    from django.conf import settings as _s
+
+    return Path(_s.USER_MODELS_BASE_DIR).parent / "sandbox_real" / "guest"
+
+
+def _real_model_dir(model_dir, profile: str | None = None):
     """Return a directory with real files (symlinks followed) for mounting.
 
     HF cache snapshots are symlinks into ../../blobs, which do not exist inside
     the container. Build one real-file copy per distinct content and reuse it.
-    Directories without symlinks are returned unchanged.
+    Directories without symlinks are returned unchanged. Guest copies are kept
+    per repo under ``guest_real_dir_root()`` so they can be deleted with the guest's snapshot.
     """
     import hashlib
     from django.conf import settings
@@ -1318,7 +1404,11 @@ def _real_model_dir(model_dir):
         if f.is_file():
             st = f.stat()
             sig.update(f"{f.relative_to(src)}|{st.st_size}|{int(st.st_mtime)}".encode())
-    root = Path(settings.USER_MODELS_BASE_DIR).parent / "sandbox_real"
+    if profile == GUEST:
+        repo_folder = next((p for p in src.parts if p.startswith("models--")), None)
+        root = guest_real_dir_root() / (repo_folder or sig.hexdigest())
+    else:
+        root = Path(settings.USER_MODELS_BASE_DIR).parent / "sandbox_real"
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, 0o755)
     dest = root / sig.hexdigest()

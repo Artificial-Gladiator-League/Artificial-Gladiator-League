@@ -377,6 +377,9 @@ SANDBOX_GUEST_PIDS_LIMIT = int(os.environ.get("SANDBOX_GUEST_PIDS_LIMIT", "64"))
 SANDBOX_GUEST_MOVE_TIMEOUT = int(os.environ.get("SANDBOX_GUEST_MOVE_TIMEOUT", "15"))
 SANDBOX_GUEST_VERIFY_TIMEOUT = int(os.environ.get("SANDBOX_GUEST_VERIFY_TIMEOUT", "120"))
 SANDBOX_GUEST_MAX_WORKERS = int(os.environ.get("SANDBOX_GUEST_MAX_WORKERS", "2"))
+SANDBOX_GUEST_START_TIMEOUT = int(os.environ.get("SANDBOX_GUEST_START_TIMEOUT", "60"))
+# Largest single file (MB) a guest container may write (limits /ipc and /tmp abuse).
+SANDBOX_GUEST_FSIZE_MB = int(os.environ.get("SANDBOX_GUEST_FSIZE_MB", "8"))
 # Optional OCI runtime for sandbox containers (e.g. "runsc" for gVisor). Unset = Docker default.
 SANDBOX_DOCKER_RUNTIME = os.environ.get("SANDBOX_DOCKER_RUNTIME", "")
 

@@ -148,7 +148,7 @@ def _check_syntax(model_dir: Path, manifest: dict, game_type: str) -> list[str]:
     return problems
 
 
-def check_model_verbose(model_dir: Path, data_dir: Path | None, game_type: str) -> dict:
+def check_model_verbose(model_dir: Path, data_dir: Path | None, game_type: str, *, profile: str | None = None) -> dict:
     """Run the full contract check and return the detail behind the verdict.
 
     Returns ``{"problems": [...], "warnings": [...], "moves": [...], "stage": ...}``
@@ -186,7 +186,7 @@ def check_model_verbose(model_dir: Path, data_dir: Path | None, game_type: str) 
 
     from apps.games.sandbox_runner import run_check_in_sandbox
 
-    result = run_check_in_sandbox(model_dir, data_dir, game_type)
+    result = run_check_in_sandbox(model_dir, data_dir, game_type, **({"profile": profile} if profile else {}))
     warnings = list(result.get("warnings") or [])
     for note in warnings:
         log.info("model_check warning (game_type=%s): %s", game_type, note)
@@ -200,11 +200,13 @@ def check_model_verbose(model_dir: Path, data_dir: Path | None, game_type: str) 
     }
 
 
-def check_model(model_dir: Path, data_dir: Path | None, game_type: str) -> list[str]:
+def check_model(model_dir: Path, data_dir: Path | None, game_type: str, *, profile: str | None = None) -> list[str]:
     """Run the full contract check for a model. Returns a list of problems.
 
     An empty list means the model may be pinned/activated. Raises
     ``apps.games.exceptions.SandboxUnavailableError`` if the sandbox itself
     could not run (infra fault) — this is intentionally NOT swallowed here.
     """
-    return check_model_verbose(model_dir, data_dir, game_type)["problems"]
+    return check_model_verbose(
+        model_dir, data_dir, game_type, **({"profile": profile} if profile else {}),
+    )["problems"]
