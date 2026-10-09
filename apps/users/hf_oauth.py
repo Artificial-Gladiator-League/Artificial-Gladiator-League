@@ -123,10 +123,14 @@ def hf_oauth_callback(request):
     state = request.GET.get("state", "")
     saved_state = request.session.pop("hf_oauth_state", "")
     verifier = request.session.pop("hf_oauth_verifier", "")
+    guest_state = request.session.pop("hf_oauth_guest_state", "")
 
     if not state or not secrets.compare_digest(state, saved_state):
         messages.error(request, "OAuth state mismatch. Please try again.")
         return redirect("users:login")
+
+    # The guest sign-in is bound to the exact state value issued by guest_hf_start.
+    is_guest_flow = bool(guest_state) and secrets.compare_digest(state, guest_state)
 
     code = request.GET.get("code", "")
     error = request.GET.get("error", "")
@@ -177,6 +181,11 @@ def hf_oauth_callback(request):
         return redirect("users:login")
 
     log.info("HF OAuth: userinfo for %s retrieved successfully", hf_username)
+
+    if is_guest_flow:
+        # Hand over the profile only: the access token is never stored or logged.
+        from apps.users.guest_oauth import complete_guest_sign_in
+        return complete_guest_sign_in(request, userinfo)
 
     # ── Find or create the Django user ───────────────────────
     encrypted = encrypt_token(access_token)
