@@ -407,6 +407,7 @@ _DEAD_CODE_PLACEHOLDER = None  # replaced old HF-download body
 #  Task 2 — Logout: cleanup files & cache
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 _HF_REPO_ID_RE = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+_USER_DIR_RE = re.compile(r"user_(\d+)")
 
 
 def _hf_cache_folder_name(kind: str, repo_id: str) -> str:
@@ -451,16 +452,36 @@ def _other_users_reference(user_id: int, kind: str, repo_id: str) -> bool:
     return False
 
 
+def _user_ids_in_ongoing_games() -> set[int]:
+    """Users seated in a game that is ONGOING, or WAITING with both seats filled."""
+    from django.db.models import Q
+    from apps.games.models import Game
+
+    games = Game.objects.filter(
+        Q(status=Game.Status.ONGOING)
+        | Q(status=Game.Status.WAITING, white__isnull=False, black__isnull=False)
+    )
+    ids: set[int] = set()
+    for white_id, black_id in games.values_list("white_id", "black_id"):
+        ids.update(i for i in (white_id, black_id) if i is not None)
+    return ids
+
+
 def delete_hf_cache_for_user(user_id: int) -> list[str]:
     """Delete this user's model/dataset repo folders from the shared HF hub cache.
 
-    Repos still referenced by another user are kept. Idempotent and never raises.
+    Repos still referenced by another user are kept, and nothing is deleted while
+    the user is in an ongoing game. Idempotent and never raises.
     Returns the folders that were removed.
     """
     removed: list[str] = []
     try:
         from apps.games.local_inference import _hf_cache_root
         from apps.users.models import CustomUser, UserGameModel
+
+        if user_id in _user_ids_in_ongoing_games():
+            log.info("HF cache cleanup: user=%s is in an ongoing game, keeping cache", user_id)
+            return removed
 
         pairs: set[tuple[str, str]] = set()
         for model_id, data_id in UserGameModel.objects.filter(user_id=user_id).values_list(
@@ -546,31 +567,49 @@ def cleanup_on_logout(self, user_id: int):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 @shared_task(bind=True, max_retries=0)
 def cleanup_orphaned_dirs(self):
-    """Remove /tmp/user_models/{user_id}/ dirs for users with no active session."""
+    """Remove ``user_<id>`` dirs (and that user's HF cache) for users with no live session or game.
+
+    Only folders named exactly ``user_<digits>`` are candidates; shared dirs such as
+    ``hf_hub_cache``, ``hf_home`` and ``live`` are never touched.
+    """
     from django.contrib.sessions.models import Session
 
-    base = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
+    base = Path(getattr(settings, "USER_MODELS_BASE_DIR", "/tmp/user_models"))
     if not base.exists():
         return
 
-    # Collect user IDs from all non-expired sessions
-    active_user_ids: set[str] = set()
-    now = timezone.now()
-    for session in Session.objects.filter(expire_date__gt=now):
+    active_user_ids: set[int] = set()
+    for session in Session.objects.filter(expire_date__gt=timezone.now()):
         try:
-            data = session.get_decoded()
-            uid = data.get("_auth_user_id")
+            uid = session.get_decoded().get("_auth_user_id")
             if uid:
-                active_user_ids.add(str(uid))
+                active_user_ids.add(int(uid))
         except Exception:
-            continue
+            # An unreadable session could belong to a live user: delete nothing this run.
+            log.warning("Orphaned dir cleanup: undecodable session, skipping this run")
+            return
 
+    try:
+        protected = active_user_ids | _user_ids_in_ongoing_games()
+    except Exception:
+        log.exception("Orphaned dir cleanup: could not list ongoing games, skipping this run")
+        return
+
+    base_resolved = base.resolve()
     removed = 0
     for entry in base.iterdir():
-        if entry.is_dir() and entry.name not in active_user_ids:
-            shutil.rmtree(entry, ignore_errors=True)
+        match = _USER_DIR_RE.fullmatch(entry.name)
+        if not match or entry.is_symlink() or not entry.is_dir():
+            continue
+        uid = int(match.group(1))
+        if uid in protected or entry.resolve().parent != base_resolved:
+            continue
+        delete_hf_cache_for_user(uid)
+        if _rmtree_with_retries(entry):
             log.info("Removed orphaned model dir: %s", entry)
             removed += 1
+        else:
+            log.error("Orphaned dir cleanup: could not delete %s", entry)
 
-    log.info("Orphaned dir cleanup: removed %d dirs (%d active sessions).",
-             removed, len(active_user_ids))
+    log.info("Orphaned dir cleanup: removed %d dirs (%d protected users).",
+             removed, len(protected))
