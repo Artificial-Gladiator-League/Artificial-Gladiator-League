@@ -78,3 +78,10 @@ def cleanup_idle_guest_snapshots_task() -> int:
     from apps.users.guest_lifecycle import cleanup_idle_guest_snapshots
 
     return cleanup_idle_guest_snapshots()
+
+
+@shared_task
+def purge_expired_guests_task() -> int:
+    from apps.users.guest_lifecycle import purge_expired_guests
+
+    return sum(1 for e in purge_expired_guests() if e["action"] in ("delete", "abort games and delete"))

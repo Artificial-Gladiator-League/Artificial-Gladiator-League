@@ -563,5 +563,17 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.tournaments.tasks.expire_stale_prize_claims",
         "schedule": 86_400.0,  # daily
     },
+    # Guest mode clean-up. Registered and harmless while guest mode is off
+    # (they only ever touch guest accounts), so a rollback keeps cleaning up.
+    "purge-expired-guests": {
+        "task": "apps.users.tasks.purge_expired_guests_task",
+        "schedule": 3600.0,  # hourly
+        "options": {"queue": GUEST_CELERY_QUEUE},
+    },
+    "cleanup-idle-guest-snapshots": {
+        "task": "apps.users.tasks.cleanup_idle_guest_snapshots_task",
+        "schedule": 600.0,  # every 10 minutes; idle window is GUEST_SNAPSHOT_IDLE_MINUTES
+        "options": {"queue": GUEST_CELERY_QUEUE},
+    },
 }
 
