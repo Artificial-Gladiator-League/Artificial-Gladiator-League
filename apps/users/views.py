@@ -1406,11 +1406,11 @@ class ProfileView(LoginRequiredMixin, UpdateView):
                 # to avoid blocking the profile page load with HuggingFace HTTP requests.
                 "model_files_status": None,
                 "diag_missing_message": get_missing_model_message(user, g["type"]),
-                "steps": build_steps(gm),
+                "steps": build_steps(gm, guest=is_guest(user)),
             }
             game_configs.append(entry)
         ctx["game_configs"] = game_configs
-        ctx["ai_next_step"] = next_step_line(game_configs)
+        ctx["ai_next_step"] = next_step_line(game_configs, guest=is_guest(user))
 
         # ── Tournament readiness per game type ─────────────
         from apps.users.integrity import TOURNAMENT_MIN_RATED_GAMES
@@ -1491,6 +1491,12 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
         if game_type not in [g["type"] for g in GAME_TYPES]:
             messages.error(request, "Invalid game type.")
+            return redirect(profile_url)
+
+        if is_guest(request.user):
+            # Public repos proven by HF sign-in: no gated check, no AGL_VERIFY.txt.
+            from .guest_repos import handle_guest_post
+            handle_guest_post(request, game_type, repo_id, data_repo_id, action)
             return redirect(profile_url)
 
         # ── Verify ownership action ────────────────────────────

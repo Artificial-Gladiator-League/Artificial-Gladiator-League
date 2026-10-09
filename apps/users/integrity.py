@@ -304,6 +304,9 @@ def record_original_sha(
     hf_token: str,
     ref: str = "main",
     repo_type: str = "model",
+    *,
+    sha: str | None = None,
+    data_sha: str | None = None,
 ) -> None:
     """Pin the model's approved revision at submission time.
 
@@ -314,13 +317,16 @@ def record_original_sha(
     left untouched and ``status``/``last_error`` are updated so the owner
     can see what's wrong.
 
+    ``sha`` / ``data_sha`` let a caller that already downloaded an exact commit
+    (guest accounts) pin that commit instead of re-resolving a moving branch.
+
     ``SandboxUnavailableError`` (Docker daemon down, image missing, etc.) is
     an infrastructure fault, not a model-quality problem: it is logged and
     the pin is skipped for this attempt, but ``status``/``last_error`` are
     NOT changed, since we don't yet know whether the model itself is good.
     """
     repo_id = game_model.hf_model_repo_id
-    sha = _resolve_ref_sha(repo_id, hf_token, ref=ref, repo_type=repo_type)
+    sha = sha or _resolve_ref_sha(repo_id, hf_token, ref=ref, repo_type=repo_type)
     if not sha:
         return
 
@@ -331,6 +337,7 @@ def record_original_sha(
     model_dir, data_dir = resolve_model_path(
         game_model.user_id, game_model.game_type, repo_id=repo_id, model_revision=sha,
         data_repo_id=(game_model.hf_data_repo_id or "").strip() or None,
+        data_revision=data_sha,
     )
     if model_dir is None:
         problems = [
@@ -371,7 +378,7 @@ def record_original_sha(
     # registration-period audit has a baseline to compare against.
     data_repo_id = (game_model.hf_data_repo_id or "").strip()
     if data_repo_id:
-        data_sha = _resolve_ref_sha(data_repo_id, hf_token, ref=ref, repo_type="dataset")
+        data_sha = data_sha or _resolve_ref_sha(data_repo_id, hf_token, ref=ref, repo_type="dataset")
         if data_sha:
             game_model.approved_data_repo_sha = data_sha
     game_model.pinned_at = now

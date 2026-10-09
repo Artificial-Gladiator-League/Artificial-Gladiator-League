@@ -505,6 +505,14 @@ def _require_data_file_if_configured(
     raise SandboxDataMissingError(message)
 
 
+def _guest_data_ready(user_id, game_type: str, data_repo_id: str, revision: str) -> bool:
+    dest = (
+        _models_base() / f"user_{user_id}" / game_type / "data_cache"
+        / _dataset_cache_folder_name(data_repo_id) / revision
+    )
+    return _has_real_data_files(dest)
+
+
 def _resolve_for_sandbox(user_id, game_type, repo_id):
     """Shared by get_move_local() and prewarm_local(): returns (game_model, model_dir, data_dir)."""
     game_model = _lookup_game_model(user_id, game_type)
@@ -524,6 +532,11 @@ def _resolve_for_sandbox(user_id, game_type, repo_id):
             or (game_model.current_repo_sha or "").strip()
             or None
         )
+        if getattr(game_model.user, "is_guest", False):
+            # Guest files are fetched once, size-checked, by apps.users.guest_snapshot.
+            data_token = False
+            if data_repo_id and not _guest_data_ready(user_id, game_type, data_repo_id, data_revision):
+                data_repo_id = ""
 
     model_dir, data_dir = resolve_model_path(
         user_id, game_type, repo_id=repo_id, model_revision=model_revision,

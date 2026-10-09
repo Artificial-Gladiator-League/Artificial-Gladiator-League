@@ -179,6 +179,11 @@ def _log_guest_in(request, user, *, welcome_back: bool):
         guest_last_seen=now, guest_expires_at=now + timedelta(days=settings.GUEST_TTL_DAYS),
     )
     login(request, user)
+    from apps.users.guest_snapshot import prepare_pinned_snapshots
+    try:
+        prepare_pinned_snapshots(user)
+    except Exception:
+        log.exception("Could not queue snapshot preparation for guest %s", user.pk)
     messages.success(
         request,
         "Welcome back. Your guest account is active again." if welcome_back

@@ -100,6 +100,10 @@ def ensure_hf_snapshot(gm) -> Path | None:
         log.warning("ensure_hf_snapshot: huggingface_hub unavailable; cannot mirror %s", repo_id)
         return None
 
+    if getattr(getattr(gm, "user", None), "is_guest", False):
+        # Guest repos are fetched only through apps.users.guest_snapshot (pinned, size-checked).
+        return None
+
     cache_dir = str(getattr(settings, "HF_HUB_CACHE", ""))
     if not cache_dir:
         log.warning("ensure_hf_snapshot: HF_HUB_CACHE not configured; skipping %s", repo_id)

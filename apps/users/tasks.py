@@ -48,3 +48,20 @@ def run_diagnostics_task(run_id: int) -> None:
     except SoftTimeLimitExceeded:
         log.error("Diagnostics run %s exceeded the soft time limit", run_id)
         fail_run(run_id, "Diagnostics timed out before finishing. Please try again later.")
+
+
+GUEST_SOFT_TIME_LIMIT = 600
+GUEST_HARD_TIME_LIMIT = 660
+
+
+@shared_task(
+    soft_time_limit=GUEST_SOFT_TIME_LIMIT,
+    time_limit=GUEST_HARD_TIME_LIMIT,
+)
+def prepare_guest_snapshot_task(gm_id: int, model_sha=None, data_sha=None, pin: bool = True) -> None:
+    from apps.users.guest_snapshot import prepare_guest_snapshot
+
+    try:
+        prepare_guest_snapshot(gm_id, model_sha, data_sha, pin=pin)
+    except SoftTimeLimitExceeded:
+        log.error("Guest snapshot preparation timed out for gm=%s", gm_id)
