@@ -263,7 +263,10 @@ def prepare_guest_snapshot(gm_id: int, model_sha: str | None = None, data_sha: s
     from apps.users.models import UserGameModel
 
     lock_key = f"guest-prepare:{gm_id}"
+    again_key = f"guest-prepare-again:{gm_id}"
     if not cache.add(lock_key, 1, timeout=_LOCK_SECONDS):
+        if pin:
+            cache.set(again_key, (model_sha, data_sha), timeout=_LOCK_SECONDS)  # run again after the current one
         return
     try:
         gm = UserGameModel.objects.select_related("user").get(pk=gm_id)
@@ -313,6 +316,11 @@ def prepare_guest_snapshot(gm_id: int, model_sha: str | None = None, data_sha: s
             UserGameModel.objects.filter(pk=gm_id).update(prepare_stage="")
         finally:
             cache.delete(lock_key)
+        again = cache.get(again_key)
+        if again:
+            cache.delete(again_key)
+            UserGameModel.objects.filter(pk=gm_id).update(status=UserGameModel.ContractStatus.PENDING, last_error="")
+            schedule_guest_prepare(gm_id, again[0], again[1], pin=True)
 
 
 def schedule_guest_prepare(gm_id: int, model_sha: str | None = None, data_sha: str | None = None, *, pin: bool = True) -> None:
@@ -337,7 +345,7 @@ def prepare_pinned_snapshots(user) -> None:
     from apps.users.models import UserGameModel
 
     for gm in user.game_models.exclude(approved_full_sha=""):
-        if gm.status == UserGameModel.ContractStatus.FAILED:
+        if gm.status == UserGameModel.ContractStatus.FAILED or _is_preparing(gm.pk):
             continue
         ready, _ = guest_snapshot_ready(user, gm.game_type)
         if not ready:
