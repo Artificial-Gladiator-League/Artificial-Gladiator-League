@@ -287,6 +287,29 @@ def prepare_pinned_snapshots(user) -> None:
             )
 
 
+def _is_preparing(gm_id: int) -> bool:
+    return bool(cache.get(f"guest-prepare:{gm_id}"))
+
+
+def prepare_guest_on_login(user) -> None:
+    """Guest counterpart of preload_user_models: at login, fetch every connected repo that is not ready.
+
+    A passed, pinned model comes back at its pinned commit. One that never passed, or failed, is
+    fetched at the latest commit and checked again once both downloads are done.
+    """
+    from apps.users.models import UserGameModel
+
+    for gm in user.game_models.exclude(hf_model_repo_id=""):
+        if _is_preparing(gm.pk) or guest_snapshot_ready(user, gm.game_type)[0]:
+            continue
+        sha = (gm.approved_full_sha or "").strip()
+        if sha and gm.status == UserGameModel.ContractStatus.ACTIVE:
+            schedule_guest_prepare(gm.pk, sha, (gm.approved_data_repo_sha or None), pin=False)
+            continue
+        UserGameModel.objects.filter(pk=gm.pk).update(status=UserGameModel.ContractStatus.PENDING, last_error="")
+        schedule_guest_prepare(gm.pk, None, None, pin=True)
+
+
 def ensure_guest_snapshots(user) -> None:
     """Re-download missing pinned snapshots (e.g. after the idle clean-up); at most once a minute."""
     if cache.add(f"guest-ensure:{user.pk}", 1, timeout=60):

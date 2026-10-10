@@ -179,9 +179,9 @@ def _log_guest_in(request, user, *, welcome_back: bool):
         guest_last_seen=now, guest_expires_at=now + timedelta(days=settings.GUEST_TTL_DAYS),
     )
     login(request, user)
-    from apps.users.guest_snapshot import prepare_pinned_snapshots
+    from apps.users.guest_snapshot import prepare_guest_on_login
     try:
-        prepare_pinned_snapshots(user)
+        prepare_guest_on_login(user)
     except Exception:
         log.exception("Could not queue snapshot preparation for guest %s", user.pk)
     messages.success(
