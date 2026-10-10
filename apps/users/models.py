@@ -620,6 +620,10 @@ class UserGameModel(models.Model):
         default="",
         help_text="Human-readable problems from the last check_model() run.",
     )
+    prepare_stage = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Guest accounts: step of the running download/check (downloading_model, downloading_data, checking).",
+    )
 
     # ── Sandbox runtime errors (surfaced to the model owner) ────
     last_sandbox_error = models.TextField(
