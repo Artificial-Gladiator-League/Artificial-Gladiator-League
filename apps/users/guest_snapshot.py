@@ -166,6 +166,16 @@ def download_data(user_id: int, game_type: str, repo_id: str, listing: RepoListi
 
 
 # ── Readiness ─────────────────────────────────────────────────────────────────
+STAGE_LABELS = {
+    "queued": "Waiting for the download to start...",
+    "downloading_model": "Downloading the model repo...",
+    "downloading_data": "Downloading the data repo...",
+    "checking": "Checking your model in the sandbox...",
+    "ready": "Ready",
+    "failed": "Failed",
+}
+
+
 def guest_snapshot_ready(user, game_type: str) -> tuple[bool, str]:
     """(ready, reason). A guest may start a game only when this is True."""
     from apps.games.local_inference import _find_hf_cache_snapshot, _has_model_files, _has_real_data_files
@@ -174,6 +184,8 @@ def guest_snapshot_ready(user, game_type: str) -> tuple[bool, str]:
     gm = user.get_game_model(game_type)
     if gm is None or not (gm.hf_model_repo_id or "").strip():
         return False, f"Connect a public {game_type} repo in the Gladiator tab first."
+    if _is_preparing(gm.pk):
+        return False, STAGE_LABELS.get(gm.prepare_stage, "Preparing your model...")
     if gm.status == UserGameModel.ContractStatus.FAILED:
         return False, gm.last_error or "Your model check failed. See the Gladiator tab."
     sha = (gm.approved_full_sha or "").strip()
@@ -190,7 +202,46 @@ def guest_snapshot_ready(user, game_type: str) -> tuple[bool, str]:
     return True, "OK"
 
 
+def guest_model_state(user, gm) -> dict:
+    """Read-only view for the Gladiator tab: stage, label, error and whether to keep polling."""
+    from apps.users.models import UserGameModel
+
+    if gm is None or not (gm.hf_model_repo_id or "").strip():
+        return {"stage": "none", "label": "Not connected", "error": "", "busy": False}
+    if _is_preparing(gm.pk):
+        stage = gm.prepare_stage or "downloading_model"
+        return {"stage": stage, "label": STAGE_LABELS.get(stage, "Preparing your model..."), "error": "", "busy": True}
+    if guest_snapshot_ready(user, gm.game_type)[0]:
+        return {"stage": "ready", "label": STAGE_LABELS["ready"], "error": "", "busy": False}
+    if gm.status == UserGameModel.ContractStatus.FAILED or gm.last_error:
+        return {"stage": "failed", "label": STAGE_LABELS["failed"], "error": gm.last_error, "busy": False}
+    return {"stage": "queued", "label": STAGE_LABELS["queued"], "error": "", "busy": True}
+
+
 # ── Preparation (runs in Celery, or a thread when no broker is available) ─────
+def _failure_reason(exc: Exception) -> str:
+    text = f"{type(exc).__name__}: {exc}"
+    for path in (settings.HF_HUB_CACHE, settings.USER_MODELS_BASE_DIR):
+        text = text.replace(str(path), "<storage>")
+    return text[:300]
+
+
+def _download(kind: str, fn, *args):
+    """Run a download; any failure becomes a GuestRepoError that names the repo kind and the reason."""
+    try:
+        return fn(*args)
+    except GuestRepoError:
+        raise
+    except Exception as exc:
+        log.exception("Guest %s repo download failed", kind)
+        raise GuestRepoError(f"Downloading the {kind} repo failed: {_failure_reason(exc)}") from exc
+
+
+def _set_stage(gm, stage: str) -> None:
+    gm.prepare_stage = stage
+    type(gm).objects.filter(pk=gm.pk).update(prepare_stage=stage)
+
+
 def _set_error(gm, message: str, *, failed: bool) -> None:
     from apps.users.models import UserGameModel
 
@@ -219,6 +270,9 @@ def prepare_guest_snapshot(gm_id: int, model_sha: str | None = None, data_sha: s
         if not gm.user.is_guest:
             return
         try:
+            UserGameModel.objects.filter(pk=gm_id).update(last_error="")
+            gm.last_error = ""
+            _set_stage(gm, "downloading_model")
             model_repo = gm.hf_model_repo_id
             model_listing = fetch_listing(model_repo, "model", revision=model_sha)
             check_limits(model_listing, model_repo)
@@ -228,15 +282,17 @@ def prepare_guest_snapshot(gm_id: int, model_sha: str | None = None, data_sha: s
                 data_listing = fetch_listing(data_repo, "dataset", revision=data_sha)
                 check_limits(data_listing, data_repo)
 
-            snap = download_model(model_repo, model_listing)
+            snap = _download("model", download_model, model_repo, model_listing)
             if data_listing is not None:
-                download_data(gm.user_id, gm.game_type, data_repo, data_listing)
+                _set_stage(gm, "downloading_data")
+                _download("data", download_data, gm.user_id, gm.game_type, data_repo, data_listing)
 
             now = timezone.now()
             gm.cached_path, gm.cached_commit, gm.cached_at = str(snap), model_listing.sha, now
             gm.save(update_fields=["cached_path", "cached_commit", "cached_at"])
 
             if pin:
+                _set_stage(gm, "checking")  # only now: both downloads are complete
                 record_original_sha(
                     gm, False, sha=model_listing.sha,
                     data_sha=data_listing.sha if data_listing is not None else None,
@@ -244,16 +300,19 @@ def prepare_guest_snapshot(gm_id: int, model_sha: str | None = None, data_sha: s
                 gm.refresh_from_db()
                 if gm.status == UserGameModel.ContractStatus.PENDING:
                     _set_error(gm, "The model check could not run right now. Click 'Check again' in a minute.", failed=False)
-            elif gm.last_error:
-                gm.last_error = ""
-                gm.save(update_fields=["last_error"])
         except GuestRepoError as exc:
             _set_error(gm, str(exc), failed=pin)
-        except Exception:
+        except Exception as exc:
             log.exception("Guest snapshot preparation failed for gm=%s", gm_id)
-            _set_error(gm, "Something went wrong while preparing your model. Please try again.", failed=False)
+            _set_error(
+                gm, f"Something went wrong while preparing your model ({_failure_reason(exc)}). Please try again.",
+                failed=False,
+            )
     finally:
-        cache.delete(lock_key)
+        try:
+            UserGameModel.objects.filter(pk=gm_id).update(prepare_stage="")
+        finally:
+            cache.delete(lock_key)
 
 
 def schedule_guest_prepare(gm_id: int, model_sha: str | None = None, data_sha: str | None = None, *, pin: bool = True) -> None:
