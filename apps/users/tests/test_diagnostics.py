@@ -553,7 +553,7 @@ class RunDiagnosticsTests(TestCase):
         live.assert_not_called()
         self.assertNotEqual(run.verdict, DiagnosticRun.Verdict.PASS)
         warns = [l["msg"] for l in run.lines if l["level"] == "warn"]
-        self.assertTrue(any("approved revision" in m and "are not on the platform" in m for m in warns))
+        self.assertTrue(any("approved revision" in m and "are still being downloaded" in m for m in warns))
         msgs = self._msgs(run)
         self.assertTrue(any("log out and log in again" in m for m in msgs))
         self.assertFalse(any("Wait for the platform" in m for m in msgs))

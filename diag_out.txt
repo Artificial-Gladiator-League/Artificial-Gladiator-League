@@ -1,0 +1,319 @@
+﻿python : 
+At line:1 char:1
++ python manage.py test apps.users.tests.test_diagnostics --noinput 2>& ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[96m[15:22:58][0m [1mINFO[0m [93mapps.games.apps[0m -> GamesConfig ready ק inference via HF API.
+Creating test database for alias 'default'...
+
+Got an error creating the test database: (1007, "Can't create database 'test_aigladiator'; database exists")
+
+Destroying old test database for alias 'default'...
+
+
+[96m[15:23:56][0m [1mINFO[0m [93mapps.games.model_check[0m -> model_check warning (game_type=chess): slow
+
+[96m[15:23:56][0m [1mINFO[0m [93mapps.games.model_check[0m -> model_check warning (game_type=chess): slow
+.........
+[96m[15:23:57][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 1
+
+[96m[15:23:58][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 2
+
+[96m[15:23:58][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] carol ק no game models registered, skipping local file 
+check
+.
+[96m[15:23:59][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 3
+
+[96m[15:23:59][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 4
+
+[96m[15:23:59][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 3 game chess
+
+[96m[15:23:59][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] carol ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:00][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 5
+
+[96m[15:24:01][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 6
+
+[96m[15:24:01][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 5 game chess
+
+[96m[15:24:01][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] carol ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:02][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 7
+
+[96m[15:24:02][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 8
+
+[96m[15:24:02][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] carol ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:03][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 9
+
+[96m[15:24:04][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 10
+.
+[96m[15:24:04][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] dave ק no game models registered, skipping local file 
+check
+
+[96m[15:24:05][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 11
+
+[96m[15:24:05][0m [1mERROR[0m [93mapps.users.tasks[0m -> Diagnostics run 1 exceeded the soft time limit
+.
+[96m[15:24:05][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 12
+.
+[96m[15:24:06][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 13
+.
+[96m[15:24:07][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 14
+.
+[96m[15:24:08][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 15
+
+[96m[15:24:08][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 16
+
+[96m[15:24:08][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 15 game chess
+
+[96m[15:24:08][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:09][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 17
+
+[96m[15:24:10][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 18
+
+[96m[15:24:10][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 17 game chess
+
+[96m[15:24:10][0m [1mERROR[0m [93mapps.users.views[0m -> Could not enqueue diagnostics run 4
+Traceback (most recent call last):
+  File "C:\Users\User.COMPUTER3\Desktop\Draft\■■■■■■■■■■■■agladiator\agladiator\apps\users\views.py", line 1916, in 
+run_diagnostics_start
+    run_diagnostics_task.delay(run.pk)
+  File "C:\Program Files\Python311\Lib\unittest\mock.py", line 1124, in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\unittest\mock.py", line 1128, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\unittest\mock.py", line 1183, in _execute_mock_call
+    raise effect
+RuntimeError: broker down
+
+[96m[15:24:10][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:10][0m [1mERROR[0m [93mdjango.request[0m -> Service Unavailable: /users/profile/diagnostics/chess/run/
+.
+[96m[15:24:11][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 19
+
+[96m[15:24:11][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 20
+
+[96m[15:24:11][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 19 game chess
+
+[96m[15:24:11][0m [1mWARNING[0m [93mdjango.request[0m -> Bad Request: /users/profile/diagnostics/checkers/latest/
+.
+[96m[15:24:11][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:12][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 21
+
+[96m[15:24:13][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 22
+
+[96m[15:24:13][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 21 game chess
+
+[96m[15:24:13][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:14][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 23
+
+[96m[15:24:14][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 24
+
+[96m[15:24:14][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 23 game chess
+.
+[96m[15:24:14][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:15][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 25
+
+[96m[15:24:16][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 26
+
+[96m[15:24:16][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 25 game chess
+
+[96m[15:24:16][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:17][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 27
+
+[96m[15:24:17][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 28
+
+[96m[15:24:17][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 27 game chess
+.
+[96m[15:24:17][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:18][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 29
+
+[96m[15:24:19][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 30
+
+[96m[15:24:19][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 29 game chess
+.
+[96m[15:24:19][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:20][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 31
+
+[96m[15:24:20][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 32
+
+[96m[15:24:20][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 31 game chess
+
+[96m[15:24:20][0m [1mWARNING[0m [93mdjango.request[0m -> Method Not Allowed (GET): /users/profile/diagnostics/chess/run/
+.
+[96m[15:24:20][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:21][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 33
+
+[96m[15:24:22][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 34
+
+[96m[15:24:22][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 33 game chess
+
+[96m[15:24:22][0m [1mWARNING[0m [93mdjango.request[0m -> Bad Request: /users/profile/diagnostics/checkers/run/
+.
+[96m[15:24:22][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:22][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 35
+
+[96m[15:24:23][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 36
+
+[96m[15:24:23][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 35 game chess
+
+[96m[15:24:23][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:23][0m [1mINFO[0m [93mapps.games.model_preloader[0m -> Removed preloaded models for user_35
+
+[96m[15:24:23][0m [1mINFO[0m [93mapps.users.signals[0m -> Removed preloaded models for user alice on logout
+.
+[96m[15:24:24][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 37
+
+[96m[15:24:25][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 38
+
+[96m[15:24:25][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 37 game chess
+
+[96m[15:24:25][0m [1mWARNING[0m [93mdjango.request[0m -> Too Many Requests: /users/profile/diagnostics/chess/run/
+.
+[96m[15:24:25][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:25][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 39
+
+[96m[15:24:26][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 40
+
+[96m[15:24:26][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 39 game chess
+
+[96m[15:24:26][0m [1mWARNING[0m [93mdjango.request[0m -> Too Many Requests: /users/profile/diagnostics/chess/run/
+
+[96m[15:24:26][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:27][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 41
+
+[96m[15:24:28][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 42
+
+[96m[15:24:28][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 41 game chess
+
+[96m[15:24:28][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:28][0m [1mINFO[0m [93mapps.games.model_preloader[0m -> Removed preloaded models for user_41
+
+[96m[15:24:28][0m [1mINFO[0m [93mapps.users.signals[0m -> Removed preloaded models for user alice on logout
+.
+[96m[15:24:28][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 43
+
+[96m[15:24:29][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 44
+
+[96m[15:24:29][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 43 game chess
+
+[96m[15:24:29][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:30][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 45
+
+[96m[15:24:31][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 46
+
+[96m[15:24:31][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 45 game chess
+
+[96m[15:24:31][0m [1mWARNING[0m [93mdjango.request[0m -> Not Found: /users/profile/diagnostics/run/18/status/
+.
+[96m[15:24:31][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] alice ק no game models registered, skipping local file 
+check
+
+[96m[15:24:31][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 47
+.
+[96m[15:24:31][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+
+[96m[15:24:32][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 48
+
+[96m[15:24:32][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 48 game chess
+.
+[96m[15:24:32][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+
+[96m[15:24:33][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 49
+.
+[96m[15:24:33][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+
+[96m[15:24:34][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 50
+
+[96m[15:24:34][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:34][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 51
+
+[96m[15:24:34][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 51 game chess
+
+[96m[15:24:34][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:35][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 52
+
+[96m[15:24:35][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 52 game chess
+
+[96m[15:24:35][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+.
+[96m[15:24:36][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 53
+.
+[96m[15:24:36][0m [1mINFO[0m [93mapps.users.signals[0m -> [local] frank ק no game models registered, skipping local file 
+check
+
+[96m[15:24:37][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 54
+
+[96m[15:24:37][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 54 game chess
+.
+[96m[15:24:37][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 55
+
+[96m[15:24:37][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 55 game chess
+.
+[96m[15:24:38][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 56
+
+[96m[15:24:38][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 56 game chess
+
+[96m[15:24:38][0m [1mINFO[0m [93mapps.users.diagnostics[0m -> run_diagnostics: run 24 is already finished, skipping
+.
+[96m[15:24:39][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 57
+
+[96m[15:24:39][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 57 game chess
+.
+[96m[15:24:40][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 58
+
+[96m[15:24:40][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 58 game chess
+.
+[96m[15:24:41][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 59
+
+[96m[15:24:41][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 59 game chess
+.
+[96m[15:24:41][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for new user 60
+
+[96m[15:24:41][0m [1mINFO[0m [93mapps.users.signals[0m -> Ensured model dirs for user 60 game chess

@@ -1,0 +1,161 @@
+﻿U:10: #   {USER_MODELS_BASE_DIR}/user_{id}/{game}/model/   ← model.safetensors, config.json, …
+U:11: #   {USER_MODELS_BASE_DIR}/user_{id}/{game}/data/    ← *.npz, *.json datasets
+U:13: # The root is settings.USER_MODELS_BASE_DIR (default: /var/lib/agladiator/user_models).
+U:56: base = getattr(settings, "USER_MODELS_BASE_DIR", None)
+U:63: """Return the shared HF hub cache root (settings.HF_HUB_CACHE or fallback)."""
+U:65: val = getattr(settings, "HF_HUB_CACHE", None) or _os.environ.get("HF_HUB_CACHE")
+U:67: val = str(_models_base() / "hf_hub_cache")
+U:78: Layout: {HF_HUB_CACHE}/models--{owner}--{name}/snapshots/{sha}/
+U:164: symlinks pointing at ``HF_HUB_CACHE/.../blobs/<sha>`` (the layout used
+U:165: by the raw HF hub cache / ``snapshot_download(cache_dir=...)``), the
+U:174: ``snapshot_download(..., local_dir=..., local_dir_use_symlinks=False)``
+U:196: from huggingface_hub import snapshot_download  # type: ignore
+U:206: snapshot_download(
+U:216: "prepare_data_dir: snapshot_download failed for repo=%s revision=%s",
+U:237: 1. Per-user committed files: ``{USER_MODELS_BASE_DIR}/user_{id}/{game}/model/``
+U:238: 2. Shared HF hub cache snapshot: ``{HF_HUB_CACHE}/models--{owner}--{name}/snapshots/{sha}/``
+U:4: dataset snapshots from the local HF cache (``HF_HUB_CACHE``) or from
+U:6: ``USER_MODELS_BASE_DIR/user_{id}/{game}/(model|data)`` folders.
+U:27: """Pick the best revision/SHA to pin a snapshot_download against."""
+U:74: Mirrors ``gm.hf_model_repo_id`` into ``settings.HF_HUB_CACHE`` using
+U:75: ``huggingface_hub.snapshot_download`` so that subsequent calls to
+U:98: from huggingface_hub import snapshot_download  # type: ignore
+U:103: cache_dir = str(getattr(settings, "HF_HUB_CACHE", ""))
+U:105: log.warning("ensure_hf_snapshot: HF_HUB_CACHE not configured; skipping %s", repo_id)
+U:110: snap_path = snapshot_download(
+U:119: "[MODEL-DOWNLOAD-FAILED] snapshot_download failed for repo=%s revision=%s user=%s game=%s",
+U:128: "[MODEL-DOWNLOAD-FAILED] snapshot_download returned %s, not revision %s (repo=%s)",
+U:148: No-copy: inference reads directly from ``HF_HUB_CACHE`` snapshot dirs.
+U:172: # Fetch the requested revision into HF_HUB_CACHE so inference is local.
+U:214: base = Path(settings.USER_MODELS_BASE_DIR)
+U:225: base = Path(settings.USER_MODELS_BASE_DIR)
+U:229: shutil.rmtree(user_path)
+U:244: base = Path(settings.USER_MODELS_BASE_DIR)
+U:245: hf_cache = Path(getattr(settings, "HF_HUB_CACHE", base / "hf_hub_cache"))
+U:263: shutil.copytree(snap, user_model_dir, dirs_exist_ok=True)
+U:274: shutil.copytree(r, user_model_dir, dirs_exist_ok=True)
+U:281: shutil.copytree(repo_dir, user_model_dir, dirs_exist_ok=True)
+U:292: shutil.copytree(data_dir, user_data_dir, dirs_exist_ok=True)
+U:330: shutil.move(str(matches[0]), str(dst))
+U:344: shutil.copy2(str(candidate), str(dst))
+U:362: shutil.copy2(str(repo_matches[0]), str(dst))
+U:398: # Cleanup empty dirs
+U:677: "load()=%.2fs, get_move()=%.2fs) | cleanup=%.2fs",
+U:766: shutil.rmtree(str(self.root), ignore_errors=True)
+U:885: shutil.rmtree(str(root), ignore_errors=True)
+U:1292: root = Path(settings.USER_MODELS_BASE_DIR).parent / "sandbox_real"
+U:1301: shutil.copytree(src, tmp / "m", symlinks=False)
+U:1309: shutil.rmtree(tmp, ignore_errors=True)
+U:24: self.addCleanup(self._tmp.cleanup)
+U:5: No network is used; snapshot_download is mocked.
+U:24: SNAPSHOT_DOWNLOAD = "huggingface_hub.snapshot_download"
+U:30: self.addCleanup(tmp.cleanup)
+U:31: self.cache = Path(tmp.name) / "hf_hub_cache"
+U:33: self.enterContext(override_settings(HF_HUB_CACHE=str(self.cache), USER_MODELS_BASE_DIR=self.models_base))
+U:36: self.addCleanup(token.stop)
+U:109: with mock.patch(SNAPSHOT_DOWNLOAD, side_effect=self._download_fills_approved) as dl:
+U:123: with mock.patch(SNAPSHOT_DOWNLOAD, side_effect=RuntimeError("boom")) as dl:
+U:134: with mock.patch(SNAPSHOT_DOWNLOAD, return_value=partial):
+U:142: with mock.patch(SNAPSHOT_DOWNLOAD) as dl:
+U:150: with mock.patch(SNAPSHOT_DOWNLOAD) as dl:
+U:159: with mock.patch(SNAPSHOT_DOWNLOAD, side_effect=self._download_fills_approved) as dl:
+U:173: with mock.patch(SNAPSHOT_DOWNLOAD, side_effect=RuntimeError("boom")):
+U:184: with mock.patch(SNAPSHOT_DOWNLOAD) as dl:
+U:8: ``huggingface_hub.snapshot_download(local_dir=...)`` and the zone DB ends up
+U:30: self.addCleanup(self._tmp.cleanup)
+U:60: def _fake_snapshot_download(*, repo_id, repo_type, revision, local_dir, **kwargs):
+U:61: """Mimic huggingface_hub.snapshot_download(local_dir=...): always
+U:70: with override_settings(USER_MODELS_BASE_DIR=str(self.base_dir / "user_models")):
+U:72: "huggingface_hub.snapshot_download",
+U:73: side_effect=self._fake_snapshot_download,
+U:98: with override_settings(USER_MODELS_BASE_DIR=str(self.base_dir / "user_models")):
+U:100: "huggingface_hub.snapshot_download",
+U:101: side_effect=self._fake_snapshot_download,
+U:116: with override_settings(USER_MODELS_BASE_DIR=str(self.base_dir / "user_models")):
+U:50: self.addCleanup(self._tmp.cleanup)
+U:100: self.addCleanup(self._tmp.cleanup)
+U:633: # ── Integrity field cleanup (tokens + SHA records deleted at end) ──
+U:649: # ── PayPal email cleanup (cash tournaments only) ──────────────
+U:16: * the logout endpoint,
+U:44: "/accounts/logout/",
+U:45: "/users/logout/",
+U:46: "/logout/",
+U:452: class PayPalEmailCleanupTest(TestCase):
+U:507: def test_no_unrelated_fields_changed_by_cleanup(self):
+U:508: """paypal_email cleanup does not touch other participant fields."""
+U:522: def test_no_paypal_cleanup_for_non_money_tournament(self):
+U:261: self.addCleanup(stack.close)
+U:52: getattr(settings, "USER_MODELS_BASE_DIR", None),
+U:53: getattr(settings, "LIVE_MODELS_ROOT", None),
+U:54: getattr(settings, "MODEL_CACHE_ROOT", None),
+U:55: getattr(settings, "HF_HUB_CACHE", None),
+U:34: from huggingface_hub import hf_hub_download, snapshot_download
+U:38: snapshot_download = None  # type: ignore[assignment]
+U:49: base = getattr(settings, "MODEL_CACHE_ROOT", None)
+U:51: base = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
+U:190: ``settings.HF_HUB_CACHE``, that snapshot path is returned directly —
+U:237: This uses `huggingface_hub.snapshot_download()` and places the files
+U:238: under: {MODEL_CACHE_ROOT|USER_MODELS_BASE_DIR}/user_{id}/{game_type}/model/
+U:242: if snapshot_download is None:
+U:267: shutil.rmtree(dest, ignore_errors=True)
+U:278: snapshot_download(
+U:298: log.exception("snapshot_download HTTP error for %s (repo_type=%s)", repo_id, candidate_type)
+U:300: shutil.rmtree(dest, ignore_errors=True)
+U:307: shutil.rmtree(dest, ignore_errors=True)
+U:368: ``settings.HF_HUB_CACHE`` snapshots resolved by
+U:404: #  Task 2 — Logout: cleanup files & cache
+U:406: def cleanup_for_user(user_id: int) -> None:
+U:407: """Synchronous logout cleanup: delete model files and clear cache for *user_id*.
+U:409: Exposed so callers can run the cleanup synchronously without relying
+U:416: shutil.rmtree(user_dir, ignore_errors=True)
+U:417: log.info("Cleaned up model dir on logout: %s", user_dir)
+U:429: log.info("Logout cleanup complete for user %s.", user_id)
+U:433: def cleanup_on_logout(self, user_id: int):
+U:434: """Celery task wrapper around :func:`cleanup_for_user`."""
+U:435: cleanup_for_user(user_id)
+U:439: #  Task 3 — Periodic cleanup of orphaned dirs
+U:442: def cleanup_orphaned_dirs(self):
+U:446: base = getattr(settings, "USER_MODELS_BASE_DIR", Path("/tmp/user_models"))
+U:465: shutil.rmtree(entry, ignore_errors=True)
+U:469: log.info("Orphaned dir cleanup: removed %d dirs (%d active sessions).",
+U:20: from django.contrib.auth.signals import user_logged_in, user_logged_out
+U:459: @receiver(user_logged_in)
+U:470: Note: HF snapshot_download() is NOT called here. All model files
+U:501: # ── Logout handler (no-op — zero persistent storage) ──
+U:503: @receiver(user_logged_out)
+U:504: def on_user_logged_out_presence(sender, request, user, **kwargs):
+U:505: """Deterministically remove the user from the online counter on logout."""
+U:512: log.exception("[presence] Failed to remove presence for user %s on logout", user.pk)
+U:515: @receiver(user_logged_out)
+U:516: def clear_breakthrough_on_logout(sender, request, user, **kwargs):
+U:517: """Clean up cached model files on logout.
+U:519: Always runs ``cleanup_for_user`` directly in a background thread so
+U:531: log.info("Removed preloaded models for user %s on logout", user.username)
+U:533: log.exception("Failed to remove preloaded models for user %s on logout", user.username)
+U:535: log.exception("Failed to start logout cleanup for user %s", getattr(user, "username", "?"))
+U:21: # Model downloads can be large; keep well above a normal snapshot_download.
+U:18: path("logout/", views.UserLogoutView.as_view(), name="logout"),
+U:12: from django.contrib.auth.views import LoginView, LogoutView
+U:523: #  Login / Logout
+U:555: live_root = getattr(settings, "LIVE_MODELS_ROOT", None)
+U:570: class UserLogoutView(LogoutView):
+U:578: live_root = getattr(settings, "LIVE_MODELS_ROOT", None)
+U:582: shutil.rmtree(live_dir, ignore_errors=True)
+U:584: log.exception("Failed to remove live models directory for user on logout")
+U:586: # Logout cleanup is also scheduled by the user_logged_out signal in
+U:588: # `cleanup_on_logout` asynchronously.
+U:589: # As a best-effort additional cleanup, remove preloaded models now.
+U:1748: user_folder = Path(settings.USER_MODELS_BASE_DIR) / f"user_{user_id}"
+U:1751: shutil.rmtree(user_folder)
+U:74: shutil.move(str(src), str(dst))
+U:97: shutil.move(str(src), str(dst))
+U:94: self.client.logout()
+U:102: self.client.logout()
+U:353: text = f"cannot open {settings.BASE_DIR}/apps/x.py and {settings.USER_MODELS_BASE_DIR}/user_1/chess/model/a.py"
+U:356: self.assertNotIn(str(settings.USER_MODELS_BASE_DIR), out)
+U:397: self.addCleanup(self._tmp.cleanup)
+U:696: self.addCleanup(self._tmp.cleanup)
+U:114: self.addCleanup(p.stop)
+U:117: self.addCleanup(sched.stop)
+U:198: self.addCleanup(p.stop)
+U:201: self.addCleanup(sched.stop)

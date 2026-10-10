@@ -499,12 +499,14 @@ def _step_live_test(L: _RunLog, F: _Findings, gm: UserGameModel) -> None:
     model_dir, data_dir = _resolve_dirs_readonly(gm)
 
     if model_dir is None:
-        # This is the case where the live test was skipped because files were not yet downloaded
-        L.info("Live contract test skipped (files still being downloaded by background task)")
+        L.warn(
+            "The live contract test could not run because the files of your approved "
+            "revision are still being downloaded."
+        )
         F.add(
             "The live contract test could not run because the files of your approved revision are still being downloaded.",
-            "This is normal right after registration. The test will run automatically in a few seconds. "
-            "You can refresh the Diagnostics tab in a moment.",
+            "If this does not resolve, log out and log in again so the platform re-fetches your files, "
+            "then re-run the diagnostics.",
         )
         return
 
