@@ -141,7 +141,8 @@ class GuestProfileTests(TestCase):
         self.assertIn("get_move missing", html)
         gm.status, gm.last_error = "active", ""
         gm.save()
-        self.assertIn("Ready", self.html())
+        with mock.patch("apps.users.guest_snapshot.guest_snapshot_ready", return_value=(True, "OK")):
+            self.assertIn("Ready", self.html())
 
     def test_registered_profile_keeps_existing_sections(self):
         user = User.objects.create_user("regular", password="pw", email="r@example.com")

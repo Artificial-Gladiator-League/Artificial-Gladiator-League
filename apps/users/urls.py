@@ -30,6 +30,7 @@ urlpatterns = [
     path("game/<int:game_id>/moves/", views.game_moves, name="game_moves"),
     path("activity-heatmap/", views.activity_heatmap, name="activity_heatmap"),
     path("profile/model-file-status/<str:game_type>/", views.model_file_status_api, name="model_file_status_api"),
+    path("profile/guest-model-status/<str:game_type>/", views.guest_model_status, name="guest_model_status"),
     path("search/", views.user_search, name="user_search"),
     # Diagnostics tab (own profile)
     path("profile/diagnostics/<str:game_type>/run/", views.run_diagnostics_start, name="run_diagnostics"),

@@ -1398,12 +1398,16 @@ class ProfileView(LoginRequiredMixin, UpdateView):
 
         # \u2500\u2500 AI Models tab context \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
         game_configs = []
+        guest_view = is_guest(user)
+        if guest_view:
+            from .guest_snapshot import guest_model_state
         for g in GAME_TYPES:
             gm = user.get_game_model(g["type"])
             entry = {
                 "type": g["type"],
                 "label": g["label"],
                 "model": gm,
+                "guest_state": guest_model_state(user, gm) if guest_view else None,
                 # model_files_status is loaded lazily via AJAX (users:model_file_status_api)
                 # to avoid blocking the profile page load with HuggingFace HTTP requests.
                 "model_files_status": None,
@@ -1851,6 +1855,18 @@ def model_file_status_api(request, game_type):
     if result is None:
         return JsonResponse({"status": "no_data"})
     return JsonResponse({"status": "ok", **result})
+
+
+@login_required
+def guest_model_status(request, game_type):
+    """Guest Gladiator tab: download/check stage as JSON (read-only; the page polls it)."""
+    if not is_guest(request.user):
+        return JsonResponse({"error": "Guest accounts only."}, status=403)
+    if game_type not in [g["type"] for g in GAME_TYPES]:
+        return JsonResponse({"error": "Invalid game type."}, status=400)
+    from .guest_snapshot import guest_model_state
+
+    return JsonResponse(guest_model_state(request.user, request.user.get_game_model(game_type)))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -34,7 +34,7 @@ GUEST_ALLOWED_VIEWS: dict[str, frozenset | None] = {
     "tournaments:gauntlet_by_pk": GET, "tournaments:gauntlet_standings_partial": GET,
     # own account: Gladiator tab, diagnostics, upgrade, deletion
     "users:logout": ANY, "users:profile": ANY, "users:save_gladiator_field": ANY,
-    "users:model_file_status_api": GET, "users:run_diagnostics": ANY,
+    "users:model_file_status_api": GET, "users:guest_model_status": GET, "users:run_diagnostics": ANY,
     "users:diagnostics_status": GET, "users:diagnostics_latest": GET,
     "users:activity_heatmap": GET, "users:user_search": GET, "users:public_profile": GET,
     "users:match_moves": GET, "users:game_moves": GET,

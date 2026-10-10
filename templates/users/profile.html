@@ -652,14 +652,14 @@
           <div class="card">
             <div class="flex items-center justify-between mb-4">
               <h2 class="text-xl font-semibold">{{ game.label }}</h2>
-              {% if game.model and game.model.status == 'active' %}
-                <span class="text-sm text-green-400">Ready</span>
-              {% elif game.model and game.model.status == 'failed' %}
-                <span class="text-sm text-red-400">Model check failed</span>
+              {% if game.guest_state.stage == 'ready' %}
+                <span id="guest-badge-{{ game.type }}" class="text-sm text-green-400">Ready</span>
+              {% elif game.guest_state.stage == 'failed' %}
+                <span id="guest-badge-{{ game.type }}" class="text-sm text-red-400">Model check failed</span>
               {% elif game.model %}
-                <span class="text-sm text-yellow-400">Preparing your model</span>
+                <span id="guest-badge-{{ game.type }}" class="text-sm text-yellow-400">Preparing your model</span>
               {% else %}
-                <span class="text-sm text-gray-500">Not connected</span>
+                <span id="guest-badge-{{ game.type }}" class="text-sm text-gray-500">Not connected</span>
               {% endif %}
             </div>
 
@@ -678,17 +678,49 @@
               {% endif %}
             </div>
 
-            {% if game.model.status == 'failed' %}
-            <div class="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 mb-3 text-sm text-red-300">
-              <strong>Model check failed. This version is not used in games.</strong>
-              {{ game.model.last_error }}
+            <div id="guest-stage-{{ game.type }}" data-busy="{{ game.guest_state.busy|yesno:'1,0' }}"
+                 data-url="{% url 'users:guest_model_status' game.type %}"
+                 class="rounded-lg border px-4 py-2.5 mb-3 text-sm
+                        {% if game.guest_state.stage == 'ready' %}border-green-700 bg-green-900/20 text-green-300
+                        {% elif game.guest_state.stage == 'failed' %}border-red-700 bg-red-900/20 text-red-300
+                        {% else %}border-yellow-700 bg-yellow-900/20 text-yellow-300{% endif %}">
+              <strong class="guest-stage-label">{% if game.guest_state.stage == 'failed' %}Failed. This version is not used in games.{% elif game.guest_state.stage == 'ready' %}Ready. Both repos are downloaded and the model check passed.{% else %}Preparing your model: {{ game.guest_state.label }}{% endif %}</strong>
+              <span class="guest-stage-error">{{ game.guest_state.error }}</span>
             </div>
-            {% elif game.model.status == 'pending' %}
-            <div class="rounded-lg border border-yellow-700 bg-yellow-900/20 px-4 py-2.5 mb-3 text-sm text-yellow-300">
-              <strong>Preparing your model...</strong> The platform is downloading your public repos and checking them. Reload this page in a minute.
-              {% if game.model.last_error %}<br>{{ game.model.last_error }}{% endif %}
-            </div>
-            {% endif %}
+            <script>
+            (function () {
+              var box = document.getElementById("guest-stage-{{ game.type }}");
+              var badge = document.getElementById("guest-badge-{{ game.type }}");
+              if (!box || box.dataset.busy !== "1") return;
+              var colors = {
+                ready: ["text-green-400", "Ready"],
+                failed: ["text-red-400", "Model check failed"],
+                busy: ["text-yellow-400", "Preparing your model"]
+              };
+              function render(s) {
+                var kind = s.busy ? "busy" : (s.stage === "ready" ? "ready" : "failed");
+                var text = s.stage === "failed" ? "Failed. This version is not used in games."
+                  : s.stage === "ready" ? "Ready. Both repos are downloaded and the model check passed."
+                  : "Preparing your model: " + s.label;
+                box.querySelector(".guest-stage-label").textContent = text;
+                box.querySelector(".guest-stage-error").textContent = s.error || "";
+                if (badge) {
+                  badge.className = "text-sm " + colors[kind][0];
+                  badge.textContent = colors[kind][1];
+                }
+              }
+              function tick() {
+                fetch(box.dataset.url, { headers: { "Accept": "application/json" }, credentials: "same-origin" })
+                  .then(function (r) { return r.json(); })
+                  .then(function (s) {
+                    render(s);
+                    if (s.busy) { setTimeout(tick, 3000); } else { window.location.reload(); }
+                  })
+                  .catch(function () { setTimeout(tick, 6000); });
+              }
+              setTimeout(tick, 2000);
+            })();
+            </script>
 
             {% if game.model.last_sandbox_error %}
             <div class="rounded-lg border border-red-700 bg-red-900/20 px-4 py-2.5 mb-3 text-sm text-red-300">
