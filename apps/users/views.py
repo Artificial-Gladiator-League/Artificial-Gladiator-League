@@ -745,7 +745,7 @@ def _build_breakthrough_file_status(user, gm):
     # This ensures we only use a read-only token when rendering
     # profile.html.
     platform_token = settings.HF_PLATFORM_TOKEN or None
-    hf_data_repo_id = gm.hf_data_repo_id or f"{user.username}/{gm.game_type}-data"
+    hf_data_repo_id = (gm.hf_data_repo_id or "").strip()
 
     # Determine the correct revision for this user's model
     revision = gm.approved_full_sha or gm.submitted_ref or "main"
@@ -888,6 +888,13 @@ def _build_breakthrough_file_status(user, gm):
     except Exception:
         model_error = "Unexpected error reading config_model.json from model repo."
         log.exception("Unexpected error loading config_model.json: repo=%s rev=%s user=%s", gm.hf_model_repo_id, revision, user.username)
+
+    # The data repo is optional: with none saved there is nothing to check (no default repo is guessed).
+    if not hf_data_repo_id:
+        if not found_any and not model_error:
+            return None
+        return {"model_files": model_files, "data_files": [], "model_error": model_error,
+                "data_error": "", "revision_used": revision}
 
     # Data repo (public — no token needed, always uses main)
     try:

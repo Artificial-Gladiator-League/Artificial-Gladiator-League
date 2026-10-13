@@ -746,6 +746,8 @@ class UserGameModel(models.Model):
                     self.rated_games_since_revalidation = 0
                     self.model_integrity_ok = False
                     self.repo_changed = True
+                    # The next verification is then a first pin and must not reset the counter again.
+                    self.approved_full_sha = ""
                     # When the caller uses update_fields, ensure our reset
                     # fields are included so they are actually written to DB.
                     update_fields = kwargs.get("update_fields")
@@ -753,6 +755,7 @@ class UserGameModel(models.Model):
                         extra = {
                             "rated_games_since_revalidation", "model_integrity_ok",
                             "repo_changed", "current_repo_sha", "new_repo_sha",
+                            "approved_full_sha",
                         }
                         kwargs["update_fields"] = list(set(update_fields) | extra)
         super().save(*args, **kwargs)

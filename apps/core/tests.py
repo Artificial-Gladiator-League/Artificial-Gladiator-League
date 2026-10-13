@@ -90,6 +90,23 @@ class DocPagesUseLimitsTests(TestCase):
             self.assertIn(text, guide)
 
 
+@PLAIN_STATIC
+class TournamentHowItWorksLimitTests(TestCase):
+    def _page(self):
+        from django.urls import reverse
+        return self.client.get(reverse("tournaments:how_it_works")).content.decode()
+
+    def test_default(self):
+        self.assertIn("30 Rated Games Required", self._page())
+
+    @override_settings(TOURNAMENT_MIN_RATED_GAMES=25)
+    def test_follows_the_setting(self):
+        page = self._page()
+        self.assertIn("25 Rated Games Required", page)
+        self.assertIn("25 rated games</strong>", page)
+        self.assertNotIn("30 Rated Games Required", page)
+
+
 class TournamentGameCountSettingTests(TestCase):
     def test_integrity_and_engine_use_the_one_setting(self):
         from apps.tournaments import engine

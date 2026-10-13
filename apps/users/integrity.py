@@ -368,6 +368,8 @@ def record_original_sha(
         return
 
     now = timezone.now()
+    # Only approving a different commit restarts the qualification count; a first pin or a re-check of the same commit keeps it.
+    previous_sha = (game_model.approved_full_sha or "").strip()
     game_model.original_model_commit_sha = sha
     game_model.last_known_commit_id = sha
     game_model.last_model_validation_date = now.date()
@@ -385,7 +387,8 @@ def record_original_sha(
         if data_sha:
             game_model.approved_data_repo_sha = data_sha
     game_model.pinned_at = now
-    game_model.rated_games_since_revalidation = 0
+    if previous_sha and previous_sha != sha:
+        game_model.rated_games_since_revalidation = 0
     game_model.save(update_fields=[
         "original_model_commit_sha",
         "last_known_commit_id",
