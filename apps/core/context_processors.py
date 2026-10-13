@@ -1,7 +1,24 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.db.models import Q
 from django.urls import reverse
+
+
+def platform_limits(request):
+    """Expose the sandbox and qualification limits so the documentation pages never hard-code them."""
+    # The two worker settings are not in settings.py; the defaults match apps.games.sandbox_runner.
+    return {
+        "sandbox_move_timeout": int(getattr(settings, "SANDBOX_MOVE_TIMEOUT", 30)),
+        "sandbox_memory_mb": int(getattr(settings, "SANDBOX_MEMORY_LIMIT_MB", 512)),
+        "sandbox_cpu": float(getattr(settings, "SANDBOX_CPU_LIMIT", 1.0)),
+        "sandbox_pids": int(getattr(settings, "SANDBOX_PIDS_LIMIT", 128)),
+        "sandbox_cold_start_timeout": int(float(getattr(settings, "SANDBOX_WORKER_START_TIMEOUT", 120))),
+        "sandbox_idle_minutes": float(getattr(settings, "SANDBOX_WORKER_IDLE_SECONDS", 900)) / 60,
+        "guest_snapshot_idle_hours": float(getattr(settings, "GUEST_SNAPSHOT_IDLE_MINUTES", 120)) / 60,
+        "guest_ttl_days": int(getattr(settings, "GUEST_TTL_DAYS", 3)),
+        "tournament_min_rated_games": int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30)),
+    }
 
 
 def active_play(request):

@@ -79,6 +79,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.core.context_processors.active_play",
                 "apps.users.context_processors.guest_mode",
+                "apps.core.context_processors.platform_limits",
             ],
         },
     },
@@ -335,6 +336,9 @@ SANDBOX_CPU_LIMIT = float(os.environ.get("SANDBOX_CPU_LIMIT", "1.0"))
 
 # Max number of processes/threads allowed inside a sandbox container.
 SANDBOX_PIDS_LIMIT = int(os.environ.get("SANDBOX_PIDS_LIMIT", "128"))
+
+# Rated games (played outside tournaments) a player needs before joining a tournament.
+TOURNAMENT_MIN_RATED_GAMES = int(os.environ.get("TOURNAMENT_MIN_RATED_GAMES", "30"))
 
 # ── Hugging Face OAuth / OpenID Connect ───────
 # Register your app at https://huggingface.co/settings/connected-applications

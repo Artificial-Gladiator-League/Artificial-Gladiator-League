@@ -1,250 +1,528 @@
 {% extends "base.html" %}
 {% block title %}How It Works • agladiator.com{% endblock %}
+{% block extra_head %}{% include "core/_doc_styles.html" %}{% endblock %}
 
 {% block content %}
-<div class="animate-fade-in max-w-4xl mx-auto">
-  <div class="text-center mb-12">
-    <h1 class="text-4xl md:text-5xl text-gray font-extrabold leading-tight">
-      How the AGL Platform Works
-    </h1>
-    <p class="mt-4 text-lg text-gray-400 max-w-2xl mx-auto">
-      A behind-the-scenes look at what happens when you log in, play a match, and log out —
-      and how your <span class="text-brand">AG Champion</span> runs safely inside an
-      isolated sandbox on the platform's own servers.
-    </p>
-    <p class="mt-3 text-sm text-gray-500">
-      Looking for the setup steps? See <a href="{% url 'core:how_to_upload' %}" class="text-brand hover:underline">How to register your AG Champion</a>.
-    </p>
-  </div>
+<div class="animate-fade-in max-w-6xl mx-auto doc">
 
-  <!-- Model repo vs Dataset repo -->
-  <div class="card mb-6">
-    <h2 class="text-xl font-bold mb-1">Model Repo or Dataset Repo — What Goes Where?</h2>
-    <p class="text-gray-400 text-sm mb-5">
-      Hugging Face accounts can hold several kinds of repos. Here's what each one is used for.
+  <header class="doc-hero">
+    <p class="doc-eyebrow">Concepts and rules</p>
+    <h1>How the AGL Platform Works</h1>
+    <p class="doc-lead">
+      The platform plays Chess and Breakthrough games for the program you build, called your
+      <a href="#term-ag-champion">AG Champion</a>. You keep your files in your own
+      <a href="#term-hugging-face">Hugging Face</a> account. The platform copies them to its own servers and runs them
+      in a locked, isolated <a href="#term-sandbox">sandbox</a>, so you never host anything yourself.
     </p>
-    <div class="grid sm:grid-cols-2 gap-4 mb-4">
-      <div class="rounded-lg border border-brand/40 bg-surface p-4">
-        <div class="text-sm font-semibold text-brand mb-2">Model Repo <span class="text-gray-500 font-normal">({% if guest_mode_enabled %}required for registered accounts, Gated; guests may use a Public repo{% else %}required, Gated{% endif %})</span></div>
-        <p class="text-xs text-gray-400">Holds your code and config files (and weights, if you keep them there). The platform downloads it to its own servers and runs it inside an isolated Docker sandbox to generate moves. {% if guest_mode_enabled %}For a registered account it{% else %}It{% endif %} must be Gated, and the platform's account <strong class="text-gray-200">ArtificialGladiatorLeague</strong> must be approved on it.{% if guest_mode_enabled %} A guest account connects a Public repo instead.{% endif %}</p>
-      </div>
-      <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-gray-300 mb-2">Dataset Repo <span class="text-gray-500 font-normal">(optional, Public)</span></div>
-        <p class="text-xs text-gray-400">Used for any supporting data files your model needs at inference time (e.g. opening books, precomputed tables). It is mounted read-only next to your model inside the sandbox.</p>
-      </div>
-    </div>
-    <div class="rounded-lg border border-brand/30 bg-surface p-4">
-      <p class="text-xs text-gray-400">
-        <span class="text-brand font-semibold">In short:</span> your files are copied to the platform's servers and executed
-        inside a locked-down Docker sandbox on the platform's own infrastructure. You never need to host a Space, endpoint, or any always-on server.
-      </p>
-    </div>
-  </div>
-
-  <!-- How inference works -->
-  <div class="card mb-6">
-    <h2 class="text-xl font-bold mb-1">How Your AG Actually Plays</h2>
-    <p class="text-gray-400 text-sm mb-5">
-      A common question: <em>"When I play, where does my model actually run?"</em> It runs in a sandboxed
-      Docker container on the platform's own servers — there is nothing for you to host or keep running.
+    <p>
+      This page explains what happens and the rules that affect you.
+      Looking for the setup steps? See <a href="{% url 'core:how_to_upload' %}">How to register your AG Champion</a>.
     </p>
-    <div class="rounded-lg border border-brand/30 bg-surface p-5 mb-4">
-      <p class="text-xs text-gray-400 mb-3">
-        The container is hardened and has these limits (the values below are the platform defaults; they are server settings):
-      </p>
-      <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
-        <li><strong class="text-gray-200">No network access</strong> at all.</li>
-        <li><strong class="text-gray-200">Read-only filesystem.</strong> Your model, your data and the runner are mounted read-only; the only writable place is a small temporary folder (<code>/tmp</code>, 64 MB).</li>
-        <li><strong class="text-gray-200">Locked-down process:</strong> it runs as an unprivileged user, with all Linux capabilities dropped and privilege escalation disabled.</li>
-        <li><strong class="text-gray-200">Resource limits:</strong> 512 MB of memory, 1 CPU and 128 processes/threads.</li>
-        <li><strong class="text-gray-200">Time limit:</strong> 30 seconds per move. A cold start (starting the container and running your <code>load()</code>) is allowed up to 120 seconds.</li>
+    <div class="doc-needs">
+      <h2>Before you read</h2>
+      <ul>
+        <li>You need nothing: no software to install and no sign-in.</li>
+        <li>To find one answer fast, use the contents list.</li>
       </ul>
     </div>
-    <div class="rounded-lg border border-borderDark bg-surface p-5">
-      <p class="text-xs text-gray-400 mb-3">
-        <strong class="text-gray-200">The container is kept warm.</strong> The platform keeps one sandbox container per model and reuses it between moves, so
-        your <code>load(ctx)</code> runs once and each move only costs a <code>get_move(state, fen, player)</code> call. The container is not thrown away after every move.
-      </p>
-      <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
-        <li>It is started ahead of time when you open the Lobby or a game page, so the first move is not a cold start.</li>
-        <li>An idle container is stopped automatically (after 15 minutes without a move, by default) and started again when needed.</li>
-        <li>It is restarted if your model files change, the container dies, or a move times out.</li>
-        <li>Your code never runs outside the sandbox. If the sandbox itself is unavailable, that is treated as a platform problem and no random move is substituted for it.</li>
-      </ul>
-    </div>
-  </div>
+  </header>
 
-  <!-- Login -->
-  <div class="card mb-6">
-    <div class="flex items-start gap-4">
-      <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">1</div>
-      <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">When You Log In</h2>
-        <p class="text-gray-400 text-sm mb-4">
-          Logging in prepares your private workspace on the server and makes sure your registered models are available locally.
+  <div class="doc-layout">
+
+    <aside class="doc-aside">
+      <nav aria-label="On this page">
+        <details class="doc-toc" id="docToc" open>
+          <summary>On this page</summary>
+          <ol class="doc-toc-list">
+            <li><a class="doc-toc-link" href="#overview">The big picture</a></li>
+            <li><a class="doc-toc-link" href="#register-steps">Register, step by step</a></li>
+            <li><a class="doc-toc-link" href="#repos">Your two repos</a></li>
+            <li><a class="doc-toc-link" href="#sandbox">Where your AG Champion runs</a></li>
+            <li><a class="doc-toc-link" href="#lifecycle">Login, play and logout</a>
+              <ul>
+                <li><a class="doc-toc-link" href="#login">At login</a></li>
+                <li><a class="doc-toc-link" href="#move">During a game</a></li>
+                <li><a class="doc-toc-link" href="#logout">At logout</a></li>
+              </ul>
+            </li>
+            {% if guest_mode_enabled %}<li><a class="doc-toc-link" href="#guest-mode">Try it as a guest</a></li>{% endif %}
+            <li><a class="doc-toc-link" href="#rules">Rules and limits</a>
+              <ul>
+                <li><a class="doc-toc-link" href="#rule-account">Your account</a></li>
+                <li><a class="doc-toc-link" href="#rule-repo-access">Repo access</a></li>
+                <li><a class="doc-toc-link" href="#rule-qualification">Tournament qualification</a></li>
+                <li><a class="doc-toc-link" href="#rule-sha">Version pinning</a></li>
+                <li><a class="doc-toc-link" href="#rule-limits">Sandbox limits</a></li>
+                <li><a class="doc-toc-link" href="#rule-moves">When a move fails</a></li>
+              </ul>
+            </li>
+            <li><a class="doc-toc-link" href="#titles">Ranking titles</a></li>
+            <li><a class="doc-toc-link" href="#why">Why it is built this way</a></li>
+            <li><a class="doc-toc-link" href="#faq">FAQ</a></li>
+            <li><a class="doc-toc-link" href="#glossary">Glossary</a></li>
+          </ol>
+        </details>
+      </nav>
+    </aside>
+
+    <div class="doc-main">
+
+      <!-- The big picture -->
+      <section id="overview" class="card mb-6">
+        <h2>The big picture</h2>
+        <p>
+          Your <strong>AG Champion</strong> (Artificial Gladiator Champion) is the program that plays for you.
+          It is Python code that receives a board position and returns a move. What happens inside is up to you.
         </p>
-        <div class="rounded-lg border border-borderDark bg-surface p-4">
-          <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
-            <li>For each model you registered, the platform looks for a copy of your model repo in its shared Hugging Face cache. If there is none yet, it downloads one now; if there is, nothing is downloaded. A problem here does not block your login.</li>
-            <li>Private model and data folders are created for your account (Chess and Breakthrough), and a per-session workspace folder is created for you.</li>
-            <li>Your data repo files are not downloaded at this point. They are fetched the first time your model is loaded into a sandbox container, which normally happens in the background when you open the Lobby (where login lands you) or a game page.</li>
-          </ul>
+        <p>
+          You store the code in a <a href="#term-repo">repo</a>: a folder of files on Hugging Face.
+          The platform downloads your repo and uses it to play your games.
+        </p>
+        <ol class="doc-flow" aria-label="How your files reach a game">
+          <li>Your repo on Hugging Face</li>
+          <li>Copied to the platform's servers</li>
+          <li>Run in the sandbox</li>
+          <li>Moves played in your games</li>
+        </ol>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Tip</span>
+          <p>
+            In short: your files are copied to the platform's servers and run inside a locked-down sandbox on the
+            platform's own infrastructure. You never need to host a Space (a Hugging Face feature that runs apps),
+            an endpoint or any always-on server.
+          </p>
         </div>
-      </div>
-    </div>
-  </div>
+        <p class="doc-next">Next step: <a href="#register-steps">See the registration path</a></p>
+      </section>
 
-  <!-- Move generation -->
-  <div class="card mb-6">
-    <div class="flex items-start gap-4">
-      <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">2</div>
-      <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">While You Play — How a Move Is Generated</h2>
-        <p class="text-gray-400 text-sm mb-4">
-          Every single move, for both players, is generated live by calling your model in its sandbox container —
-          moves are never precomputed.
+      <!-- Register: the one numbered sequence -->
+      <section id="register-steps" class="card mb-6">
+        <h2>Ready to Compete? Register, Step by Step</h2>
+        <p>A registered account is needed for rated games and tournaments. The path has seven steps. Each title links to the full instructions.</p>
+        <ol class="doc-path">
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-account">Create your account</a></span>
+              Your country of residence, username and AG name are locked once chosen (see <a href="#rule-account">Your account</a>).
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-repos">Create your Hugging Face repos</a></span>
+              A Gated model repo, and optionally a Public data repo. Approve the platform's account on the model repo.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-model">Write your AG Champion</a></span>
+              Python code with two functions, plus two small config files.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-register">Register your repos</a></span>
+              Enter them on the Gladiator tab of your Profile.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-ownership">Prove you own your repos</a></span>
+              Add the file <code>AGL_VERIFY.txt</code> with your code, then click Verify Ownership.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-diagnostics">Run Diagnostics</a></span>
+              Pass the model check in the Diagnostics tab.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-compete">Play rated games and enter tournaments</a></span>
+              Tournaments have a qualification rule (see <a href="#rule-qualification">Tournament qualification</a>).
+            </span>
+          </li>
+        </ol>
+        <p class="doc-next">Next step: <a href="#repos">Learn what the two repos are for</a></p>
+      </section>
+
+      <!-- Repos -->
+      <section id="repos" class="card mb-6">
+        <h2>Your two repos: model repo and data repo</h2>
+        <p>
+          Hugging Face accounts can hold several kinds of repos. Your AG Champion uses the two below.
+          <strong>Gated</strong> means only accounts you approve can read the repo.
+          <strong>Public</strong> means anyone can read it.
         </p>
-        <div class="rounded-lg bg-surface border border-borderDark p-4 text-sm mb-4">
-          <div class="flex flex-wrap gap-2 items-center text-xs">
-            <span class="bg-brand/20 text-brand px-2 py-1 rounded">Board position sent</span>
-            <span class="text-gray-600">&gt;</span>
-            <span class="bg-purple/20 text-purple-300 px-2 py-1 rounded">Your model's <code>get_move</code> runs in the warm sandbox</span>
-            <span class="text-gray-600">&gt;</span>
-            <span class="bg-gold/20 text-gold px-2 py-1 rounded">Move validated</span>
-            <span class="text-gray-600">&gt;</span>
-            <span class="bg-green-900/30 text-green-400 px-2 py-1 rounded">Game state updated</span>
+        <div class="doc-table-wrap" role="region" aria-label="Repo types" tabindex="0">
+          <table class="doc-table">
+            <caption>The two repo types</caption>
+            <thead>
+              <tr><th scope="col">Repo</th><th scope="col">What it holds</th><th scope="col">Needed?</th><th scope="col">Visibility</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">Model repo</th>
+                <td>Your code and config files (and weights, if you keep them there). The platform downloads it to its own servers and runs it in the sandbox to generate moves.</td>
+                <td>Required</td>
+                <td>
+                  {% if guest_mode_enabled %}Gated for registered accounts. A guest account connects a Public repo instead. A registered account must also approve the platform's account <strong>ArtificialGladiatorLeague</strong> on it.{% else %}Gated. The platform's account <strong>ArtificialGladiatorLeague</strong> must be approved on it.{% endif %}
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">Data repo</th>
+                <td>Supporting data files your AG Champion needs while playing, for example opening books or precomputed tables. It is mounted read-only next to your model inside the sandbox.</td>
+                <td>Optional</td>
+                <td>Public</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>What happens if a repo does not meet these requirements is explained in <a href="#rule-repo-access">Repo access</a>.</p>
+        <p class="doc-next">Next step: <a href="#sandbox">See where your AG Champion runs</a></p>
+      </section>
+
+      <!-- Sandbox -->
+      <section id="sandbox" class="card mb-6">
+        <h2>Where your AG Champion runs: the sandbox</h2>
+        <p>
+          A common question: "When I play, where does my AG Champion actually run?"
+          It runs in a <strong>sandbox</strong> on the platform's own servers.
+          The sandbox is an isolated, locked-down container (a Docker container).
+          There is nothing for you to host or keep running.
+        </p>
+        <p>The exact limits of the sandbox are listed in <a href="#rule-limits">Sandbox limits</a>.</p>
+        <details class="doc-details">
+          <summary>How the sandbox is started, reused and stopped <span class="doc-tag">Technical</span></summary>
+          <div class="doc-details-body">
+            <p>
+              <strong>Your sandbox is kept warm.</strong> The platform keeps one sandbox container per AG Champion and reuses it between moves.
+              Your <code>load(ctx)</code> function runs once, and each move only costs a <code>get_move(state, fen, player)</code> call.
+              The container is not thrown away after every move.
+            </p>
+            <ul>
+              <li>It is started ahead of time when you open the Lobby or a game page, so the first move is not a <a href="#term-cold-start">cold start</a>. The Lobby is labelled "Hatzar Grutaot" in the menu.</li>
+              <li>An idle container is stopped automatically (after {{ sandbox_idle_minutes|default:15|floatformat:"-1" }} minutes without a move) and started again when needed.</li>
+              <li>It is restarted if your model files change, the container dies, or a move times out.</li>
+              <li>Your code never runs outside the sandbox. If the sandbox itself is unavailable, that is treated as a platform problem and no random move is substituted for it.</li>
+            </ul>
           </div>
-        </div>
-        <div class="rounded-lg border border-borderDark bg-surface p-4">
-          <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
-            <li>If your model answers within the move time limit with a legal move, that move is used (shown at once, or after the configured "thinking time" target, whichever is longer).</li>
-            <li>If it is too slow, raises an error, returns nothing, or returns an illegal move, the platform plays a random legal move for that turn (captures preferred) so the game keeps going. When a move times out, the container is restarted.</li>
-            <li>Exception: if your model's last model check failed, no random move is played and you forfeit the game.</li>
-            <li>The time your model spends thinking is deducted from your game clock.</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
+        </details>
+        <p class="doc-next">Next step: <a href="#lifecycle">See what happens at login, in a game and at logout</a></p>
+      </section>
 
-  <!-- Logout -->
-  <div class="card mb-6">
-    <div class="flex items-start gap-4">
-      <div class="w-10 h-10 rounded-full bg-brand flex items-center justify-center font-bold text-white shrink-0">3</div>
-      <div class="flex-1">
-        <h2 class="text-xl font-bold mb-1">When You Log Out</h2>
-        <p class="text-gray-400 text-sm mb-4">
-          The private workspace created for you is removed from the server.
+      <!-- Login, play, logout -->
+      <section id="lifecycle" class="card mb-6">
+        <h2>What happens when you log in, play and log out</h2>
+        <p>Three moments matter. Each one is described below.</p>
+
+        <h3 id="login">At login</h3>
+        <p>Logging in prepares your private workspace on the server and makes sure your registered repos are available locally.</p>
+        <ul>
+          <li>For each AG Champion you registered, the platform looks for a copy of your model repo in its shared Hugging Face cache (its stored copies of repos). If there is none yet, it downloads one now. If there is, nothing is downloaded. A problem here does not block your login.</li>
+          <li>Private model and data folders are created for your account (Chess and Breakthrough), and a per-session workspace folder is created for you.</li>
+          <li>Your data repo files are not downloaded at this point. They are fetched the first time your AG Champion is loaded into a sandbox. That normally happens in the background when you open the <a href="#term-lobby">Lobby</a> (where login lands you) or a game page.</li>
+        </ul>
+
+        <h3 id="move">During a game: how a move is generated</h3>
+        <p>
+          Every single move, for both players, is generated live by calling your AG Champion in its sandbox.
+          Moves are never precomputed.
         </p>
-        <div class="rounded-lg border border-borderDark bg-surface p-4">
-          <ul class="text-xs text-gray-400 space-y-1.5 list-disc list-inside">
-            <li>Your per-session workspace folder and your private model and data folders on the server are deleted. That includes the copy of your data repo files, which is downloaded again the next time your model is loaded.</li>
-            <li>You are removed from the online-players counter.</li>
-            <li>Your Hugging Face repos are not touched. They remain exactly as you left them and remain the source of truth.</li>
-            <li>Your Elo, match history and registered repo links are stored in your profile and are not affected by logging out.</li>
-            <li>Sandbox containers are not tied to your login. An idle one is stopped automatically after its idle timeout.</li>
-            {% if guest_mode_enabled %}<li><strong class="text-gray-200">Guest accounts:</strong> the snapshot of your repos downloaded for you is deleted immediately at logout, or after 2 idle hours. The guest account itself is deleted after 3 days of inactivity.</li>{% endif %}
+        <ol class="doc-flow" aria-label="How a move is generated">
+          <li>Board position sent</li>
+          <li>Your <code>get_move</code> runs in the sandbox</li>
+          <li>Move validated</li>
+          <li>Game state updated</li>
+        </ol>
+        <p>If a move goes wrong, the platform follows the rules in <a href="#rule-moves">When a move fails</a>.</p>
+
+        <h3 id="logout">At logout</h3>
+        <p>The private workspace created for you is removed from the server.</p>
+        <ul>
+          <li>Your per-session workspace folder and your private model and data folders on the server are deleted. That includes the copy of your data repo files, which is downloaded again the next time your AG Champion is loaded.</li>
+          <li>You are removed from the online-players counter.</li>
+          <li>Your Hugging Face repos are not touched. They remain exactly as you left them and remain the source of truth.</li>
+          <li>Your Elo, match history and registered repo links are stored in your profile and are not affected by logging out.</li>
+          <li>Sandbox containers are not tied to your login. An idle one is stopped automatically after its idle timeout.</li>
+          {% if guest_mode_enabled %}<li><strong>Guest accounts</strong> are cleaned up differently. See <a href="#guest-clean-up">Clean-up for guests</a>.</li>{% endif %}
+        </ul>
+        <p class="doc-next">Next step: <a href="{% if guest_mode_enabled %}#guest-mode{% else %}#rules{% endif %}">{% if guest_mode_enabled %}Try it as a guest{% else %}Read the rules and limits{% endif %}</a></p>
+      </section>
+
+      {% if guest_mode_enabled %}
+      <!-- Guest mode -->
+      <section id="guest-mode" class="card mb-6">
+        <h2>Just Want to Try It? Play as a Guest</h2>
+        <p>A guest account needs no email and no password. You sign in with Hugging Face and connect your own Public repos.</p>
+        <ol>
+          <li><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</li>
+          <li><strong>Connect your Public repos.</strong> On the Gladiator tab, enter a model repo and a data repo that belong to your own Hugging Face account.</li>
+          <li><strong>Platform model check.</strong> The platform downloads a pinned version of your repos and runs the same checks in the sandbox, with stricter limits for guests.</li>
+          <li><strong>Play unrated practice games</strong> against other guests.</li>
+          <li id="guest-clean-up"><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after {{ guest_snapshot_idle_hours|default:2|floatformat:"-1" }} idle hour{{ guest_snapshot_idle_hours|default:2|pluralize }}, and the guest account after {{ guest_ttl_days|default:3 }} day{{ guest_ttl_days|default:3|pluralize }} of inactivity. You can also delete your guest data at any time.</li>
+        </ol>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p>Guests have no rated games, no leaderboard entry and no tournaments. The forum, news and leaderboard are read-only for guests.</p>
+        </div>
+        <p class="doc-next">Next step: <a href="#rules">Read the rules and limits</a></p>
+      </section>
+      {% endif %}
+
+      <!-- Rules and limits -->
+      <section id="rules" class="card mb-6">
+        <h2>Rules and limits</h2>
+        <p>These rules have consequences for you. Each rule is explained once, here. Other pages link to this section.</p>
+
+        <h3 id="rule-account">Your account</h3>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p>Your country of residence, username and AG name are locked once chosen. Your username and AG name cannot be changed at any point. To change your country of residence, you must <a href="{% url 'core:contact' %}">contact support</a>.</p>
+        </div>
+        <p>Your AG name is the display name of your AG Champion.</p>
+
+        <h3 id="rule-repo-access">Repo access</h3>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <ul>
+            <li><strong>Approve the platform's account.</strong> In your model repo's Access settings, approve <strong>ArtificialGladiatorLeague</strong>. The platform uses that account to read your repo for the ownership check and to download it. Without the approval, saving, ownership checks and your games all fail.</li>
+            <li><strong>The model repo must be Gated.</strong> When you save a repo, the platform checks that it exists and is Gated. A public model repo is rejected.{% if guest_mode_enabled %} Guest accounts use Public repos instead.{% endif %}</li>
+            <li><strong>The data repo must be Public.</strong> When you save it, the platform checks it anonymously, without any token. A private or gated data repo is rejected.</li>
+            <li><strong>No token needed.</strong> The platform does not ask for your Hugging Face token. It reads your Gated model repo with its own account.</li>
           </ul>
         </div>
-      </div>
-    </div>
-  </div>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Tip</span>
+          <p>Why Gated? Gating also protects your code from being copied by other visitors.</p>
+        </div>
 
-  {% if guest_mode_enabled %}
-  <!-- Guest mode -->
-  <div id="guest-mode" class="card mb-6">
-    <h2 class="text-xl font-bold mb-1">Just Want to Try It? Play as a Guest</h2>
-    <p class="text-gray-400 text-sm mb-5">
-      A guest account needs no email and no password. You sign in with Hugging Face and connect your own Public repos.
-    </p>
-    <ol class="space-y-3 text-sm mb-4">
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
-        <span><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
-        <span><strong>Connect your Public repos.</strong> On the Gladiator tab, enter a model repo and a data repo that belong to your own Hugging Face account.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
-        <span><strong>Platform model check.</strong> The platform downloads a pinned version of your repos and runs the same checks in the sandbox, with stricter limits for guests.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">4</span>
-        <span><strong>Play unrated practice games</strong> against other guests.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">5</span>
-        <span><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after 2 idle hours, and the guest account after 3 days of inactivity. You can also delete your guest data at any time.</span>
-      </li>
-    </ol>
-    <div class="rounded-lg border border-borderDark bg-surface p-4">
-      <p class="text-xs text-gray-400">
-        <strong class="text-gray-200">Limits:</strong> guests have no rated games, no leaderboard entry and no tournaments.
-        The forum, news and leaderboard are read-only for guests.
-      </p>
-    </div>
-  </div>
-  {% endif %}
+        <h3 id="rule-qualification">Tournament qualification</h3>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p>You need <strong>{{ tournament_min_rated_games|default:30 }} rated games</strong> with your AG Champion before you can <strong>join</strong> a tournament. Registering your AG Champion (Steps 1 to 6 of the setup guide) does not need them.</p>
+          <ul>
+            <li>A game counts when it is finished, was played outside a tournament{% if guest_mode_enabled %} and is not a guest game{% endif %}. Chess and Breakthrough are counted separately.</li>
+            <li>The count goes back to 0 when you change your model repo ID, when the platform finds a new commit in your model repo after your AG Champion was approved, and each time <strong>Verify Ownership</strong>, <strong>Re-check Ownership</strong> or <strong>Save and verify</strong> passes the model check.</li>
+            <li>The platform checks the count again when the tournament starts. A player with fewer than {{ tournament_min_rated_games|default:30 }} games is removed.</li>
+          </ul>
+        </div>
+        <p>Why: {{ tournament_min_rated_games|default:30 }} rated games establish a meaningful <a href="#term-elo">Elo</a> rating and confirm that your AG Champion is stable and reliably responsive before it enters structured competition.</p>
+        <p>The period after you change your model repo ID is called the <a href="#term-cooldown">repo-change cooldown</a>.</p>
+        <p>For how tournaments run, see <a href="{% url 'tournaments:how_it_works' %}">How tournaments work</a>.</p>
 
-  <!-- Registered account -->
-  <div id="register-steps" class="card mb-6">
-    <h2 class="text-xl font-bold mb-1">Ready to Compete? Register, Step by Step</h2>
-    <p class="text-gray-400 text-sm mb-5">A registered account is needed for rated games and tournaments.</p>
-    <ol class="space-y-3 text-sm">
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">1</span>
-        <span><strong>Create your account.</strong> Your country of residence, username and AG name are locked once chosen.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">2</span>
-        <span><strong>Gated model repo.</strong> Make your model repo Gated and approve <code class="bg-surface px-1 rounded text-gold">ArtificialGladiatorLeague</code> in its access settings.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">3</span>
-        <span><strong>Prove ownership.</strong> Add <code class="bg-surface px-1 rounded text-gold">AGL_VERIFY.txt</code> with your code to the repos.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">4</span>
-        <span><strong>Pass the model check</strong> in the Diagnostics tab.</span>
-      </li>
-      <li class="flex items-start gap-3">
-        <span class="w-6 h-6 rounded-full bg-gold/20 text-gold flex items-center justify-center font-bold shrink-0 text-xs">5</span>
-        <span><strong>Play rated games</strong> and <strong>enter tournaments</strong>.</span>
-      </li>
-    </ol>
-  </div>
+        <h3 id="rule-sha">Version pinning and disqualification</h3>
+        <div class="doc-callout doc-warning" role="note">
+          <span class="doc-callout-label">Warning</span>
+          <p>Do not push changes to your AG Champion repo after joining a tournament. A changed <a href="#term-sha">SHA</a> means automatic disqualification.</p>
+        </div>
+        <ul>
+          <li><strong>At tournament registration</strong>, the exact commit SHA of your model repo is recorded.</li>
+          <li><strong>Before and during tournament games</strong>, the SHA is checked again. Any commit since registration triggers automatic disqualification.</li>
+          <li>Even trivial changes (README edits, whitespace) produce a new SHA. Freeze the repo once you are registered.</li>
+        </ul>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p>Changes outside tournaments also have a cost. If you push a new commit to your model repo or your data repo after your AG Champion was approved, you cannot join tournaments until the platform approves the new commit. Lobby games stay available.</p>
+          <p>To fix it, click <strong>Re-check Ownership</strong> on the Gladiator tab, then play your qualifying games again (see <a href="#rule-qualification">Tournament qualification</a>).</p>
+        </div>
 
-  <!-- Why built this way -->
-  <div class="card mb-6">
-    <h2 class="text-xl font-bold mb-4">Why It's Built This Way</h2>
-    <div class="grid sm:grid-cols-2 gap-4">
-      <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-brand mb-2">Safe by default</div>
-        <p class="text-xs text-gray-400">Submitted code runs in a container with no network, a read-only filesystem and CPU, memory and time limits, so a model can neither reach out nor change anything on the server.</p>
-      </div>
-      <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-purple-400 mb-2">Fair, identical treatment</div>
-        <p class="text-xs text-gray-400">Every AG Champion — from a beginner's random-move bot to a Grandmaster-rated neural net — is called the same way, through the same load / get_move contract, inside a sandbox with the same limits.</p>
-      </div>
-      <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-gold mb-2">Fast moves</div>
-        <p class="text-xs text-gray-400">Keeping one container warm per model means your model is loaded once, not before every move, so the move time is spent thinking rather than starting up.</p>
-      </div>
-      <div class="rounded-lg border border-borderDark bg-surface p-4">
-        <div class="text-sm font-semibold text-green-400 mb-2">You stay in control</div>
-        <p class="text-xs text-gray-400">Your code stays in your own Hugging Face repo, which is Gated: only accounts you approve, including the platform's <strong class="text-gray-200">ArtificialGladiatorLeague</strong> account, can read it. Ownership is proven with an <code>AGL_VERIFY.txt</code> file in your repo.</p>
-      </div>
-    </div>
-  </div>
+        <h3 id="rule-limits">Sandbox limits</h3>
+        <p>The values below are the platform's current settings. They can change.</p>
+        <div class="doc-table-wrap" role="region" aria-label="Sandbox limits" tabindex="0">
+          <table class="doc-table">
+            <caption>What your AG Champion can and cannot do in the sandbox</caption>
+            <thead>
+              <tr><th scope="col">Limit</th><th scope="col">Value</th><th scope="col">What it means for you</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Network</th><td>None at all</td><td>Calls such as <code>requests</code> or <code>urllib</code> fail.</td></tr>
+              <tr><th scope="row">Writable space</th><td>A small temporary folder, <code>/tmp</code> (64 MB)</td><td>Your model, your data and the runner are mounted read-only. <code>/tmp</code> is the only place you can write.</td></tr>
+              <tr><th scope="row">Memory</th><td>{{ sandbox_memory_mb|default:512 }} MB</td><td>Keep your AG Champion light.</td></tr>
+              <tr><th scope="row">CPU</th><td>{{ sandbox_cpu|default:1|floatformat:"-1" }} CPU</td><td>Keep your AG Champion light.</td></tr>
+              <tr><th scope="row">Processes and threads</th><td>{{ sandbox_pids|default:128 }}</td><td>Do not start more than this at once.</td></tr>
+              <tr><th scope="row">Move time limit</th><td>{{ sandbox_move_timeout|default:30 }} seconds per move</td><td>A slower move is replaced (see <a href="#rule-moves">When a move fails</a>).</td></tr>
+              <tr><th scope="row">Cold start time limit</th><td>{{ sandbox_cold_start_timeout|default:120 }} seconds</td><td>Starting the container and running your <code>load()</code> may take this long.</td></tr>
+              <tr><th scope="row">Libraries</th><td>numpy, python-chess and torch (CPU only)</td><td>The sandbox image is fixed and nothing is installed at match time. The project's sandbox image definition installs these libraries. Do not depend on other third-party packages.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <details class="doc-details">
+          <summary>Security settings of the sandbox <span class="doc-tag">Technical</span></summary>
+          <div class="doc-details-body">
+            <ul>
+              <li><strong>Read-only filesystem.</strong> Your model, your data and the runner are mounted read-only.</li>
+              <li><strong>Locked-down process.</strong> It runs as an unprivileged user, with all Linux capabilities dropped and privilege escalation disabled.</li>
+            </ul>
+          </div>
+        </details>
 
-  <!-- CTA -->
-  <div class="text-center mb-12">
-    <p class="text-gray-400 mb-4">Ready to see it in action?</p>
-    <div class="flex flex-wrap justify-center gap-3">
-      <a href="{% url 'core:how_to_upload' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Register Your AG Champion</a>
+        <h3 id="rule-moves">When a move fails</h3>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <ul>
+            <li>If your AG Champion answers within the move time limit with a legal move, that move is used. It is shown at once, or after the configured <a href="#term-thinking-time">thinking time</a> target, whichever is longer.</li>
+            <li>If it is too slow, raises an error, returns nothing, or returns an illegal move, the platform plays a random legal move for that turn (captures preferred) so the game keeps going. When a move times out, the container is restarted.</li>
+            <li>The time your AG Champion spends thinking is deducted from your game clock.</li>
+          </ul>
+        </div>
+        <div class="doc-callout doc-warning" role="note">
+          <span class="doc-callout-label">Warning</span>
+          <p>If your AG Champion's last model check failed, no random move is played and you <a href="#term-forfeit">forfeit</a> the game.</p>
+        </div>
+        <p class="doc-next">Next step: <a href="#titles">See the ranking titles</a></p>
+      </section>
+
+      <!-- Ranking titles -->
+      <section id="titles" class="card mb-6">
+        <h2>Ranking titles</h2>
+        <p>
+          AGL titles are based on the FIDE Elo scale (FIDE is the international chess federation).
+          Your AG Champion earns a title automatically as its Elo rating climbs, separately for Chess and Breakthrough.
+        </p>
+        <div class="doc-table-wrap" role="region" aria-label="Ranking titles" tabindex="0">
+          <table class="doc-table">
+            <caption>Titles and the Elo range for each</caption>
+            <thead>
+              <tr><th scope="col">Title</th><th scope="col" class="doc-num">Elo range</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row" class="text-yellow-300 font-semibold">Super GM</th><td class="doc-num">2700+</td></tr>
+              <tr><th scope="row" class="text-purple-400 font-semibold">Grandmaster</th><td class="doc-num">2500–2699</td></tr>
+              <tr><th scope="row" class="text-yellow-400 font-semibold">Intl. Master</th><td class="doc-num">2400–2499</td></tr>
+              <tr><th scope="row" class="text-blue-300 font-semibold">FIDE Master</th><td class="doc-num">2300–2399</td></tr>
+              <tr><th scope="row" class="text-gray-300 font-semibold">Cand. Master</th><td class="doc-num">2200–2299</td></tr>
+              <tr><th scope="row" class="text-orange-400 font-semibold">Expert</th><td class="doc-num">2000–2199</td></tr>
+              <tr><th scope="row" class="text-red-400 font-semibold">Class A</th><td class="doc-num">1800–1999</td></tr>
+              <tr><th scope="row" class="text-orange-300 font-semibold">Class B</th><td class="doc-num">1600–1799</td></tr>
+              <tr><th scope="row" class="text-yellow-500 font-semibold">Class C</th><td class="doc-num">1400–1599</td></tr>
+              <tr><th scope="row" class="text-green-400 font-semibold">Class D</th><td class="doc-num">1200–1399</td></tr>
+              <tr><th scope="row" class="text-amber-600 font-semibold">Beginner</th><td class="doc-num">&lt; 1200</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Why built this way -->
+      <section id="why" class="card mb-6">
+        <h2>Why it is built this way</h2>
+        <details class="doc-details">
+          <summary>Four design goals <span class="doc-tag">Optional reading</span></summary>
+          <div class="doc-details-body">
+            <ul>
+              <li><strong>Safe by default.</strong> Submitted code runs in a sandbox with no network, a read-only filesystem and CPU, memory and time limits, so an AG Champion can neither reach out nor change anything on the server. Details: <a href="#rule-limits">Sandbox limits</a>.</li>
+              <li><strong>Fair, identical treatment.</strong> Every AG Champion, from a beginner's random-move bot to a Grandmaster-rated neural net, is called the same way, through the same <code>load</code> / <code>get_move</code> contract, inside a sandbox with the same limits.</li>
+              <li><strong>Fast moves.</strong> Keeping one sandbox warm per AG Champion means your code is loaded once, not before every move, so the move time is spent thinking rather than starting up.</li>
+              <li><strong>You stay in control.</strong> Your code stays in your own Hugging Face repo, which is Gated: only accounts you approve, including the platform's <strong>ArtificialGladiatorLeague</strong> account, can read it. You prove ownership with an <code>AGL_VERIFY.txt</code> file in your repo.</li>
+            </ul>
+          </div>
+        </details>
+      </section>
+
+      <!-- FAQ -->
+      <section id="faq" class="card mb-6">
+        <h2>Frequently asked questions</h2>
+        <details class="doc-details">
+          <summary>Which games are supported?</summary>
+          <div class="doc-details-body">
+            <p>Currently <strong>Chess</strong> and <strong>Breakthrough</strong>. Each game is registered independently, so you can enter different AG Champions for each.</p>
+          </div>
+        </details>
+        <details class="doc-details">
+          <summary>How strict is the per-move time limit?</summary>
+          <div class="doc-details-body">
+            <p>Each move has a server-side limit ({{ sandbox_move_timeout|default:30 }} seconds). Exceeding it does not forfeit the game: a random legal move is played for that turn. The exception is explained in <a href="#rule-moves">When a move fails</a>. Your thinking time is also deducted from your game clock, so always keep <code>get_move</code> fast.</p>
+          </div>
+        </details>
+        <details class="doc-details">
+          <summary>What is "AI thinking time", and is it guaranteed?</summary>
+          <div class="doc-details-body">
+            <p>"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on how fast your AG Champion runs inside the sandbox. Heavier models or deep searches take longer.</p>
+            <p>If a move arrives faster than the target, the platform waits to reach the target before showing it. If your AG Champion responds slower, the move is still accepted and used. The game creator and the joining player each set their own thinking-time target independently for their own AI.</p>
+          </div>
+        </details>
+      </section>
+
+      <!-- Glossary -->
+      <section id="glossary" class="card mb-6">
+        <h2>Glossary</h2>
+        <p>Short definitions of the terms used on this page and in the setup guide.</p>
+        <dl class="doc-defs">
+          <dt id="term-ag-champion">AG Champion</dt>
+          <dd>The program you build to play for you. Its full name is Artificial Gladiator Champion. It is Python code that receives a board position and returns a move.</dd>
+          <dt id="term-ag-name">AG name</dt>
+          <dd>The display name of your AG Champion. You choose it when you create your account, and it is locked afterwards.</dd>
+          <dt id="term-agl">AGL</dt>
+          <dd>Artificial Gladiator League. This is the name of the platform (agladiator.com).</dd>
+          <dt id="term-cold-start">Cold start</dt>
+          <dd>The first start of your sandbox, which includes running your <code>load()</code> function.</dd>
+          <dt id="term-commit">Commit</dt>
+          <dd>A saved change in a repo. Every commit has its own ID, called a SHA.</dd>
+          <dt id="term-config-file">Config file</dt>
+          <dd>A small JSON file at the root of a repo that describes its files. JSON is a plain-text format for settings. The files are <code>config_model.json</code> and <code>config_data.json</code>.</dd>
+          <dt id="term-contract">Contract</dt>
+          <dd>The two functions your code must define: <code>load(ctx)</code> and <code>get_move(state, fen, player)</code>. There is no other interface.</dd>
+          <dt id="term-cooldown">Cooldown (repo change)</dt>
+          <dd>The period after you change your model repo ID. Until you have played {{ tournament_min_rated_games|default:30 }} rated games, you cannot join tournaments. Diagnostics reports it as "Repo-change cooldown is active".</dd>
+          <dt id="term-data-repo">Data repo</dt>
+          <dd>An optional, Public repo with data files your AG Champion reads while playing, such as opening books.</dd>
+          <dt id="term-diagnostics">Diagnostics</dt>
+          <dd>A tab on your Profile that checks a registered AG Champion from start to finish and tells you in plain language what to fix. It never changes anything.</dd>
+          <dt id="term-elo">Elo</dt>
+          <dd>The number that rates the playing strength of your AG Champion. Results of rated games update it.</dd>
+          <dt id="term-entrypoint">Entry-point file</dt>
+          <dd>The <code>.py</code> file the platform imports to run your AG Champion. By default it is <code>&lt;game&gt;_mcvs.py</code>.</dd>
+          <dt id="term-fen">FEN</dt>
+          <dd>A line of text that describes a board position. It is the position your code receives in <code>get_move</code>.</dd>
+          <dt id="term-forfeit">Forfeit</dt>
+          <dd>To lose a game without playing it to the end.</dd>
+          <dt id="term-gated">Gated</dt>
+          <dd>A Hugging Face repo that only approved accounts can read. You turn it on in the repo's Settings with Access Requests.</dd>
+          {% if guest_mode_enabled %}
+          <dt id="term-guest">Guest</dt>
+          <dd>An account that needs no email and no password. You sign in with Hugging Face and connect Public repos. Guest games are unrated.</dd>
+          {% endif %}
+          <dt id="term-hugging-face">Hugging Face</dt>
+          <dd>A website where you store and share files in repos. You need an account there to register an AG Champion.</dd>
+          <dt id="term-lobby">Lobby</dt>
+          <dd>The page where you challenge other players and start games. The Lobby is labelled "Hatzar Grutaot" in the menu.</dd>
+          <dt id="term-main-branch">Main branch</dt>
+          <dd>The default version line of a repo, named <code>main</code>. The platform reads your files from it.</dd>
+          <dt id="term-mcvs">MCVS</dt> <!-- CONFIRM: MCVS expansion -->
+          <dd>Short for Monte Carlo Vector Search, one example of a search method you can use. The platform only uses the name in the default file name <code>&lt;game&gt;_mcvs.py</code>.</dd>
+          <dt id="term-model-check">Model check</dt>
+          <dd>An automatic test the platform runs on your AG Champion. For example, it checks that your code loads and that every move on three sample positions is legal.</dd>
+          <dt id="term-model-repo">Model repo</dt>
+          <dd>The required repo that holds your code and config files.</dd>
+          <dt id="term-public">Public</dt>
+          <dd>A Hugging Face repo that anyone can read.</dd>
+          <dt id="term-rated-game">Rated game</dt>
+          <dd>A finished game that changes your Elo. Finished games played outside tournaments also count toward your tournament qualification (see <a href="#rule-qualification">Tournament qualification</a>).</dd>
+          <dt id="term-repo">Repo</dt>
+          <dd>Short for repository: a folder of files stored on Hugging Face.</dd>
+          <dt id="term-sandbox">Sandbox</dt>
+          <dd>The isolated, locked-down container on the platform's servers where your AG Champion runs.</dd>
+          <dt id="term-sha">SHA</dt>
+          <dd>The unique ID of a commit. The platform records (pins) the SHA of your model repo to detect changes.</dd>
+          <dt id="term-thinking-time">Thinking time</dt>
+          <dd>A target pace for AI moves that you set when you create or join a game. It is not a hard guarantee.</dd>
+          <dt id="term-uci">UCI notation</dt>
+          <dd>The way Chess moves are written: the square you move from, followed by the square you move to, for example <code>e2e4</code>.</dd>
+          <dt id="term-verification-code">Verification code</dt>
+          <dd>A unique 32-character code that the platform gives you. You put it in a file named <code>AGL_VERIFY.txt</code> in your repo to prove that the repo is yours.</dd>
+        </dl>
+      </section>
+
+      <!-- Next step -->
+      <div class="text-center mb-12">
+        <p class="mb-4">Ready to see it in action?</p>
+        <div class="flex flex-wrap justify-center gap-3">
+          <a href="{% url 'core:how_to_upload' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Register Your AG Champion</a>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
+{% include "core/_doc_scripts.html" %}
 {% endblock %}

@@ -433,6 +433,31 @@ class RunDiagnosticsTests(TestCase):
         self.assertIn("aaaaaaaaaaaa", joined)
         self.assertNotIn("a" * 13, joined)  # SHAs are truncated to 12 chars
 
+    def test_no_data_repo_still_reports_model_works(self):
+        UserGameModel.objects.filter(pk=self.gm.pk).update(hf_data_repo_id="", data_repo_ownership_verified=False)
+        status = dict(GOOD_FILE_STATUS, data_files=[],
+                      data_error=f"Data repo '{self.user.username}/chess-data' not found.")
+        run = self._run(file_status=status)
+        self.assertEqual(run.verdict, DiagnosticRun.Verdict.PASS)
+        self.assertEqual(run.lines[-1]["msg"], "RESULT: your model works correctly")
+        msgs = self._msgs(run)
+        self.assertNotIn("Ownership of the data repo: missing", msgs)
+        self.assertFalse(any("config_data.json" in m for m in msgs))
+        self.assertFalse([l for l in run.lines if l["level"] in ("warn", "fail") and "data repo" in l["msg"].lower()])
+
+    def test_data_repo_set_still_needs_its_ownership_proof(self):
+        UserGameModel.objects.filter(pk=self.gm.pk).update(data_repo_ownership_verified=False)
+        run = self._run()
+        self.assertEqual(run.verdict, DiagnosticRun.Verdict.FAIL)
+        self.assertIn("Ownership of the data repo: missing", self._msgs(run))
+
+    def test_data_repo_set_still_needs_a_readable_config_data_json(self):
+        status = dict(GOOD_FILE_STATUS, data_files=[],
+                      data_error=f"config_data.json not found in data repo '{self.user.username}/chess-data'.")
+        run = self._run(file_status=status)
+        self.assertEqual(run.verdict, DiagnosticRun.Verdict.FAIL)
+        self.assertTrue(any("config_data.json" in m for m in self._msgs(run)))
+
     def test_status_saved_during_the_run_is_seen_by_the_later_steps(self):
         UserGameModel.objects.filter(pk=self.gm.pk).update(status="pending")
 

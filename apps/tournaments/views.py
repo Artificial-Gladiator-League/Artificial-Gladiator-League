@@ -663,7 +663,7 @@ def join_tournament(request, pk):
     # failure — the user always needs the same recovery path.
     REVERIFY_MSG = (
         "Your AI model repo was changed since approval. Re-verify at "
-        "/users/aimodels/ and complete 30 rated games before joining tournaments."
+        f"/users/aimodels/ and complete {REVALIDATION_GAMES_REQUIRED} rated games before joining tournaments."
     )
 
     # ── Gate A: model record exists ───────────────────────────────
@@ -839,14 +839,15 @@ def join_tournament(request, pk):
     # A user who changed their model repo must complete 30 rated games
     # before they may register again. QA tournaments log the condition
     # instead of blocking so the anti-cheat flow can be exercised.
-    if game_model.repo_changed and game_model.rated_games_since_revalidation < 30:
-        remaining = 30 - game_model.rated_games_since_revalidation
+    if game_model.repo_changed and game_model.rated_games_since_revalidation < REVALIDATION_GAMES_REQUIRED:
+        remaining = REVALIDATION_GAMES_REQUIRED - game_model.rated_games_since_revalidation
         if tournament.type == Tournament.Type.QA:
             log.debug(
                 "[QA DEBUG] User %s has changed their repo and only has %s rated "
-                "games since revalidation (needs 30). Allowing registration because "
+                "games since revalidation (needs %s). Allowing registration because "
                 "this is a QA tournament — this would be BLOCKED in a real tournament.",
                 request.user.username, game_model.rated_games_since_revalidation,
+                REVALIDATION_GAMES_REQUIRED,
             )
         else:
             log.warning(
@@ -858,7 +859,7 @@ def join_tournament(request, pk):
                 f"Your model repository was changed. Play {remaining} more rated "
                 f"{tournament.game_type} game{'s' if remaining != 1 else ''} before "
                 f"joining tournaments "
-                f"({game_model.rated_games_since_revalidation}/30 since update).",
+                f"({game_model.rated_games_since_revalidation}/{REVALIDATION_GAMES_REQUIRED} since update).",
             )
             return redirect("games:lobby")
 

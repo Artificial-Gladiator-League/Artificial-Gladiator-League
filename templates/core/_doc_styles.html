@@ -1,0 +1,124 @@
+<style>
+/* Shared by core/how_it_works.html and core/how_to_upload.html. Uses the theme variables from lichess.css. */
+.doc { font-size: 1.0625rem; line-height: 1.7; color: var(--lp-head); }
+.doc p, .doc li, .doc dd, .doc summary { color: var(--lp-head); }
+.doc p { margin: 0 0 1rem; }
+.doc p:last-child { margin-bottom: 0; }
+.doc ul, .doc ol { margin: 0 0 1rem; padding-left: 1.5rem; }
+.doc ul { list-style: disc; }
+.doc ol { list-style: decimal; }
+.doc li { margin-bottom: .4rem; }
+.doc li > ul, .doc li > ol { margin-top: .4rem; margin-bottom: 0; }
+.doc h1 { font-size: 2.25rem; line-height: 1.15; font-weight: 800; margin: 0 0 1rem; color: var(--lp-head); }
+.doc h2 { font-size: 1.6rem; line-height: 1.25; font-weight: 700; margin: 0 0 .75rem; color: var(--lp-head); }
+.doc h3 { font-size: 1.25rem; line-height: 1.3; font-weight: 700; margin: 1.75rem 0 .6rem; color: var(--lp-head); }
+.doc h4 { font-size: 1.05rem; font-weight: 700; margin: 1.25rem 0 .4rem; color: var(--lp-head); }
+.doc a:not([class]) { text-decoration: underline; text-underline-offset: .18em; }
+.doc :not(pre) > code { background: var(--lp-box-head); border: 1px solid var(--lp-border); border-radius: 3px; padding: .05rem .35rem; font-size: .92em; color: var(--lp-head); overflow-wrap: anywhere; }
+.doc [id] { scroll-margin-top: 5.5rem; }
+.doc strong { color: var(--lp-head); }
+.doc .doc-muted { color: var(--lp-text); }
+@media (prefers-reduced-motion: no-preference) { html:has(.doc) { scroll-behavior: smooth; } }
+
+/* Page header */
+.doc-hero { margin-bottom: 1.75rem; }
+.doc-eyebrow { font-size: .85rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--lp-win); margin: 0 0 .5rem; }
+.doc-lead { font-size: 1.25rem; line-height: 1.6; max-width: 48rem; }
+.doc-needs { border: 1px solid var(--lp-border); background: var(--lp-box); border-radius: 4px; padding: 1rem 1.25rem; margin-top: 1.25rem; max-width: 48rem; }
+.doc-needs h2 { font-size: 1.1rem; margin-bottom: .5rem; }
+.doc-needs ul { margin-bottom: 0; }
+
+/* Layout and table of contents */
+.doc-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+@media (min-width: 1024px) {
+  .doc-layout { grid-template-columns: 17rem minmax(0, 1fr); gap: 2rem; }
+  .doc-aside { position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow-y: auto; }
+}
+.doc-toc { border: 1px solid var(--lp-border); background: var(--lp-box); border-radius: 4px; }
+.doc-toc > summary { cursor: pointer; padding: .75rem 1rem; font-weight: 700; font-size: 1rem; list-style: none; }
+.doc-toc > summary::-webkit-details-marker { display: none; }
+.doc-toc > summary::after { content: "+"; float: right; font-weight: 700; color: var(--lp-win); }
+.doc-toc[open] > summary::after { content: "\2212"; }
+.doc-toc-list { list-style: none !important; margin: 0 !important; padding: 0 1rem 1rem !important; font-size: .98rem; line-height: 1.4; }
+.doc-toc-list ul { list-style: none !important; margin: .25rem 0 .25rem 0 !important; padding-left: .9rem !important; border-left: 1px solid var(--lp-border); }
+.doc-toc-list li { margin: 0 !important; }
+.doc-toc-link { display: block; padding: .3rem .5rem; border-radius: 3px; color: var(--lp-text); text-decoration: none; }
+.doc-toc-link:hover { background: var(--lp-hover); color: var(--lp-head); text-decoration: underline; }
+.doc-toc-link[aria-current="location"] { color: var(--lp-head); font-weight: 700; background: var(--lp-hover); }
+
+/* Callouts: Tip (blue), Important (yellow), Warning (red). The label is always written out. */
+.doc-callout { border-left: 5px solid; border-radius: 4px; padding: .85rem 1rem; margin: 1.25rem 0; }
+.doc-callout > p, .doc-callout > ul, .doc-callout > ol { margin-bottom: .6rem; }
+.doc-callout > :last-child { margin-bottom: 0; }
+.doc-callout-label { display: block; font-size: .85rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .3rem; }
+.doc-tip { border-color: var(--lp-link); background: rgba(56,147,232,.12); }
+.doc-tip .doc-callout-label { color: var(--lp-link); }
+.doc-important { border-color: var(--lp-warn); background: rgba(224,176,48,.13); }
+.doc-important .doc-callout-label { color: var(--lp-warn); }
+.doc-warning { border-color: var(--lp-loss); background: rgba(224,96,96,.14); }
+.doc-warning .doc-callout-label { color: var(--lp-loss); }
+
+/* Numbered step headers and the What / Where / Worked / Failed rows */
+.doc-step-head { display: flex; align-items: center; gap: 1rem; margin-bottom: .75rem; }
+.doc-step-head h2 { margin: 0; }
+.doc-step-num { flex: none; width: 2.75rem; height: 2.75rem; border-radius: 9999px; background: var(--lp-btn); color: #fff; font-weight: 800; font-size: 1.25rem; display: grid; place-items: center; }
+.doc-meta { display: grid; grid-template-columns: minmax(0, 1fr); margin: 1rem 0 0; }
+.doc-meta dt { font-weight: 800; font-size: .9rem; letter-spacing: .04em; text-transform: uppercase; color: var(--lp-win); padding-top: .85rem; border-top: 1px solid var(--lp-border); }
+.doc-meta dd { margin: 0; padding: .25rem 0 .85rem; }
+.doc-meta dd > :last-child { margin-bottom: 0; }
+@media (min-width: 720px) {
+  .doc-meta { grid-template-columns: 10.5rem minmax(0, 1fr); column-gap: 1.25rem; }
+  .doc-meta dt { padding: .85rem 0; }
+  .doc-meta dd { padding: .85rem 0; border-top: 1px solid var(--lp-border); }
+}
+.doc-next { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--lp-border); font-weight: 700; }
+
+/* Glossary and definition lists */
+.doc-defs { margin: 0; }
+.doc-defs dt { font-weight: 700; margin-top: 1rem; }
+.doc-defs dd { margin: .15rem 0 0; }
+
+/* Collapsible sections (native details/summary, keyboard friendly) */
+.doc-details { border: 1px solid var(--lp-border); border-radius: 4px; margin: 1rem 0; background: var(--lp-input); }
+.doc-details > summary { cursor: pointer; padding: .75rem 1rem; font-weight: 700; list-style: none; display: flex; gap: .75rem; align-items: baseline; }
+.doc-details > summary::-webkit-details-marker { display: none; }
+.doc-details > summary::before { content: "+"; flex: none; width: 1.1rem; text-align: center; font-weight: 800; color: var(--lp-win); }
+.doc-details[open] > summary::before { content: "\2212"; }
+.doc-details[open] > summary { border-bottom: 1px solid var(--lp-border); }
+.doc-details-body { padding: 1rem 1rem .75rem; }
+.doc-details-body > :last-child { margin-bottom: 0; }
+.doc-tag { font-size: .8rem; font-weight: 700; color: var(--lp-text); border: 1px solid var(--lp-border); border-radius: 3px; padding: 0 .4rem; margin-left: .25rem; white-space: nowrap; }
+
+/* Sequences */
+.doc-flow { list-style: none !important; padding: 0 !important; margin: 0 0 1rem !important; display: flex; flex-wrap: wrap; gap: .6rem 1.6rem; }
+.doc-flow li { position: relative; margin: 0; background: var(--lp-box-head); border: 1px solid var(--lp-border); border-radius: 4px; padding: .4rem .8rem; font-size: 1rem; }
+.doc-flow li:not(:last-child)::after { content: "\203A"; position: absolute; right: -1.15rem; top: 50%; transform: translateY(-50%); font-weight: 800; color: var(--lp-muted); }
+.doc-path { list-style: none !important; padding: 0 !important; margin: 0 0 1rem !important; counter-reset: docpath; }
+.doc-path > li { counter-increment: docpath; display: flex; gap: .9rem; align-items: baseline; padding: .6rem 0; margin: 0; border-top: 1px solid var(--lp-border); }
+.doc-path > li:first-child { border-top: 0; }
+.doc-path > li::before { content: counter(docpath); flex: none; width: 2rem; height: 2rem; border-radius: 9999px; background: var(--lp-btn); color: #fff; font-weight: 800; display: grid; place-items: center; align-self: flex-start; }
+.doc-path-title { font-weight: 700; display: block; }
+
+/* Code blocks with a Copy button */
+.doc-code { position: relative; margin: 1rem 0; }
+.doc-code-label { position: absolute; top: .55rem; left: 1rem; font-size: .85rem; color: var(--lp-text); }
+.doc-code pre { margin: 0; background: var(--lp-page); border: 1px solid var(--lp-border); border-radius: 4px; padding: 2.9rem 1rem 1rem; overflow-x: auto; font-size: .95rem; line-height: 1.55; color: var(--lp-head); tab-size: 4; }
+.doc-code pre code { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; }
+.doc-copy { position: absolute; top: .45rem; right: .5rem; min-height: 2.1rem; padding: .2rem .9rem; font-size: .9rem; font-weight: 700; border: 1px solid var(--lp-border); border-radius: 3px; background: var(--lp-box-head); color: var(--lp-head); cursor: pointer; }
+.doc-copy:hover { border-color: var(--lp-win); }
+.doc-tree { margin: 1rem 0; background: var(--lp-page); border: 1px solid var(--lp-border); border-radius: 4px; padding: 1rem; overflow-x: auto; font-size: .95rem; line-height: 1.55; color: var(--lp-head); }
+
+/* Tables */
+.doc-table-wrap { overflow-x: auto; margin: 1rem 0; }
+.doc-table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+.doc-table caption { text-align: left; font-weight: 700; padding-bottom: .5rem; color: var(--lp-head); }
+.doc-table th, .doc-table td { text-align: left; vertical-align: top; padding: .6rem .8rem; border-bottom: 1px solid var(--lp-border); }
+.doc-table thead th { background: var(--lp-box-head); font-weight: 700; }
+.doc-table tbody th { font-weight: 700; }
+.doc-table .doc-num { text-align: right; white-space: nowrap; }
+
+/* Screenshots (the comment in the template explains how to add one) */
+.doc-shot { margin: 1rem 0; }
+.doc-shot img { max-width: 100%; height: auto; border: 1px solid var(--lp-border); border-radius: 4px; }
+.doc-shot figcaption { font-size: .95rem; color: var(--lp-text); margin-top: .4rem; }
+</style>

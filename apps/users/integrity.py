@@ -602,7 +602,9 @@ def validate_all_models(user: CustomUser, hf_token: str) -> bool:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Tournament eligibility check
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REVALIDATION_GAMES_REQUIRED = 30
+# One source of truth: settings.TOURNAMENT_MIN_RATED_GAMES.
+TOURNAMENT_MIN_RATED_GAMES = int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30))
+REVALIDATION_GAMES_REQUIRED = TOURNAMENT_MIN_RATED_GAMES
 
 
 def can_join_tournament(
@@ -677,7 +679,7 @@ def can_join_tournament(
     if not gm.model_integrity_ok:
         return False, (
             "Your AI model has been modified since it was approved. "
-            f"You must complete 30 rated games in {game_type} before "
+            f"You must complete {REVALIDATION_GAMES_REQUIRED} rated games in {game_type} before "
             f"registering to a {game_type} tournament."
         )
 
@@ -707,7 +709,6 @@ def can_join_tournament(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Strict eligibility gate (Rule 1 + Rule 2)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOURNAMENT_MIN_RATED_GAMES = 30
 
 
 def is_eligible_for_tournament(

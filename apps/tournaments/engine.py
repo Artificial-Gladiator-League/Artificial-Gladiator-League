@@ -14,6 +14,7 @@ import time
 from typing import TYPE_CHECKING
 
 import chess
+from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 
@@ -285,7 +286,7 @@ def is_round_complete(tournament: Tournament, round_num: int) -> bool:
 #  Tournament lifecycle
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-REVALIDATION_GAMES_REQUIRED = 30
+REVALIDATION_GAMES_REQUIRED = int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30))
 
 
 def _disqualify_ineligible_participants(tournament: Tournament) -> list:
@@ -297,7 +298,7 @@ def _disqualify_ineligible_participants(tournament: Tournament) -> list:
       3. If the token exists, run validate_model_integrity — if it fails,
          mark the participant eliminated.
       4. Also disqualify if model_integrity_ok is False or
-         rated_games_since_revalidation < 30.
+         rated_games_since_revalidation < TOURNAMENT_MIN_RATED_GAMES.
 
     QA tournaments skip all checks.
     Returns a list of (username, reason) tuples for logging.
