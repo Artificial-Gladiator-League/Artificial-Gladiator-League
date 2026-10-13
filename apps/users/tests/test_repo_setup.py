@@ -157,7 +157,7 @@ class ConnectPostTests(TestCase):
         msgs = [str(m) for m in resp.wsgi_request._messages]
         self.assertTrue(any("not the Space URL" in m for m in msgs))
 
-    def test_repo_change_resets_same_fields_and_leaves_shas_alone(self):
+    def test_repo_change_clears_the_approved_model_sha_and_leaves_the_data_sha_alone(self):
         gm = UserGameModel.objects.create(
             user=self.user, game_type="chess",
             hf_model_repo_id="alice/old-model", hf_data_repo_id="alice/chess-data",
@@ -171,7 +171,8 @@ class ConnectPostTests(TestCase):
         self.assertEqual(after_connect.hf_model_repo_id, "alice/chess-model")
         self.assertFalse(after_connect.is_verified)
         self.assertNotEqual(after_connect.verification_code, "old-code")
-        self.assertEqual(after_connect.approved_full_sha, "a" * 40)
+        # Cleared on purpose: the next verification is then a first pin and does not reset the count again.
+        self.assertEqual(after_connect.approved_full_sha, "")
         self.assertEqual(after_connect.approved_data_repo_sha, "d" * 40)
 
     def test_unchanged_verified_repo_keeps_state(self):
