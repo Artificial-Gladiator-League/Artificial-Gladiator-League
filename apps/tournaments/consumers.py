@@ -208,6 +208,10 @@ class LiveMatchConsumer(AsyncWebsocketConsumer):
     async def armageddon_start(self, event):
         await self.send(text_data=json.dumps(event["data"]))
 
+    async def game_aborted(self, event):
+        """A game of this match was cancelled because the sandbox is unavailable."""
+        await self.send(text_data=json.dumps(event["data"]))
+
     async def user_disqualified(self, event):
         await self.send(text_data=json.dumps({
             "type": "disqualified",

@@ -289,6 +289,87 @@ def is_round_complete(tournament: Tournament, round_num: int) -> bool:
 REVALIDATION_GAMES_REQUIRED = int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30))
 
 
+def _build_replacement_game(cancelled: Game) -> Game:
+    """A fresh game for the same match after *cancelled* was aborted (same colours, full clocks)."""
+    parent = cancelled.armageddon_of
+    if parent is not None:
+        # Free the one-to-one Armageddon link so the replacement can take it.
+        cancelled.armageddon_of = None
+        cancelled.save(update_fields=["armageddon_of"])
+        from apps.games.chess_engine import create_armageddon
+        replacement = create_armageddon(parent)
+        replacement.game_type = parent.game_type
+        if parent.game_type == "breakthrough":
+            replacement.current_fen = BT_STARTING_FEN
+        replacement.save()
+        return replacement
+
+    tc = cancelled.time_control or "3+1"
+    parts = tc.split("+")
+    base_sec = int(parts[0]) * 60 if parts else 180
+    inc = int(parts[1]) if len(parts) > 1 else 0
+    return Game.objects.create(
+        white=cancelled.white,
+        black=cancelled.black,
+        time_control=tc,
+        white_time=float(base_sec),
+        black_time=float(base_sec),
+        increment=inc,
+        status=Game.Status.ONGOING,
+        is_tournament_game=True,
+        tournament_match=cancelled.tournament_match,
+        game_type=cancelled.game_type,
+        current_fen=BT_STARTING_FEN if cancelled.game_type == "breakthrough" else chess.STARTING_FEN,
+        white_thinking_seconds=cancelled.white_thinking_seconds,
+        black_thinking_seconds=cancelled.black_thinking_seconds,
+    )
+
+
+@transaction.atomic
+def handle_cancelled_game(game: Game) -> dict:
+    """A tournament game was cancelled because the sandbox is unavailable (no result, no rating change).
+
+    Replays it after a delay, up to TOURNAMENT_PLATFORM_FAULT_MAX_ATTEMPTS cancelled games per match;
+    after the last one the match is postponed and the admins are notified.
+    """
+    max_attempts = int(getattr(settings, "TOURNAMENT_PLATFORM_FAULT_MAX_ATTEMPTS", 3))
+    delay = int(getattr(settings, "TOURNAMENT_PLATFORM_FAULT_RETRY_DELAY_SECONDS", 60))
+    match = game.tournament_match
+    cancelled_count = Game.objects.filter(
+        tournament_match=match, status=Game.Status.ABORTED, result_reason="platform_error",
+    ).count()
+
+    if cancelled_count >= max_attempts:
+        Match.objects.filter(pk=match.pk).update(match_status=Match.MatchStatus.POSTPONED)
+        Match.objects.filter(
+            tournament=match.tournament, round_num=match.round_num,
+            bracket_position=match.bracket_position, is_armageddon=True,
+        ).update(match_status=Match.MatchStatus.POSTPONED)
+        try:
+            from django.core.mail import mail_admins
+            mail_admins(
+                subject=f"[AGL] Match postponed (platform problem): {match.tournament.name} R{match.round_num}",
+                message=(
+                    f"Tournament: {match.tournament.name} (pk={match.tournament_id})\n"
+                    f"Match: {match.player1.username} vs {match.player2.username} (pk={match.pk})\n"
+                    f"{cancelled_count} games were cancelled because the sandbox was unavailable. "
+                    "The match is postponed; resolve it in the admin."
+                ),
+                fail_silently=True,
+            )
+        except Exception:
+            log.exception("Could not notify the admins about postponed match %s", match.pk)
+        log.error("Match %s postponed after %d cancelled games (sandbox unavailable)", match.pk, cancelled_count)
+        return {"postponed": True, "attempt": cancelled_count, "max_attempts": max_attempts}
+
+    replacement = _build_replacement_game(game)
+    _start_bot_game_thread(replacement.pk, delay)
+    return {
+        "postponed": False, "attempt": cancelled_count + 1, "max_attempts": max_attempts,
+        "delay": delay, "replacement_game_id": replacement.pk,
+    }
+
+
 def _disqualify_ineligible_participants(tournament: Tournament) -> list:
     """Remove participants whose model fails integrity checks before start.
 

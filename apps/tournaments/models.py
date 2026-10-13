@@ -856,6 +856,7 @@ class Match(models.Model):
         PENDING = "pending", "Pending"
         LIVE = "live", "Live"
         COMPLETED = "completed", "Completed"
+        POSTPONED = "postponed", "Postponed"
 
     tournament = models.ForeignKey(
         Tournament, on_delete=models.CASCADE, related_name="matches"
@@ -926,6 +927,10 @@ class Match(models.Model):
     @property
     def is_completed(self):
         return self.match_status == self.MatchStatus.COMPLETED
+
+    @property
+    def is_postponed(self):
+        return self.match_status == self.MatchStatus.POSTPONED
 
 
 class GauntletStanding(models.Model):

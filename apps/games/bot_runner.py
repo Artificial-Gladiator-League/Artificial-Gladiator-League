@@ -23,6 +23,8 @@ import time
 import chess
 from django.conf import settings
 
+from apps.games.exceptions import SandboxUnavailableError
+
 log = logging.getLogger(__name__)
 
 # Delay between moves so WS spectators can follow along (seconds).
@@ -150,6 +152,9 @@ def get_bot_move(bot, fen: str, time_left: float = None,
     try:
         move, elapsed = bot.get_move(fen, time_left=time_left, opponent_time=opponent_time)
         return (move if isinstance(move, str) else None), elapsed
+    except SandboxUnavailableError:
+        # A platform fault, not the player's: the caller cancels the game instead of forfeiting.
+        raise
     except Exception:
         log.exception("[FAIL] Bot raised an exception during get_move()")
         return None, 0.0
@@ -366,7 +371,11 @@ def _run_chess_game(game) -> None:
                 break
 
         # Chess AI logic is in predict_chess.py (runs in Docker sandbox)
-        uci, move_elapsed = _get_bot_move("chess", game.current_fen, player, repo)
+        try:
+            uci, move_elapsed = _get_bot_move("chess", game.current_fen, player, repo)
+        except SandboxUnavailableError:
+            _cancel_for_sandbox_fault(game)
+            return
         if _sha_failed(sha_fut):
             log.warning(
                 "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting.",
@@ -491,7 +500,11 @@ def _run_breakthrough_game(game) -> None:
                 break
 
         # Breakthrough AI logic is in predict_breakthrough.py (runs in Docker sandbox)
-        uci, move_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
+        try:
+            uci, move_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo or "")
+        except SandboxUnavailableError:
+            _cancel_for_sandbox_fault(game)
+            return
         if _sha_failed(sha_fut):
             log.warning(
                 "[game %s] Anti-cheat: %s (%s) repo changed mid-game - forfeiting Breakthrough.",
@@ -536,6 +549,15 @@ def _run_breakthrough_game(game) -> None:
 
     log.info("[game %s] ===== BREAKTHROUGH GAME END - result=%s reason=%s =====",
              game.pk, game.result, getattr(game, 'result_reason', ''))
+
+
+def _cancel_for_sandbox_fault(game) -> None:
+    """Cancel *game* because the sandbox is unavailable (no result, no rating change) and tell its viewers."""
+    from apps.games.platform_fault import broadcast_game_aborted, handle_sandbox_unavailable
+
+    payload = handle_sandbox_unavailable(game.pk)
+    if payload:
+        broadcast_game_aborted(payload)
 
 
 def _forfeit_game(game, forfeit_color: str) -> None:
