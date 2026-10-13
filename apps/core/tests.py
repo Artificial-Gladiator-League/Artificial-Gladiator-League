@@ -21,6 +21,8 @@ CUSTOM = dict(
     GUEST_SNAPSHOT_IDLE_MINUTES=60,
     GUEST_TTL_DAYS=1,
     TOURNAMENT_MIN_RATED_GAMES=25,
+    TOURNAMENT_PLATFORM_FAULT_MAX_ATTEMPTS=4,
+    TOURNAMENT_PLATFORM_FAULT_RETRY_DELAY_SECONDS=90,
 )
 
 
@@ -52,6 +54,8 @@ class PlatformLimitsTests(TestCase):
         self.assertEqual(ctx["guest_snapshot_idle_hours"], 2)
         self.assertEqual(ctx["guest_ttl_days"], 3)
         self.assertEqual(ctx["tournament_min_rated_games"], 30)
+        self.assertEqual(ctx["platform_fault_max_attempts"], 3)
+        self.assertEqual(ctx["platform_fault_retry_seconds"], 60)
 
     @override_settings(**CUSTOM)
     def test_values_follow_settings(self):
@@ -65,6 +69,8 @@ class PlatformLimitsTests(TestCase):
         self.assertEqual(ctx["guest_snapshot_idle_hours"], 1)
         self.assertEqual(ctx["guest_ttl_days"], 1)
         self.assertEqual(ctx["tournament_min_rated_games"], 25)
+        self.assertEqual(ctx["platform_fault_max_attempts"], 4)
+        self.assertEqual(ctx["platform_fault_retry_seconds"], 90)
 
 
 @PLAIN_STATIC
@@ -78,12 +84,15 @@ class DocPagesUseLimitsTests(TestCase):
         self.assertIn("30 seconds per move", works)
         self.assertIn("512 MB", works)
         self.assertIn("30 rated games", works)
+        self.assertIn("replayed 60 seconds later", works)
+        self.assertIn("up to 3 games", works)
 
     @override_settings(GUEST_MODE_ENABLED=True, **CUSTOM)
     def test_pages_show_configured_values(self):
         works = self._page("core:how_it_works")
         for text in ("45 seconds per move", "768 MB", "2 CPU", "<td>256</td>", "90 seconds", "10 minutes",
-                     "25 rated games", "after 1 idle hour,", "after 1 day of inactivity"):
+                     "25 rated games", "after 1 idle hour,", "after 1 day of inactivity",
+                     "replayed 90 seconds later", "up to 4 games"):
             self.assertIn(text, works)
         guide = self._page("core:how_to_upload")
         for text in ("25 rated games before you can join", "(45 seconds)", "x / 25"):

@@ -204,7 +204,7 @@
               <li>It is started ahead of time when you open the Lobby or a game page, so the first move is not a <a href="#term-cold-start">cold start</a>. The Lobby is labelled "Hatzar Grutaot" in the menu.</li>
               <li>An idle container is stopped automatically (after {{ sandbox_idle_minutes|default:15|floatformat:"-1" }} minutes without a move) and started again when needed.</li>
               <li>It is restarted if your model files change, the container dies, or a move times out.</li>
-              <li>Your code never runs outside the sandbox. If the sandbox itself is unavailable, that is treated as a platform problem and no random move is substituted for it.</li>
+              <li>Your code never runs outside the sandbox. If the sandbox itself is unavailable, that is a platform problem: the game is cancelled and nobody loses (see <a href="#rule-sandbox-down">When the sandbox is unavailable</a>).</li>
             </ul>
           </div>
         </details>
@@ -303,7 +303,7 @@
           <p>You need <strong>{{ tournament_min_rated_games|default:30 }} rated games</strong> with your AG Champion before you can <strong>join</strong> a tournament. Registering your AG Champion (Steps 1 to 6 of the setup guide) does not need them.</p>
           <ul>
             <li>A game counts when it is finished, was played outside a tournament{% if guest_mode_enabled %} and is not a guest game{% endif %}. Chess and Breakthrough are counted separately.</li>
-            <li>The count goes back to 0 when you change your model repo ID, when the platform finds a new commit in your model repo after your AG Champion was approved, and each time <strong>Verify Ownership</strong>, <strong>Re-check Ownership</strong> or <strong>Save and verify</strong> passes the model check.</li>
+            <li>The count goes back to 0 only when you change your model repo ID or the platform finds a new commit in your model repo. Re-checking ownership when nothing has changed does not reset it.</li>
             <li>The platform checks the count again when the tournament starts. A player with fewer than {{ tournament_min_rated_games|default:30 }} games is removed.</li>
           </ul>
         </div>
@@ -369,6 +369,16 @@
         <div class="doc-callout doc-warning" role="note">
           <span class="doc-callout-label">Warning</span>
           <p>If your AG Champion's last model check failed, no random move is played and you <a href="#term-forfeit">forfeit</a> the game.</p>
+        </div>
+        <div id="rule-sandbox-down" class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p><strong>When the sandbox is unavailable.</strong> This is a platform problem, never your fault, so no player loses and no random move is played.</p>
+          <ul>
+            <li>A game in the Lobby is cancelled with no result and no rating change.</li>
+            <li>A tournament game is cancelled the same way and replayed {{ platform_fault_retry_seconds|default:60 }} seconds later, with the same colours and full clocks. A match gets up to {{ platform_fault_max_attempts|default:3 }} games.</li>
+            <li>After the last one, the match is postponed and the organizers are notified. Players see: "Match postponed because of a platform problem. The organizers have been notified."</li>
+          </ul>
+          <p>Only a problem with the sandbox itself counts. A move that is too slow, a crash, no move or an illegal move from your own AG Champion keeps the rules above.</p>
         </div>
         <p class="doc-next">Next step: <a href="#titles">See the ranking titles</a></p>
       </section>

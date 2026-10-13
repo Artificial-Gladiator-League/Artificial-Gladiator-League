@@ -18,6 +18,8 @@ def platform_limits(request):
         "guest_snapshot_idle_hours": float(getattr(settings, "GUEST_SNAPSHOT_IDLE_MINUTES", 120)) / 60,
         "guest_ttl_days": int(getattr(settings, "GUEST_TTL_DAYS", 3)),
         "tournament_min_rated_games": int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30)),
+        "platform_fault_max_attempts": int(getattr(settings, "TOURNAMENT_PLATFORM_FAULT_MAX_ATTEMPTS", 3)),
+        "platform_fault_retry_seconds": int(getattr(settings, "TOURNAMENT_PLATFORM_FAULT_RETRY_DELAY_SECONDS", 60)),
     }
 
 
