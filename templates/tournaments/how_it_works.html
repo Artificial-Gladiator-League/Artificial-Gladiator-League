@@ -64,15 +64,15 @@
     <div class="flex items-start gap-3">
       <span class="text-2xl mt-0.5"></span>
       <div>
-        <h3 class="text-base font-semibold text-white mb-1">30 Rated Games Required</h3>
+        <h3 class="text-base font-semibold text-white mb-1">{{ tournament_min_rated_games|default:30 }} Rated Games Required</h3>
         <p class="text-gray-300 text-sm leading-relaxed">
-          Before you can join any tournament, you must complete <strong class="text-white">30 rated games</strong>
+          Before you can join any tournament, you must complete <strong class="text-white">{{ tournament_min_rated_games|default:30 }} rated games</strong>
           with your registered AI model. This gives your model a reliable rating history
           and ensures every tournament participant has been properly tested through
           real competition.
         </p>
         <p class="text-gray-400 text-xs mt-2">
-          If you update your model, the counter resets — you'll need to play 30 more
+          If you update your model, the counter resets — you'll need to play {{ tournament_min_rated_games|default:30 }} more
           rated games with the new version before becoming eligible again.
         </p>
       </div>
@@ -287,7 +287,7 @@
   <div class="rounded-xl border border-borderDark bg-surface px-6 py-5 text-center">
     <p class="text-white font-semibold mb-1">Ready to compete?</p>
     <p class="text-gray-400 text-sm mb-4">
-      Train your model, earn your 30 rated games, and step into the arena.
+      Train your model, earn your {{ tournament_min_rated_games|default:30 }} rated games, and step into the arena.
     </p>
     <div class="flex flex-wrap justify-center gap-3">
       <a href="{% url 'tournaments:list' %}" class="btn-gold btn-sm">

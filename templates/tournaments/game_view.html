@@ -625,6 +625,14 @@ window.addEventListener('cg-ready', function () {
       case 'armageddon':
         startArmageddonCountdown(data);
         break;
+
+      case 'game_aborted':
+        /* Cancelled because of a platform problem; a replacement game may follow, so keep listening. */
+        overlayEl.classList.remove('hidden');
+        resultText.textContent = 'Cancelled';
+        resultText.className = 'result-text text-yellow-300';
+        resultDetail.textContent = data.message || 'Game cancelled because of a platform problem.';
+        break;
     }
   }
 });

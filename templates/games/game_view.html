@@ -558,7 +558,11 @@
       resultTextEl.className = 'result-text text-yellow-300';
       resultDetail.textContent = 'Draw';
     }
-    if (reason) {
+    if (result === '*' || reason === 'platform_error') {
+      resultTextEl.textContent = 'Cancelled';
+      resultTextEl.className = 'result-text text-yellow-300';
+      resultDetail.textContent = 'Cancelled because of a platform problem. Ratings were not changed.';
+    } else if (reason) {
       var friendlyReason = reason;
       if (reason === 'bot_error') friendlyReason = 'AI bot failed to load or respond';
       resultDetail.textContent += ' (' + friendlyReason + ')';
@@ -571,7 +575,7 @@
     }
   }
 
-  if (isFinished) showGameOver(currentResult, '{{ game.winner.username|default:"" }}', '');
+  if (isFinished) showGameOver(currentResult, '{{ game.winner.username|default:"" }}', '{{ game.result_reason|escapejs }}');
 
   // ── WebSocket ──────────────────────────────
   var ws = null;
@@ -754,6 +758,10 @@
             waitText.textContent = 'Both players ready — starting…';
           }
         }
+
+      } else if (data.type === 'game_aborted') {
+        showGameOver('*', '', 'platform_error');
+        if (data.message) resultDetail.textContent = data.message;
 
       } else if (data.type === 'game_cancelled') {
         // Creator cancelled the game — redirect everyone else to lobby

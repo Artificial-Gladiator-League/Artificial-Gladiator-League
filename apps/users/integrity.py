@@ -368,6 +368,8 @@ def record_original_sha(
         return
 
     now = timezone.now()
+    # Only approving a different commit restarts the qualification count; a first pin or a re-check of the same commit keeps it.
+    previous_sha = (game_model.approved_full_sha or "").strip()
     game_model.original_model_commit_sha = sha
     game_model.last_known_commit_id = sha
     game_model.last_model_validation_date = now.date()
@@ -385,7 +387,8 @@ def record_original_sha(
         if data_sha:
             game_model.approved_data_repo_sha = data_sha
     game_model.pinned_at = now
-    game_model.rated_games_since_revalidation = 0
+    if previous_sha and previous_sha != sha:
+        game_model.rated_games_since_revalidation = 0
     game_model.save(update_fields=[
         "original_model_commit_sha",
         "last_known_commit_id",
@@ -602,7 +605,9 @@ def validate_all_models(user: CustomUser, hf_token: str) -> bool:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Tournament eligibility check
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REVALIDATION_GAMES_REQUIRED = 30
+# One source of truth: settings.TOURNAMENT_MIN_RATED_GAMES.
+TOURNAMENT_MIN_RATED_GAMES = int(getattr(settings, "TOURNAMENT_MIN_RATED_GAMES", 30))
+REVALIDATION_GAMES_REQUIRED = TOURNAMENT_MIN_RATED_GAMES
 
 
 def can_join_tournament(
@@ -677,7 +682,7 @@ def can_join_tournament(
     if not gm.model_integrity_ok:
         return False, (
             "Your AI model has been modified since it was approved. "
-            f"You must complete 30 rated games in {game_type} before "
+            f"You must complete {REVALIDATION_GAMES_REQUIRED} rated games in {game_type} before "
             f"registering to a {game_type} tournament."
         )
 
@@ -707,7 +712,6 @@ def can_join_tournament(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Strict eligibility gate (Rule 1 + Rule 2)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOURNAMENT_MIN_RATED_GAMES = 30
 
 
 def is_eligible_for_tournament(

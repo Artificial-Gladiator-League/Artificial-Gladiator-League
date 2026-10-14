@@ -303,7 +303,7 @@ def _step_registration(L: _RunLog, F: _Findings, user, game_type: str, label: st
     if data_repo:
         L.info(f"Data repo: {data_repo}")
     else:
-        L.warn("No data repo ID is saved; the default '<username>/<game>-data' will be assumed.")
+        L.info("No data repo is set. That is fine: the data repo is optional.")
     return gm
 
 
@@ -336,10 +336,13 @@ def _step_repo_access(L: _RunLog, F: _Findings, gm: UserGameModel) -> None:
 def _step_ownership(L: _RunLog, F: _Findings, gm: UserGameModel) -> None:
     _step(L, 3, "Ownership proof")
     missing = []
+    has_data_repo = bool((gm.hf_data_repo_id or "").strip())
     for flag, name in (
         (gm.model_repo_ownership_verified, "model"),
         (gm.data_repo_ownership_verified, "data"),
     ):
+        if name == "data" and not has_data_repo:
+            continue
         if flag:
             L.ok(f"Ownership of the {name} repo: OK")
         else:
@@ -383,7 +386,8 @@ def _step_files(L: _RunLog, F: _Findings, user, gm: UserGameModel) -> None:
     if revision:
         L.info(f"Model repo revision used: {_short(revision)}")
     _report_config(L, F, "config_model.json", "model", status.get("model_files"), status.get("model_error") or "")
-    _report_config(L, F, "config_data.json", "data", status.get("data_files"), status.get("data_error") or "")
+    if (gm.hf_data_repo_id or "").strip():
+        _report_config(L, F, "config_data.json", "data", status.get("data_files"), status.get("data_error") or "")
 
 
 def _report_config(L: _RunLog, F: _Findings, cfg_name: str, repo_word: str, files, error: str) -> None:

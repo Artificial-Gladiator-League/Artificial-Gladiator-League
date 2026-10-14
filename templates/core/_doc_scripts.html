@@ -1,0 +1,72 @@
+<div class="sr-only" role="status" aria-live="polite" id="docStatus"></div>
+<script>
+(function () {
+  var status = document.getElementById('docStatus');
+
+  // Copy buttons: copy the text of the code block named in data-copy-target.
+  function legacyCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+  document.querySelectorAll('.doc-copy').forEach(function (btn) {
+    var label = btn.textContent;
+    btn.addEventListener('click', function () {
+      var target = document.getElementById(btn.getAttribute('data-copy-target'));
+      if (!target) return;
+      var text = target.textContent;
+      function done(ok) {
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        if (status) status.textContent = ok ? 'Code copied to the clipboard.' : 'Copy failed. Select the code and copy it by hand.';
+        setTimeout(function () { btn.textContent = label; }, 2000);
+      }
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(legacyCopy(text)); });
+      } else {
+        done(legacyCopy(text));
+      }
+    });
+  });
+
+  // Table of contents: start closed on small screens, highlight the section being read.
+  var toc = document.getElementById('docToc');
+  if (toc && window.matchMedia('(max-width: 1023px)').matches) toc.removeAttribute('open');
+  var links = {};
+  document.querySelectorAll('.doc-toc-link').forEach(function (a) {
+    var id = (a.getAttribute('href') || '').replace('#', '');
+    if (id) links[id] = a;
+  });
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting || !links[entry.target.id]) return;
+        Object.keys(links).forEach(function (k) { links[k].removeAttribute('aria-current'); });
+        links[entry.target.id].setAttribute('aria-current', 'location');
+      });
+    }, { rootMargin: '-15% 0px -75% 0px' });
+    Object.keys(links).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) observer.observe(el);
+    });
+  }
+
+  // Open any collapsed section that contains the link target (for example a troubleshooting item).
+  function openTarget() {
+    var id = decodeURIComponent(window.location.hash.replace('#', ''));
+    var el = id ? document.getElementById(id) : null;
+    for (; el; el = el.parentElement) {
+      if (el.tagName === 'DETAILS') el.open = true;
+    }
+  }
+  window.addEventListener('hashchange', openTarget);
+  openTarget();
+})();
+</script>

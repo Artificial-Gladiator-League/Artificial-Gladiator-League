@@ -797,6 +797,32 @@ class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
         """Notify all connected clients that the game was cancelled by the creator."""
         await self.send(text_data=json.dumps({"type": "game_cancelled"}))
 
+    async def broadcast_game_aborted(self, event):
+        """The game was cancelled because the platform's sandbox is unavailable (no rating change)."""
+        await self.send(text_data=json.dumps(event["data"]))
+        try:
+            await self.channel_layer.group_send(await self._lobby_group(), {
+                "type": "lobby_update",
+                "data": {"type": "ongoing_game_removed", "game_pk": self.game_id},
+            })
+        except Exception:
+            pass
+
+    async def _send_game_aborted(self, payload):
+        await self.channel_layer.group_send(
+            self.group_name, {"type": "broadcast_game_aborted", "data": payload},
+        )
+        if payload.get("match_id"):
+            await self.channel_layer.group_send(
+                f"match_{payload['match_id']}", {"type": "game_aborted", "data": payload},
+            )
+
+    def _cancel_for_sandbox_fault(self):
+        """Sync part of the cancel: runs inside the database_sync_to_async move functions."""
+        from .platform_fault import handle_sandbox_unavailable
+        payload = handle_sandbox_unavailable(self.game_id)
+        return {"cancelled": payload} if payload else {"already_finished": True}
+
     # ── AI Bot game loop ───────────────────────
     @database_sync_to_async
     def _load_bots(self):
@@ -962,6 +988,10 @@ class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
             if result.get("already_finished"):
                 break
 
+            if result.get("cancelled"):
+                await self._send_game_aborted(result["cancelled"])
+                break
+
             if result.get("error"):
                 # Bot failed to produce a move — forfeit
                 forfeit = await self._bot_forfeit(result.get("forfeit_color"))
@@ -1101,7 +1131,11 @@ class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
                 }
 
         # Ask the bot for a move
-        uci, bot_elapsed = get_bot_move(bot, game.current_fen, time_left=bot_time, opponent_time=opp_time)
+        from .exceptions import SandboxUnavailableError
+        try:
+            uci, bot_elapsed = get_bot_move(bot, game.current_fen, time_left=bot_time, opponent_time=opp_time)
+        except SandboxUnavailableError:
+            return self._cancel_for_sandbox_fault()
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
 
@@ -1367,6 +1401,10 @@ class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
             if result.get("already_finished"):
                 break
 
+            if result.get("cancelled"):
+                await self._send_game_aborted(result["cancelled"])
+                break
+
             if result.get("error"):
                 forfeit = await self._bot_forfeit(result.get("forfeit_color"))
                 if forfeit.get("game_over"):
@@ -1449,7 +1487,11 @@ class GameConsumer(_GameAccessMixin, AsyncWebsocketConsumer):
                 }
 
         repo = _get_repo_for_user(current_user, "breakthrough") or ""
-        uci, bt_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo)
+        from .exceptions import SandboxUnavailableError
+        try:
+            uci, bt_elapsed = _get_bot_move("breakthrough", game.current_fen, turn, repo)
+        except SandboxUnavailableError:
+            return self._cancel_for_sandbox_fault()
 
         if not uci:
             return {"error": f"Bot ({forfeit_color}) failed to produce a move.", "forfeit_color": forfeit_color}
