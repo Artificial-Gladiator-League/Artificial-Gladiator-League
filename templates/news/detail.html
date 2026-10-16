@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% load news_tags %}
-{% block title %}{{ post.title }} — News — Artificial Gladiator{% endblock %}
+{% block title %}{{ post.title }} — Blog — Artificial Gladiator{% endblock %}
 
 {% block content %}
 <div class="lp-news animate-fade-in max-w-3xl mx-auto">
 
   <div class="text-xs text-gray-500 mb-4">
-    <a href="{% url 'news:list' %}" class="hover:text-gold transition">&larr; Back to news</a>
+    <a href="{% url 'news:list' %}" class="hover:text-gold transition">&larr; Back to blog</a>
   </div>
 
   <article class="bg-surface border border-borderDark rounded-xl p-6 sm:p-8">

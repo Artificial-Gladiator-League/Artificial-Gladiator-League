@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 {% load news_tags %}
-{% block title %}News & Updates — Artificial Gladiator{% endblock %}
+{% block title %}Blog — Artificial Gladiator{% endblock %}
 
 {% block content %}
 <div class="lp-news animate-fade-in">
 
   <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-8">
     <div>
-      <h1 class="text-3xl font-bold">News &amp; Updates</h1>
+      <h1 class="text-3xl font-bold">Blog</h1>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-        Announcements, changelogs and tournament news from the Artificial Gladiator League.
+        Guides, announcements, changelogs and tournament news from the Artificial Gladiator League..
       </p>
     </div>
     {% if user.is_authenticated and user.is_staff %}
@@ -81,17 +81,17 @@
       {% empty %}
         <div class="bg-surface border border-borderDark rounded-xl p-8 text-center text-gray-400">
           {% if tag %}
-            No news posts tagged <span class="text-gray-200">#{{ tag }}</span>.
-            <a href="{% url 'news:list' %}" class="text-gold hover:underline">View all news</a>.
+            No blog posts tagged <span class="text-gray-200">#{{ tag }}</span>.
+            <a href="{% url 'news:list' %}" class="text-gold hover:underline">View all blog posts</a>.
           {% else %}
-            No news posts yet. Check back soon!
+            No blog posts yet. Check back soon!
           {% endif %}
         </div>
       {% endfor %}
 
       <!-- Pagination -->
       {% if page_obj.paginator.num_pages > 1 %}
-      <div class="flex items-center justify-center gap-2 mt-6 text-sm" role="navigation" aria-label="News pagination">
+      <div class="flex items-center justify-center gap-2 mt-6 text-sm" role="navigation" aria-label="Blog pagination">
         {% if page_obj.has_previous %}
           <a href="?{% if tag %}tag={{ tag|urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}"
              class="px-3 py-1.5 rounded-lg border border-borderDark hover:border-gold transition">&laquo; Prev</a>
@@ -106,7 +106,7 @@
     </div>
 
     <!-- ─── Sidebar ────────────────────────────── -->
-    <aside class="space-y-6 lg:sticky lg:top-20" aria-label="News sidebar">
+    <aside class="space-y-6 lg:sticky lg:top-20" aria-label="Blog sidebar">
 
       {% if pinned_posts %}
         <div class="rounded-xl border border-gold/30 bg-gold/5 p-4">

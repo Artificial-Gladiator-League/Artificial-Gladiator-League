@@ -5,7 +5,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
-from django.urls import include, path, reverse_lazy
+from django.urls import include, path, re_path, reverse_lazy
 from django.views.generic import RedirectView
 
 # Derive domain/protocol from SITE_URL so reset emails never expose request.get_host().
@@ -33,8 +33,8 @@ urlpatterns = [
     path("tournaments/", include("apps.tournaments.urls")),
     path("games/", include("apps.games.urls")),
     path("forum/", include("apps.forum.urls")),
-    path("news/", include("apps.news.urls")),
-    # chat app removed (apps.chat does not exist)
+    path("blog/", include("apps.news.urls")),
+    re_path(r"^news/(?P<rest>.*)$", RedirectView.as_view(url="/blog/%(rest)s", permanent=True, query_string=True)),
 ]
 
 if settings.DEBUG:

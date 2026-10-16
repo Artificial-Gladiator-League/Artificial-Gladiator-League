@@ -67,7 +67,7 @@ def news_detail(request, slug):
     post = get_object_or_404(NewsPost.objects.select_related("author"), slug=slug)
     is_staff_viewer = request.user.is_authenticated and request.user.is_staff
     if post.status != NewsPost.Status.PUBLISHED and not is_staff_viewer:
-        raise Http404("News post not found.")
+        raise Http404("Blog post not found.")
     return render(request, "news/detail.html", {"post": post})
 
 
@@ -80,7 +80,7 @@ def news_create(request):
             post = form.save(commit=False)
             post.author = request.user
             post.save()
-            messages.success(request, "News post created.")
+            messages.success(request, "Blog post created.")
             return redirect(post.get_absolute_url())
     else:
         form = NewsPostForm()
@@ -97,7 +97,7 @@ def news_edit(request, slug):
         form = NewsPostForm(request.POST, instance=post)
         if form.is_valid():
             form.save()
-            messages.success(request, "News post updated.")
+            messages.success(request, "Blog post updated.")
             return redirect(post.get_absolute_url())
     else:
         form = NewsPostForm(instance=post)
@@ -112,7 +112,7 @@ def news_delete(request, slug):
 
     if request.method == "POST":
         post.delete()
-        messages.success(request, "News post deleted.")
+        messages.success(request, "Blog post deleted.")
         return redirect("news:list")
 
     return render(request, "news/confirm_delete.html", {"post": post})

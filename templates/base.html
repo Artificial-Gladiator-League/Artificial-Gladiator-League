@@ -118,7 +118,7 @@
         <!-- Center Nav Links -->
         <div class="hidden xl:flex items-center gap-1 text-sm font-medium">
           <a href="{% url 'core:home' %}" class="nav-link{% if request.resolver_match.view_name == 'core:home' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Home</a>
-          <a href="{% url 'news:list' %}" class="nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">News</a>
+          <a href="{% url 'news:list' %}" class="nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Blog</a>
           <a href="{% url 'core:how_to_upload' %}" class="nav-link{% if request.resolver_match.view_name == 'core:how_to_upload' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How to Register</a>
           <a href="{% url 'core:how_it_works' %}" class="nav-link{% if request.resolver_match.view_name == 'core:how_it_works' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">How it Works</a>
           <!-- Play dropdown -->
@@ -222,7 +222,7 @@
     <!-- Mobile drawer menu -->
     <div id="mobileMenu" class="lp-drawer hidden xl:hidden bg-white dark:bg-surface border-t border-gray-200 dark:border-borderDark px-4 pb-4 space-y-1 text-sm">
       <a href="{% url 'core:home' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:home' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Home</a>
-      <a href="{% url 'news:list' %}" class="block nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">News</a>
+      <a href="{% url 'news:list' %}" class="block nav-link{% if request.resolver_match.app_name == 'news' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Blog</a>
       <span class="block text-xs uppercase tracking-widest text-gray-500 font-semibold pt-2 px-3">Play</span>
       <a href="{% url 'games:lobby' %}" class="block nav-link{% if request.resolver_match.app_name == 'games' %} active{% endif %} py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Lobby</a>
       <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">Create Lobby Game</button>
