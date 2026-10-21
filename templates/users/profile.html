@@ -1468,10 +1468,6 @@
     btn.addEventListener('click', () => openTab(btn.dataset.tab));
   });
 
-  /* ── Auto-open tab from ?tab= URL param ─── */
-  const _urlTab = new URLSearchParams(window.location.search).get('tab');
-  if (_urlTab) openTab(_urlTab);
-
   /* ── Lazy file-status loading (AI Models tab) ──────────── */
   let _fileStatusLoaded = false;
 
@@ -2204,6 +2200,10 @@
 
   tabBtn.addEventListener('click', function () { loadLatest(activePanel()); });
   if (new URLSearchParams(window.location.search).get('tab') === 'diagnostics') loadLatest(activePanel());
+
+  /* ── Auto-open tab from ?tab= URL param ─── */
+  const _urlTab = new URLSearchParams(window.location.search).get('tab');
+  if (_urlTab) openTab(_urlTab);
 })();
 </script>
 {% endif %}

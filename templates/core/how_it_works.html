@@ -35,7 +35,8 @@
           <summary>On this page</summary>
           <ol class="doc-toc-list">
             <li><a class="doc-toc-link" href="#overview">The big picture</a></li>
-            <li><a class="doc-toc-link" href="#register-steps">Register, step by step</a></li>
+            {% if guest_mode_enabled %}<li><a class="doc-toc-link" href="#guest-mode">Start here: play as a guest</a></li>{% endif %}
+            <li><a class="doc-toc-link" href="#register-steps">Ratings and tournaments: register, step by step</a></li>
             <li><a class="doc-toc-link" href="#repos">Your two repos</a></li>
             <li><a class="doc-toc-link" href="#sandbox">Where your AG Champion runs</a></li>
             <li><a class="doc-toc-link" href="#lifecycle">Login, play and logout</a>
@@ -45,7 +46,6 @@
                 <li><a class="doc-toc-link" href="#logout">At logout</a></li>
               </ul>
             </li>
-            {% if guest_mode_enabled %}<li><a class="doc-toc-link" href="#guest-mode">Try it as a guest</a></li>{% endif %}
             <li><a class="doc-toc-link" href="#rules">Rules and limits</a>
               <ul>
                 <li><a class="doc-toc-link" href="#rule-account">Your account</a></li>
@@ -72,11 +72,9 @@
         <h2>The big picture</h2>
         <p>
           Your <strong>AG Champion</strong> (Artificial Gladiator Champion) is the program that plays for you.
-          It is Python code that receives a board position and returns a move. What happens inside is up to you.
-        </p>
-        <p>
-          You store the code in a <a href="#term-repo">repo</a>: a folder of files on Hugging Face.
-          The platform downloads your repo and uses it to play your games.
+          It is Python code (Python is a programming language) that receives a board position and returns a move.
+          You keep the code in a <a href="#term-repo">repo</a>, which is a folder of files stored on Hugging Face.
+          The platform copies your repo to its own servers and runs it in a <a href="#term-sandbox">sandbox</a>, a locked box that cannot touch anything else, so you never host anything yourself.
         </p>
         <ol class="doc-flow" aria-label="How your files reach a game">
           <li>Your repo on Hugging Face</li>
@@ -84,21 +82,34 @@
           <li>Run in the sandbox</li>
           <li>Moves played in your games</li>
         </ol>
-        <div class="doc-callout doc-tip" role="note">
-          <span class="doc-callout-label">Tip</span>
-          <p>
-            In short: your files are copied to the platform's servers and run inside a locked-down sandbox on the
-            platform's own infrastructure. You never need to host a Space (a Hugging Face feature that runs apps),
-            an endpoint or any always-on server.
-          </p>
-        </div>
-        <p class="doc-next">Next step: <a href="#register-steps">See the registration path</a></p>
+        <p class="doc-next">Next step: <a href="{% if guest_mode_enabled %}#guest-mode{% else %}#register-steps{% endif %}">{% if guest_mode_enabled %}Play as a guest{% else %}See the registration path{% endif %}</a></p>
       </section>
+
+      {% if guest_mode_enabled %}
+      <!-- Guest mode: the main path -->
+      <section id="guest-mode" class="card mb-6">
+        <h2>Just Want to Try It? Play as a Guest</h2>
+        <p>This is the quickest way to start. A guest account needs no email and no password. You sign in with Hugging Face and connect your own Public repo.</p>
+        <p>Want the exact steps? See <a href="{% url 'core:how_to_upload' %}#try-guest">Quick start for guests</a>.</p>
+        <ol>
+          <li><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</li>
+          <li><strong>Connect your Public repo.</strong> On the Gladiator tab, enter a model repo that belongs to your own Hugging Face account. The data repo is optional: leave it empty if you do not have one. A repo ID that contains "--" is rejected for guests, and size and file-count limits apply.</li>
+          <li><strong>Platform model check.</strong> The platform downloads a fixed version of your repo and runs the same checks in the sandbox, with stricter limits for guests. The check takes about a minute.</li>
+          <li><strong>Play unrated practice games</strong> against other guests.</li>
+          <li id="guest-clean-up"><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after {{ guest_snapshot_idle_hours|default:2|floatformat:"-1" }} idle hour{{ guest_snapshot_idle_hours|default:2|pluralize }}, and the guest account after {{ guest_ttl_days|default:3 }} day{{ guest_ttl_days|default:3|pluralize }} of inactivity. You can also delete your guest data at any time.</li>
+        </ol>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
+          <p>Guests have no rated games, no leaderboard entry and no tournaments. The forum, blog and leaderboard are read-only for guests.</p>
+        </div>
+        <p class="doc-next">Next step: <a href="#register-steps">Want ratings and tournaments? Register a full account</a></p>
+      </section>
+      {% endif %}
 
       <!-- Register: the one numbered sequence -->
       <section id="register-steps" class="card mb-6">
-        <h2>Ready to Compete? Register, Step by Step</h2>
-        <p>A registered account is needed for rated games and tournaments. The path has seven steps. Each title links to the full instructions.</p>
+        <h2>Want Ratings and Tournaments? Register a Full Account, Step by Step</h2>
+        <p>A full (registered) account is needed for rated games and tournaments. The path has seven steps. Each title links to the full instructions.</p>
         <ol class="doc-path">
           <li>
             <span>
@@ -115,7 +126,7 @@
           <li>
             <span>
               <span class="doc-path-title"><a href="{% url 'core:how_to_upload' %}#step-model">Write your AG Champion</a></span>
-              Python code with two functions, plus two small config files.
+              Python code with two functions, plus a <code>config_model.json</code> file that names your code file.
             </span>
           </li>
           <li>
@@ -201,7 +212,7 @@
               The container is not thrown away after every move.
             </p>
             <ul>
-              <li>It is started ahead of time when you open the Lobby or a game page, so the first move is not a <a href="#term-cold-start">cold start</a>. The Lobby is labelled "Hatzar Grutaot" in the menu.</li>
+              <li>It is started ahead of time when you open the Lobby or a game page, so the first move is not a <a href="#term-cold-start">cold start</a>. The Lobby is labelled "Hatzar Grutaot" in the menu. This is Hebrew (<span lang="he" dir="rtl">חצר גרוטאות</span>) and means "Scrapyard". The name was coined by Malka Haas.</li>
               <li>An idle container is stopped automatically (after {{ sandbox_idle_minutes|default:15|floatformat:"-1" }} minutes without a move) and started again when needed.</li>
               <li>It is restarted if your model files change, the container dies, or a move times out.</li>
               <li>Your code never runs outside the sandbox. If the sandbox itself is unavailable, that is a platform problem: the game is cancelled and nobody loses (see <a href="#rule-sandbox-down">When the sandbox is unavailable</a>).</li>
@@ -247,32 +258,13 @@
           <li>Sandbox containers are not tied to your login. An idle one is stopped automatically after its idle timeout.</li>
           {% if guest_mode_enabled %}<li><strong>Guest accounts</strong> are cleaned up differently. See <a href="#guest-clean-up">Clean-up for guests</a>.</li>{% endif %}
         </ul>
-        <p class="doc-next">Next step: <a href="{% if guest_mode_enabled %}#guest-mode{% else %}#rules{% endif %}">{% if guest_mode_enabled %}Try it as a guest{% else %}Read the rules and limits{% endif %}</a></p>
-      </section>
-
-      {% if guest_mode_enabled %}
-      <!-- Guest mode -->
-      <section id="guest-mode" class="card mb-6">
-        <h2>Just Want to Try It? Play as a Guest</h2>
-        <p>A guest account needs no email and no password. You sign in with Hugging Face and connect your own Public repos.</p>
-        <ol>
-          <li><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</li>
-          <li><strong>Connect your Public repos.</strong> On the Gladiator tab, enter a model repo and a data repo that belong to your own Hugging Face account.</li>
-          <li><strong>Platform model check.</strong> The platform downloads a pinned version of your repos and runs the same checks in the sandbox, with stricter limits for guests.</li>
-          <li><strong>Play unrated practice games</strong> against other guests.</li>
-          <li id="guest-clean-up"><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after {{ guest_snapshot_idle_hours|default:2|floatformat:"-1" }} idle hour{{ guest_snapshot_idle_hours|default:2|pluralize }}, and the guest account after {{ guest_ttl_days|default:3 }} day{{ guest_ttl_days|default:3|pluralize }} of inactivity. You can also delete your guest data at any time.</li>
-        </ol>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
-          <p>Guests have no rated games, no leaderboard entry and no tournaments. The forum, blog and leaderboard are read-only for guests.</p>
-        </div>
         <p class="doc-next">Next step: <a href="#rules">Read the rules and limits</a></p>
       </section>
-      {% endif %}
 
       <!-- Rules and limits -->
       <section id="rules" class="card mb-6">
         <h2>Rules and limits</h2>
+        <p>Guests only need to know <a href="#rule-limits">Sandbox limits</a> and <a href="#rule-moves">When a move fails</a>.</p>
         <p>These rules have consequences for you. Each rule is explained once, here. Other pages link to this section.</p>
 
         <h3 id="rule-account">Your account</h3>
@@ -298,8 +290,8 @@
         </div>
 
         <h3 id="rule-qualification">Tournament qualification</h3>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <p>You need <strong>{{ tournament_min_rated_games|default:30 }} rated games</strong> with your AG Champion before you can <strong>join</strong> a tournament. Registering your AG Champion (Steps 1 to 6 of the setup guide) does not need them.</p>
           <ul>
             <li>A game counts when it is finished, was played outside a tournament{% if guest_mode_enabled %} and is not a guest game{% endif %}. Chess and Breakthrough are counted separately.</li>
@@ -314,7 +306,7 @@
         <h3 id="rule-sha">Version pinning and disqualification</h3>
         <div class="doc-callout doc-warning" role="note">
           <span class="doc-callout-label">Warning</span>
-          <p>Do not push changes to your AG Champion repo after joining a tournament. A changed <a href="#term-sha">SHA</a> means automatic disqualification.</p>
+          <p><strong>Do not push changes to your AG Champion repo after joining a tournament. You will be disqualified automatically.</strong> A changed <a href="#term-sha">SHA</a> (the unique ID of a commit) is how the platform detects the change.</p>
         </div>
         <ul>
           <li><strong>At tournament registration</strong>, the exact commit SHA of your model repo is recorded.</li>
@@ -358,20 +350,20 @@
         </details>
 
         <h3 id="rule-moves">When a move fails</h3>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <ul>
             <li>If your AG Champion answers within the move time limit with a legal move, that move is used. It is shown at once, or after the configured <a href="#term-thinking-time">thinking time</a> target, whichever is longer.</li>
             <li>If it is too slow, raises an error, returns nothing, or returns an illegal move, the platform plays a random legal move for that turn (captures preferred) so the game keeps going. When a move times out, the container is restarted.</li>
             <li>The time your AG Champion spends thinking is deducted from your game clock.</li>
           </ul>
         </div>
-        <div class="doc-callout doc-warning" role="note">
-          <span class="doc-callout-label">Warning</span>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <p>If your AG Champion's last model check failed, no random move is played and you <a href="#term-forfeit">forfeit</a> the game.</p>
         </div>
-        <div id="rule-sandbox-down" class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
+        <div id="rule-sandbox-down" class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <p><strong>When the sandbox is unavailable.</strong> This is a platform problem, never your fault, so no player loses and no random move is played.</p>
           <ul>
             <li>A game in the Lobby is cancelled with no result and no rating change.</li>
@@ -469,7 +461,7 @@
           <dt id="term-commit">Commit</dt>
           <dd>A saved change in a repo. Every commit has its own ID, called a SHA.</dd>
           <dt id="term-config-file">Config file</dt>
-          <dd>A small JSON file at the root of a repo that describes its files. JSON is a plain-text format for settings. The files are <code>config_model.json</code> and <code>config_data.json</code>.</dd>
+          <dd>A small JSON file at the root of a repo that describes its files. JSON is a plain-text format for settings. The files are <code>config_model.json</code> and <code>config_data.json</code>. <code>config_model.json</code> names your entry-point file under <code>"entrypoint"</code>. <code>config_data.json</code> is only for a data repo.</dd>
           <dt id="term-contract">Contract</dt>
           <dd>The two functions your code must define: <code>load(ctx)</code> and <code>get_move(state, fen, player)</code>. There is no other interface.</dd>
           <dt id="term-cooldown">Cooldown (repo change)</dt>
@@ -481,7 +473,7 @@
           <dt id="term-elo">Elo</dt>
           <dd>The number that rates the playing strength of your AG Champion. Results of rated games update it.</dd>
           <dt id="term-entrypoint">Entry-point file</dt>
-          <dd>The <code>.py</code> file the platform imports to run your AG Champion. By default it is <code>&lt;game&gt;_mcvs.py</code>.</dd>
+          <dd>The Python file (<code>.py</code>) that the platform runs to start your AG Champion. You tell the platform which file to run by writing its name in <code>config_model.json</code>, under <code>"entrypoint"</code>. <code>NAME_OF_ALGO_FILE.py</code> is a name you choose, for example <code>my_bot.py</code>. It must end in <code>.py</code> and have no spaces. Use the same name everywhere.</dd>
           <dt id="term-fen">FEN</dt>
           <dd>A line of text that describes a board position. It is the position your code receives in <code>get_move</code>.</dd>
           <dt id="term-forfeit">Forfeit</dt>
@@ -490,16 +482,16 @@
           <dd>A Hugging Face repo that only approved accounts can read. You turn it on in the repo's Settings with Access Requests.</dd>
           {% if guest_mode_enabled %}
           <dt id="term-guest">Guest</dt>
-          <dd>An account that needs no email and no password. You sign in with Hugging Face and connect Public repos. Guest games are unrated.</dd>
+          <dd>An account that needs no email and no password. You sign in with Hugging Face and connect a Public repo. Guest games are unrated.</dd>
           {% endif %}
           <dt id="term-hugging-face">Hugging Face</dt>
           <dd>A website where you store and share files in repos. You need an account there to register an AG Champion.</dd>
           <dt id="term-lobby">Lobby</dt>
-          <dd>The page where you challenge other players and start games. The Lobby is labelled "Hatzar Grutaot" in the menu.</dd>
+          <dd>The page where you challenge other players and start games. The Lobby is labelled "Hatzar Grutaot" in the menu. This is Hebrew (<span lang="he" dir="rtl">חצר גרוטאות</span>) and means "Scrapyard". The name was coined by Malka Haas.</dd>
           <dt id="term-main-branch">Main branch</dt>
           <dd>The default version line of a repo, named <code>main</code>. The platform reads your files from it.</dd>
-          <dt id="term-mcvs">MCVS</dt> <!-- CONFIRM: MCVS expansion -->
-          <dd>Short for Monte Carlo Vector Search, one example of a search method you can use. The platform only uses the name in the default file name <code>&lt;game&gt;_mcvs.py</code>.</dd>
+          <dt id="term-mcvs">MCVS (optional)</dt>
+          <dd>Optional: you can skip this term. It is short for Monte Carlo Vector Search, one example of a search method you can use.</dd>
           <dt id="term-model-check">Model check</dt>
           <dd>An automatic test the platform runs on your AG Champion. For example, it checks that your code loads and that every move on three sample positions is legal.</dd>
           <dt id="term-model-repo">Model repo</dt>

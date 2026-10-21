@@ -9,19 +9,40 @@
   <header class="doc-hero">
     <p class="doc-eyebrow">Step-by-step guide</p>
     <h1>How to Register Your AG Champion</h1>
+    {% if guest_mode_enabled %}
+    <p class="doc-lead">
+      This guide shows you how to get your Artificial Gladiator Champion (<strong>AG Champion</strong>) playing on the Artificial Gladiator League (<strong>AGL</strong>) platform.
+      Your AG Champion is a small Python program (Python is a programming language) that plays a board game for you.
+      You do not need to know how to code. You can copy ready-made code, or ask an AI assistant to write it.
+    </p>
+    <p>
+      The fastest way to start is as a <strong>guest</strong>. Use the <a href="#try-guest">Quick start for guests</a> below.
+      If you later want ratings and tournaments, see <a href="#full-account">Want ratings and tournaments? Create a full account</a>.
+    </p>
+    {% else %}
     <p class="doc-lead">
       This guide gives you the exact steps to register your Artificial Gladiator Champion (<strong>AG Champion</strong>), the program that plays games for you on the Artificial Gladiator League (<strong>AGL</strong>) platform.
-      You store your files in a repo on Hugging Face, connect that repo on your Profile, prove that you own it, and run a built-in check.
+      You store your files in a repo on Hugging Face (a repo is a folder of files stored online), connect that repo on your Profile, prove that you own it, and run a built-in check.
       Then your AG Champion can play in games and tournaments.
     </p>
+    {% endif %}
     <p>Want the background first? Read <a href="{{ hiw }}">How it works</a>. It explains what the platform does and lists the rules that affect you.</p>
     <div class="doc-needs">
       <h2>What you'll need</h2>
+      {% if guest_mode_enabled %}
+      <ul>
+        <li>A <a href="{{ hiw }}#term-hugging-face">Hugging Face</a> account. Hugging Face is the website where your files are stored. You sign in with it as a guest.</li>
+        <li>A computer with a web browser. You do not need to install anything.</li>
+        <li>Bot code. Copy the <a href="#starter-code">starter code</a>, or use an <a href="#ai-assistant">AI assistant</a>.</li>
+        <li>About 15 minutes.</li>
+      </ul>
+      {% else %}
       <ul>
         <li>An account on this platform. Step 1 creates it.</li>
         <li>A <a href="{{ hiw }}#term-hugging-face">Hugging Face</a> account. Hugging Face is the website where your files are stored.</li>
-        <li>A Python program, your AG Champion. The easiest start is to copy a working example (Step 2) and edit it (Step 3).</li>
+        <li>A Python program, your AG Champion. The easiest start is to copy the <a href="#starter-code">starter code</a> (Step 2) and edit it (Step 3).</li>
       </ul>
+      {% endif %}
     </div>
   </header>
 
@@ -32,19 +53,27 @@
         <details class="doc-toc" id="docToc" open>
           <summary>On this page</summary>
           <ol class="doc-toc-list">
-            <li><a class="doc-toc-link" href="#quick-start">The 7 steps at a glance</a></li>
-            {% if guest_mode_enabled %}<li><a class="doc-toc-link" href="#try-guest">Try first as a guest</a></li>{% endif %}
-            <li><a class="doc-toc-link" href="#step-account">Step 1: Create your account</a></li>
-            <li><a class="doc-toc-link" href="#step-repos">Step 2: Create your repos</a>
-              <ul><li><a class="doc-toc-link" href="#example">Start from a working example</a></li></ul>
+            {% if guest_mode_enabled %}<li><a class="doc-toc-link" href="#try-guest">Quick start for guests</a>
+              <ul><li><a class="doc-toc-link" href="#guest-before-you-start">Before you start (guests)</a></li></ul>
+            </li>{% endif %}
+            <li><a class="doc-toc-link" href="#starter-code">Starter code (Chess)</a></li>
+            <li><a class="doc-toc-link" href="#ai-assistant">Build your bot with an AI assistant</a></li>
+            <li><a class="doc-toc-link" href="#full-account">Want ratings and tournaments? Create a full account</a>
+              <ul>
+                <li><a class="doc-toc-link" href="#quick-start">The 7 steps at a glance</a></li>
+                <li><a class="doc-toc-link" href="#step-account">Step 1: Create your account</a></li>
+                <li><a class="doc-toc-link" href="#step-repos">Step 2: Create your repos</a></li>
+                <li><a class="doc-toc-link" href="#example">Start from a working example</a></li>
+                <li><a class="doc-toc-link" href="#step-model">Step 3: Write your AG Champion</a></li>
+                <li><a class="doc-toc-link" href="#step-register">Step 4: Register your repos</a></li>
+                <li><a class="doc-toc-link" href="#step-ownership">Step 5: Prove ownership</a></li>
+                <li><a class="doc-toc-link" href="#step-diagnostics">Step 6: Run Diagnostics</a></li>
+                <li><a class="doc-toc-link" href="#step-compete">Step 7: Play and compete</a></li>
+              </ul>
             </li>
-            <li><a class="doc-toc-link" href="#step-model">Step 3: Write your AG Champion</a>
-              <ul><li><a class="doc-toc-link" href="#step-config">Add the config files</a></li></ul>
+            <li><a class="doc-toc-link" href="#advanced">Advanced</a>
+              <ul><li><a class="doc-toc-link" href="#step-config">Config files</a></li></ul>
             </li>
-            <li><a class="doc-toc-link" href="#step-register">Step 4: Register your repos</a></li>
-            <li><a class="doc-toc-link" href="#step-ownership">Step 5: Prove ownership</a></li>
-            <li><a class="doc-toc-link" href="#step-diagnostics">Step 6: Run Diagnostics</a></li>
-            <li><a class="doc-toc-link" href="#step-compete">Step 7: Play and compete</a></li>
             <li><a class="doc-toc-link" href="#best-practices">Best practices</a></li>
             <li><a class="doc-toc-link" href="#troubleshooting">Troubleshooting</a></li>
             <li><a class="doc-toc-link" href="#faq">FAQ</a></li>
@@ -56,48 +85,301 @@
 
     <div class="doc-main">
 
-      <div class="doc-callout doc-important" role="note" style="margin-top:0">
-        <span class="doc-callout-label">Important</span>
-        <p>Three rules can cost you games or a tournament place. Read them before you start:</p>
-        <ul>
-          <li><a href="{{ hiw }}#rule-repo-access">Repo access</a>: your repos need the right visibility, and you must approve the platform's account.</li>
-          <li><a href="{{ hiw }}#rule-qualification">Tournament qualification</a>: you need {{ tournament_min_rated_games|default:30 }} rated games before you can join tournaments.</li>
-          <li><a href="{{ hiw }}#rule-sha">Version pinning</a>: new commits in your repos can disqualify you or block tournament entry.</li>
-        </ul>
-      </div>
+      {% if guest_mode_enabled %}
+      <!-- Quick start for guests -->
+      <section id="try-guest" class="card mb-6">
+        <h2>Quick start for guests</h2>
+        <p><strong>Takes about 15 minutes.</strong> A guest account needs no email and no password. Guest games are unrated and are played against other guests only. More about guests: <a href="{{ hiw }}#guest-mode">Just Want to Try It? Play as a Guest</a>.</p>
+
+        <div id="guest-before-you-start" class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Before you start (guests)</span>
+          <ul>
+            <li>Your repo must be <strong>Public</strong>. A <a href="{{ hiw }}#term-repo">repo</a> is a folder of files stored on Hugging Face. Public means anyone can read it.</li>
+            <li>It must be under <strong>your own</strong> Hugging Face username. A repo ID looks like <code>your-username/my-bot</code>.</li>
+            <li>The repo name must <strong>not</strong> contain two hyphens in a row (<code>--</code>). The platform rejects it.</li>
+            <li>Size and file-count limits apply. Keep your repo small.</li>
+            <li>The platform check takes about a minute.</li>
+            <li>The data repo is <strong>optional</strong>. You can leave it empty.</li>
+            <li>You do not need a Gated repo, an approval of <code>ArtificialGladiatorLeague</code> or an <code>AGL_VERIFY.txt</code> file. Those are only for full accounts.</li>
+          </ul>
+        </div>
+
+        <ol class="doc-path">
+          <li>
+            <span>
+              <span class="doc-path-title">Sign in with Hugging Face as a guest</span>
+              Choose <strong>Continue with Hugging Face</strong>. The platform only receives your public Hugging Face username. If you have no Hugging Face account, create one at huggingface.co first.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title">Create a public model repo on Hugging Face</span>
+              On Hugging Face, create a new <strong>Model</strong> repo and keep it <strong>Public</strong>. Do not use <code>--</code> in its name. See <em>How to create a repo</em> below.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title">Get the bot code and save it in your repo</span>
+              Copy the <a href="#starter-code">starter code</a>, or use an <a href="#ai-assistant">AI prompt</a> (Chess or Breakthrough). Save the code in your repo as <code>NAME_OF_ALGO_FILE.py</code>. <code>NAME_OF_ALGO_FILE.py</code> is a name you choose, for example <code>my_bot.py</code>. It must end in <code>.py</code> and have no spaces. Use the same name everywhere. Then add a second file named <code>config_model.json</code> that gives your file name under <code>"entrypoint"</code>: see <a href="#step-config">Config files</a>. The AI prompts write this file for you. See <em>How to add a file</em> below.
+              <!-- TODO: confirm with platform owner that "entrypoint" is now always required -->
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title">Paste your repo ID on the Gladiator tab</span>
+              Open the <strong>Gladiator</strong> tab on your <a href="{% url 'users:profile' %}">Profile</a>. Paste your repo ID (for example <code>your-username/my-bot</code>) in the model repo field for your game and save it. Leave the data repo empty.
+            </span>
+          </li>
+          <li>
+            <span>
+              <span class="doc-path-title">Wait about a minute for the check, then play</span>
+              The platform checks your code in a <a href="{{ hiw }}#term-sandbox">sandbox</a>. A sandbox is a locked box on the platform's servers where your bot runs. When the check passes, go to the <a href="{% url 'games:lobby' %}">Lobby</a> and play. If it fails, the Gladiator tab shows why: see <a href="#ts-model-check">Model check failed</a>.
+            </span>
+          </li>
+        </ol>
+
+        <details class="doc-details">
+          <summary>How to create a repo <span class="doc-tag">Generic guide</span></summary>
+          <div class="doc-details-body">
+            <p>Screens on Hugging Face change from time to time. If a name below is different on your screen, look for the closest match.</p>
+            <ol>
+              <li>Sign in at huggingface.co.</li>
+              <li>Click your profile picture, then choose <strong>New Model</strong>.</li>
+              <li>Type a name. Do not use <code>--</code> in it. Check that you are the owner and that the visibility is <strong>Public</strong>. Click the button that creates the repo.</li>
+              <li>Your repo ID is your username, a slash and the name, for example <code>your-username/my-bot</code>.</li>
+            </ol>
+          </div>
+        </details>
+
+        <details class="doc-details">
+          <summary>How to add a file (and what a commit is) <span class="doc-tag">Generic guide</span></summary>
+          <div class="doc-details-body">
+            <ol>
+              <li>Open your repo and click the <strong>Files</strong> tab (it may be called Files and versions).</li>
+              <li>Click <strong>Add file</strong>, then choose to create a new file.</li>
+              <li>Type the file name, for example <code>NAME_OF_ALGO_FILE.py</code>. Paste the code as the content. Do the same for <code>config_model.json</code>.</li>
+              <li>Commit the file to the <code>main</code> branch. A <a href="{{ hiw }}#term-commit">commit</a> saves your change in the repo. On Hugging Face it is the button at the bottom of the page. The <code>main</code> branch is the default version of your repo.</li>
+            </ol>
+          </div>
+        </details>
+
+        <p class="doc-next">Next: <a href="#starter-code">Starter code</a> or <a href="#ai-assistant">Build your bot with an AI assistant</a></p>
+      </section>
+      {% endif %}
+
+      <!-- Starter code -->
+      <section id="starter-code" class="card mb-6">
+        <h2>Starter code (Chess)</h2>
+        <p>This is a complete bot for Chess. It plays random legal moves, so it is not strong. It is a good first test to see that your setup works. You can improve it later.</p>
+        <p><code>NAME_OF_ALGO_FILE.py</code> is a name you choose, for example <code>my_bot.py</code>. It must end in <code>.py</code> and have no spaces. Use the same name everywhere.</p>
+        <p>You tell the platform which file to run by writing its name in <code>config_model.json</code> under <code>"entrypoint"</code>. See <a href="#step-config">Config files</a>. For Breakthrough, use the <a href="#ai-assistant">AI prompt</a>, or see the Breakthrough starter under <a href="#step-model">Move format</a> in Step 3.</p>
+
+        <div class="doc-code">
+          <span class="doc-code-label">Starter code: a working bot that plays random legal moves. Save it as NAME_OF_ALGO_FILE.py</span>
+          <button type="button" class="doc-copy" data-copy-target="code-chess">Copy</button>
+<pre tabindex="0" id="code-chess"><code># NAME_OF_ALGO_FILE.py - at the root of your model repo
+import random
+
+import chess
+
+
+def load(ctx):
+    # Called once. ctx.data_dir is None if no data files are available.
+    state = {"opening_book": None}
+    if ctx.data_dir is not None:
+        book = ctx.data_dir / "opening_book.txt"
+        if book.exists():
+            state["opening_book"] = book.read_text(encoding="utf-8").splitlines()
+    return state
+
+
+def get_move(state, fen, player):
+    # Return one legal move in UCI notation, for example "e2e4".
+    board = chess.Board(fen)
+    legal = list(board.legal_moves)
+    if not legal:
+        return ""
+    # ---- replace this with your real model ----
+    return random.choice(legal).uci()</code></pre>
+        </div>
+      </section>
+
+      <!-- Build your bot with an AI assistant -->
+      <section id="ai-assistant" class="card mb-6">
+        <h2>Build your bot with an AI assistant</h2>
+        <p>You do not have to write the code yourself. These prompts work with any AI assistant.</p>
+        <ol>
+          <li>Choose a file name that ends in <code>.py</code>, for example <code>my_bot.py</code>. In each prompt, replace <code>[YOUR FILE NAME]</code> with that name before you send it. In the Fix it prompt, also replace each <code>[PASTE HERE]</code>.</li>
+          <li>Click <strong>Copy</strong> on the prompt for your game.</li>
+          <li>Paste it into the AI assistant and send it.</li>
+          <li>Save the code the assistant gives you in your repo with the file name you chose. Save the <code>config_model.json</code> file it gives you too.</li>
+          <li>If the check fails, copy the message from the Gladiator tab and use the <strong>Fix it</strong> prompt.</li>
+        </ol>
+
+        <div class="doc-code">
+          <span class="doc-code-label">Chess prompt</span>
+          <button type="button" class="doc-copy" data-copy-target="code-prompt-chess">Copy</button>
+<pre tabindex="0" id="code-prompt-chess"><code>I am a complete beginner. Please write a Chess bot for the Artificial Gladiator League (AGL) website.
+
+FILE NAME
+The file name is [YOUR FILE NAME] (for example my_bot.py). Return ONE complete file with exactly that name. Do not use any other file name.
+
+THE CONTRACT
+The file must define these two functions:
+1. load(ctx) runs ONCE, when the bot starts. It returns "state". State can be any Python object, for example a dict.
+   ctx.model_dir and ctx.data_dir are read-only folders (pathlib.Path). ctx.data_dir can be None.
+2. get_move(state, fen, player) is called on EVERY move.
+   - state is what load returned.
+   - fen is the board position, written as FEN text.
+   - player is "w" or "b". It is the side to move.
+   - Return the move as a plain string. Never return a list, a dict or JSON.
+
+MOVE FORMAT
+Use UCI notation, for example e2e4. For a promotion add the piece letter, for example e7e8q. Do NOT use SAN such as Nf3.
+
+LIMITS OF THE PLATFORM
+The bot runs in a locked box (a sandbox) with these limits:
+- No network. Do not use requests or urllib.
+- Only these libraries exist: python-chess (import chess), numpy and torch (CPU only). Do not use any other third-party library.
+- Files are read-only, except the folder /tmp.
+- 512 MB of memory and 1 CPU.
+- One move may take at most 30 seconds. Keep your search time under about 5 seconds per move.
+
+RULES FOR THE CODE
+- Load files and weights inside load(). Never load files inside get_move.
+- Always return a legal move. If there are no legal moves, return "" (an empty string).
+- Start with the simplest working version: pick a random legal move, and prefer captures when there are any.
+- Add short comments that a beginner can read.
+
+WHAT TO RETURN
+1. The complete file [YOUR FILE NAME] in one block.
+2. A small file named config_model.json with the fields "entrypoint" and "files". The value of "entrypoint" is [YOUR FILE NAME]. The value of "files" is a list that contains [YOUR FILE NAME].
+3. Three plain sentences that explain how I can improve the bot later.</code></pre>
+        </div>
+
+        <p><strong>Breakthrough rules in short.</strong> The position is a FEN-like string (text that describes the board) with rank 8 first. A rank is a row of the board. <code>W</code> is a white piece, <code>B</code> is a black piece, and digits are empty squares. A piece moves one square forward: straight onto an empty square, or diagonally onto an empty square or an enemy piece. White moves toward rank 8, black toward rank 1, and a player who reaches the last rank wins.</p>
+
+        <div class="doc-code">
+          <span class="doc-code-label">Breakthrough prompt</span>
+          <button type="button" class="doc-copy" data-copy-target="code-prompt-breakthrough">Copy</button>
+<pre tabindex="0" id="code-prompt-breakthrough"><code>I am a complete beginner. Please write a Breakthrough bot for the Artificial Gladiator League (AGL) website.
+
+FILE NAME
+The file name is [YOUR FILE NAME] (for example my_bot.py). Return ONE complete file with exactly that name. Do not use any other file name.
+
+THE GAME
+Breakthrough is played on an 8 by 8 board. Files are a to h, from left to right. Ranks are 1 to 8.
+The position is a FEN-like string. Rank 8 comes first. W is a white piece, B is a black piece, digits are empty squares, and the side to move is at the end.
+The start position is: BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w
+White moves toward rank 8. Black moves toward rank 1.
+A piece moves one square forward. It can go straight, only onto an empty square. It can go diagonally, onto an empty square or onto an enemy piece.
+A player wins by reaching the last rank.
+
+THE CONTRACT
+The file must define these two functions:
+1. load(ctx) runs ONCE, when the bot starts. It returns "state". State can be any Python object, for example a dict.
+   ctx.model_dir and ctx.data_dir are read-only folders (pathlib.Path). ctx.data_dir can be None.
+2. get_move(state, fen, player) is called on EVERY move.
+   - state is what load returned.
+   - fen is the position, written as the FEN-like string described above.
+   - player is "w" or "b". It is the side to move.
+   - Return the move as a plain string. Never return a list, a dict or JSON.
+
+MOVE FORMAT
+Exactly 4 characters: the square you move from, then the square you move to. Examples: a2a3 and b2c3.
+
+LIMITS OF THE PLATFORM
+The bot runs in a locked box (a sandbox) with these limits:
+- No network. Do not use requests or urllib.
+- Only these libraries exist: python-chess, numpy and torch (CPU only). Do not use any other third-party library.
+- Files are read-only, except the folder /tmp.
+- 512 MB of memory and 1 CPU.
+- One move may take at most 30 seconds. Keep your search time under about 5 seconds per move.
+
+RULES FOR THE CODE
+- Load files and weights inside load(). Never load files inside get_move.
+- Always return a legal move. If there are no legal moves, return "" (an empty string).
+- Start with the simplest working version: write a real legal-move generator for the rules above, and pick a random legal move. Use only the Python standard library for this first version.
+- Add short comments that a beginner can read.
+
+WHAT TO RETURN
+1. The complete file [YOUR FILE NAME] in one block.
+2. A small file named config_model.json with the fields "entrypoint" and "files". The value of "entrypoint" is [YOUR FILE NAME]. The value of "files" is a list that contains [YOUR FILE NAME].
+3. Three plain sentences that explain how I can improve the bot later.</code></pre>
+        </div>
+
+        <div class="doc-code">
+          <span class="doc-code-label">Fix it prompt</span>
+          <button type="button" class="doc-copy" data-copy-target="code-prompt-fix">Copy</button>
+<pre tabindex="0" id="code-prompt-fix"><code>I am a complete beginner. My bot for the Artificial Gladiator League (AGL) website does not work. Please fix it.
+
+GAME: [PASTE HERE: Chess or Breakthrough]
+FILE NAME: [YOUR FILE NAME] (for example my_bot.py)
+
+THE ERROR MESSAGE (from the Gladiator tab or the Diagnostics tab):
+[PASTE HERE]
+
+MY CURRENT CODE:
+[PASTE HERE]
+
+WHAT I WANT YOU TO DO
+1. First, explain the cause of the problem in plain language. Use short sentences and no jargon.
+2. Then return the FULL fixed file with the name [YOUR FILE NAME]. Do not return only the lines that changed.
+3. If config_model.json must change too, return the full fixed config_model.json. Its "entrypoint" must be [YOUR FILE NAME] and its "files" list must contain [YOUR FILE NAME].
+4. End with one short sentence that tells me what to do next.
+
+THE RULES THE FIXED CODE MUST FOLLOW
+- The file defines load(ctx) and get_move(state, fen, player). load(ctx) runs ONCE and returns "state". get_move is called on EVERY move. player is "w" or "b". get_move returns a plain string. Never a list, a dict or JSON.
+- Chess moves use UCI notation, for example e2e4, or e7e8q for a promotion. Not SAN such as Nf3.
+- Breakthrough moves are exactly 4 characters: the square you move from, then the square you move to, for example a2a3 or b2c3.
+- Breakthrough rules: the position is a FEN-like string with rank 8 first, W for white pieces, B for black pieces, digits for empty squares and the side to move at the end. The start position is BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w. White moves toward rank 8, black toward rank 1. A piece moves one square forward: straight onto an empty square, or diagonally onto an empty square or an enemy piece. A player wins by reaching the last rank.
+- Limits: no network (do not use requests or urllib). Only python-chess, numpy and torch (CPU only) exist. Files are read-only, except the folder /tmp. 512 MB of memory, 1 CPU. One move may take at most 30 seconds, so keep the search under about 5 seconds.
+- Load files and weights inside load(). Never load files inside get_move.
+- Always return a legal move. If there are no legal moves, return "" (an empty string).
+- Keep short comments that a beginner can read.</code></pre>
+        </div>
+      </section>
+
+      <!-- Full account -->
+      <section id="full-account" class="card mb-6">
+        <h2>Want ratings and tournaments? Create a full account</h2>
+        <p>
+          A full account gives you rated games, an <a href="{{ hiw }}#term-elo">Elo</a> rating (a number for your bot's strength) and tournaments.
+          It needs more setup than a guest account: a Gated model repo (only accounts you approve can read it) and a verification file.
+          For tournaments you also need {{ tournament_min_rated_games|default:30 }} rated games first.
+        </p>
+        <p>Read these rules first: <a href="{{ hiw }}#rule-repo-access">Repo access</a>, <a href="{{ hiw }}#rule-qualification">Tournament qualification</a> ({{ tournament_min_rated_games|default:30 }} rated games) and <a href="{{ hiw }}#rule-sha">Version pinning</a>.</p>
+
+        <div id="words-you-will-meet" class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Words you will meet</span>
+          <ul>
+            <li><a href="{{ hiw }}#term-repo">Repo</a>: a folder of files stored on Hugging Face.</li>
+            <li><a href="{{ hiw }}#term-commit">Commit</a>: a saved change in a repo.</li>
+            <li><a href="{{ hiw }}#term-gated">Gated</a>: a repo that only accounts you approve can read.</li>
+            <li><a href="{{ hiw }}#term-sha">SHA</a>: the unique ID of a commit.</li>
+            <li><a href="{{ hiw }}#term-sandbox">Sandbox</a>: the locked box on the platform's servers where your bot runs.</li>
+            <li><a href="{{ hiw }}#term-fen">FEN</a>: a line of text that describes a board position.</li>
+            <li><a href="{{ hiw }}#term-uci">UCI</a>: the way Chess moves are written, for example <code>e2e4</code>.</li>
+            <li><a href="{{ hiw }}#term-entrypoint">Entry-point file</a>: the Python file the platform runs to start your bot.</li>
+          </ul>
+        </div>
+      </section>
 
       <!-- Quick start: the overview of the one numbered sequence -->
       <section id="quick-start" class="card mb-6">
         <h2>The 7 steps at a glance</h2>
-        <p>This is the shortest path from nothing to a working, registered AG Champion. The steps below use the same numbers and the same order. Do them one after the other.</p>
+        <p>This is the shortest path from nothing to a working, registered AG Champion with a full account. The steps below use the same numbers and the same order. Do them one after the other.</p>
         <ol class="doc-path">
           <li><span><span class="doc-path-title"><a href="#step-account">Create your account</a></span>Fill in the registration form and activate your account by email.</span></li>
-          <li><span><span class="doc-path-title"><a href="#step-repos">Create your Hugging Face repos</a></span>Copy the <a href="#example">working example</a>, make your model repo Gated, and approve <code>ArtificialGladiatorLeague</code>.</span></li>
-          <li><span><span class="doc-path-title"><a href="#step-model">Write your AG Champion</a></span>Edit the example code and add the <a href="#step-config">config files</a>.</span></li>
+          <li><span><span class="doc-path-title"><a href="#step-repos">Create your Hugging Face repos</a></span>Start from the <a href="#example">working example</a>, make your model repo Gated, and approve <code>ArtificialGladiatorLeague</code>.</span></li>
+          <li><span><span class="doc-path-title"><a href="#step-model">Write your AG Champion</a></span>Edit the example code. Add <a href="#step-config"><code>config_model.json</code></a> with <code>"entrypoint"</code> set to your file name. <!-- TODO: confirm with platform owner that "entrypoint" is now always required --></span></li>
           <li><span><span class="doc-path-title"><a href="#step-register">Register your repos</a></span>Open the <strong>Gladiator</strong> tab on your <a href="{% url 'users:profile' %}">Profile</a>, enter your model repo, and click the gold button <strong>Save and verify</strong>.</span></li>
           <li><span><span class="doc-path-title"><a href="#step-ownership">Prove you own your repos</a></span>Add <code>AGL_VERIFY.txt</code> with the code shown on the Gladiator tab, then click <strong>Verify Ownership</strong>.</span></li>
           <li><span><span class="doc-path-title"><a href="#step-diagnostics">Run Diagnostics</a></span>Open the <strong>Diagnostics</strong> tab and click <strong>Run diagnostics</strong>. Fix what it reports and run it again until it says <em>RESULT: your model works correctly</em>.</span></li>
-          <li><span><span class="doc-path-title"><a href="#step-compete">Play and compete</a></span>Play rated games in the Lobby and enter tournaments. The Lobby is labelled "Hatzar Grutaot" in the menu.</span></li>
+          <li><span><span class="doc-path-title"><a href="#step-compete">Play and compete</a></span>Play rated games in the Lobby and enter tournaments. The Lobby is labelled "Hatzar Grutaot" in the menu. This is Hebrew (<span lang="he" dir="rtl">חצר גרוטאות</span>) and means "Scrapyard". The name was coined by Malka Haas.</span></li>
         </ol>
         <p class="doc-next">Next step: <a href="#step-account">Step 1: Create your account</a></p>
       </section>
-
-      {% if guest_mode_enabled %}
-      <!-- Try as a guest -->
-      <section id="try-guest" class="card mb-6">
-        <h2>Try first as a guest</h2>
-        <div class="doc-callout doc-tip" role="note">
-          <span class="doc-callout-label">Tip</span>
-          <p>
-            Want to see your AG Champion play before setting up a full account? Sign in with Hugging Face as a guest and connect
-            Public repos. No Gated setting, no approval of <code>ArtificialGladiatorLeague</code> and no verification file are needed.
-            Guest games are unrated and played against other guests.
-            You can create a permanent account later from the guest banner without losing your connected repos.
-          </p>
-        </div>
-        <p>How guest accounts work, and what they cannot do: <a href="{{ hiw }}#guest-mode">Just Want to Try It? Play as a Guest</a>.</p>
-      </section>
-      {% endif %}
 
       <!-- STEP 1 -->
       <section id="step-account" class="card mb-6">
@@ -123,7 +405,6 @@
           <dt>If it fails</dt>
           <dd>The email does not arrive: <a href="#ts-activation">The activation email did not arrive</a>.</dd>
         </dl>
-        <!-- SCREENSHOT: The registration form with every field filled in and the Create Account button visible. Save as static/img/docs/step1-register.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step1-register.png" alt="The registration form with username, email, AG name and country of residence filled in and the Create Account button at the bottom"><figcaption>The registration form.</figcaption></figure> -->
         <p class="doc-next">Next step: <a href="#step-repos">Step 2: Create your Hugging Face repos</a></p>
       </section>
 
@@ -143,8 +424,8 @@
             Without both, saving your repo fails. Why: <a href="{{ hiw }}#rule-repo-access">Repo access</a>.
           </p>
         </div>
-        <div class="doc-callout doc-warning" role="note">
-          <span class="doc-callout-label">Warning</span>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
           <p>
             <strong>The data repo must be <a href="{{ hiw }}#term-public">Public</a></strong> (anyone can read it).
             A private or gated data repo is rejected when you save it. Why: <a href="{{ hiw }}#rule-repo-access">Repo access</a>.
@@ -154,7 +435,7 @@
           <dt>What to do</dt>
           <dd>
             <ol>
-              <li>Create your model repo. The easiest way is to copy a working example: see <a href="#example">Start from a working example</a> below.</li>
+              <li>Create your model repo. The easiest way is to start from the starter code: see <a href="#example">Start from a working example</a> below.</li>
               <li>Make the model repo Gated: open the repo's <em>Settings</em> and enable <em>Access Requests</em>.</li>
               <li>Approve <code>ArtificialGladiatorLeague</code> in the repo's Access settings. Do this before Step 4, because saving your repo fails until you have approved it. The yellow button <strong>Open Access Settings</strong> on the Gladiator tab opens that page as soon as you have typed your repo ID there.</li>
               <li>Optional: if your AG Champion reads data files, create a data repo and make it Public.</li>
@@ -167,8 +448,20 @@
           <dt>If it fails</dt>
           <dd><a href="#ts-repo-id">My repo is rejected</a></dd>
         </dl>
-        <!-- SCREENSHOT: The Settings page of a Hugging Face repo with Access Requests enabled. Save as static/img/docs/step2-gated.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step2-gated.png" alt="Hugging Face repo Settings page with the Access Requests option enabled"><figcaption>Enable Access Requests in your repo's Settings.</figcaption></figure> -->
-        <!-- SCREENSHOT: The Access settings of a Hugging Face repo showing the ArtificialGladiatorLeague account approved. Save as static/img/docs/step2-approve.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step2-approve.png" alt="Access settings of a Hugging Face repo with the account ArtificialGladiatorLeague listed as approved"><figcaption>Approve ArtificialGladiatorLeague.</figcaption></figure> -->
+
+        <h3 id="step2-stuck">If you get stuck</h3>
+        <ol>
+          <li>Check that the model repo is in your own Hugging Face account.</li>
+          <li>Open the repo's <em>Settings</em> and check that <em>Access Requests</em> is on.</li>
+          <li>Open the repo's Access settings and check that <code>ArtificialGladiatorLeague</code> is approved.</li>
+          <li>Check that you typed the repo as <code>username/repo-name</code>. A Space URL is rejected.</li>
+          <li>Still rejected? Read the message on the Gladiator tab, then open <a href="#ts-repo-id">My repo is rejected</a>.</li>
+        </ol>
+        <figure class="doc-shot">
+          <!-- TODO: add screenshot of Hugging Face repo Settings > Access Requests -->
+          <!-- <img src="" alt="The Settings page of a Hugging Face model repo with the Access Requests option turned on, and the list of access requests showing ArtificialGladiatorLeague as approved"> -->
+          <figcaption>Screenshot to be added: the repo Settings page with Access Requests turned on and <code>ArtificialGladiatorLeague</code> approved.</figcaption>
+        </figure>
 
         <details class="doc-details">
           <summary>How to do this on Hugging Face <span class="doc-tag">Generic guide</span></summary>
@@ -176,19 +469,19 @@
             <p>Screens on Hugging Face change from time to time. If a name below is different on your screen, look for the closest match.</p>
             <h4>Create a repo</h4>
             <ol>
-              <li>Sign in at huggingface.co. <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Click your profile picture, then choose <strong>New Model</strong>. For a data repo, choose <strong>New Dataset</strong> instead. <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Type a name and check that you are the owner. Keep the visibility on Public: Access Requests (below) is what makes a repo Gated. Click the button that creates the repo. <!-- VERIFY against current Hugging Face UI --></li>
+              <li>Sign in at huggingface.co.</li>
+              <li>Click your profile picture, then choose <strong>New Model</strong>. For a data repo, choose <strong>New Dataset</strong> instead.</li>
+              <li>Type a name and check that you are the owner. Keep the visibility on Public: Access Requests (below) is what makes a repo Gated. Click the button that creates the repo.</li>
             </ol>
             <h4>Turn on Access Requests</h4>
             <ol>
-              <li>Open your repo and click its <strong>Settings</strong> tab. <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Find the section about gated access and turn on <strong>Access Requests</strong>. <!-- VERIFY against current Hugging Face UI --></li>
+              <li>Open your repo and click its <strong>Settings</strong> tab.</li>
+              <li>Find the section about gated access and turn on <strong>Access Requests</strong>.</li>
             </ol>
             <h4>Approve a user</h4>
             <ol>
-              <li>In the repo's Settings, open the access requests list (the Access settings). <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Find <code>ArtificialGladiatorLeague</code> among the requests and accept it. If it is not listed, use the option to grant access to a user by name. <!-- VERIFY against current Hugging Face UI --></li>
+              <li>In the repo's Settings, open the access requests list (the Access settings).</li>
+              <li>Find <code>ArtificialGladiatorLeague</code> among the requests and accept it. If it is not listed, use the option to grant access to a user by name.</li>
             </ol>
           </div>
         </details>
@@ -196,30 +489,32 @@
         <h3 id="example">Start from a working example</h3>
         <div class="doc-callout doc-tip" role="note">
           <span class="doc-callout-label">Tip</span>
-          <p>The easiest way to get an AG Champion that passes every platform check is to copy one that already does.</p>
+          <p>The easiest start is the <a href="#starter-code">starter code</a>. It is a complete bot that plays random legal moves.</p>
         </div>
         <ol>
-          <li>Open <a href="https://huggingface.co/chaim-duchovny" target="_blank" rel="noopener">https://huggingface.co/chaim-duchovny</a> and open a repo.</li>
-          <li>Use <strong>Duplicate this repo</strong> to copy it into your own account.</li>
-          <li>Make your copy <strong>Gated</strong> (Settings, Access Requests).</li>
+          <li>Create a new model repo in your own Hugging Face account (see <em>How to do this on Hugging Face</em> above).</li>
+          <li>In the repo, click <strong>Add file</strong> and create a new file named <code>NAME_OF_ALGO_FILE.py</code> (a name you choose, for example <code>my_bot.py</code>).</li>
+          <li>Paste the <a href="#starter-code">starter code</a> into it and commit. A <a href="{{ hiw }}#term-commit">commit</a> saves your change in the repo.</li>
+          <li>Add a second file named <code>config_model.json</code> that gives your file name under <code>"entrypoint"</code> (see <a href="#step-config">Config files</a>).</li>
+          <li>Make your repo <strong>Gated</strong> (Settings, Access Requests).</li>
         </ol>
-        <p>You edit the files of your copy in Step 3.</p>
+        <p>You edit the code in Step 3. To read more example code, you can open the repos at <a href="https://huggingface.co/chaim-duchovny" target="_blank" rel="noopener">https://huggingface.co/chaim-duchovny</a>.</p>
 
         <details class="doc-details">
           <summary>Suggested file layout if you create the repos yourself <span class="doc-tag">Optional</span></summary>
           <div class="doc-details-body">
             <h4>Model repo (a Hugging Face Model repo, required)</h4>
-            <p>It contains your AG Champion code and <code>config_model.json</code>. Put the files on the <code>main</code> branch.</p>
+            <p>It contains your AG Champion code and <code>config_model.json</code> (see <a href="#step-config">Config files</a>). Put the files on the <code>main</code> branch.</p>
 <pre class="doc-tree" tabindex="0">your-username/my-bot/
-    |-- config_model.json    (see Step 3)
-    |-- chess_mcvs.py        (your AI code: load / get_move)
+    |-- config_model.json    (names your code file under "entrypoint")
+    |-- NAME_OF_ALGO_FILE.py (your AI code: load / get_move)
     |-- utils.py             (optional helper modules)
     |-- requirements.txt     (optional, for your own reference; not installed by the platform)
     `-- AGL_VERIFY.txt       (added in Step 5)</pre>
             <h4>Data repo (a Hugging Face Dataset repo, optional)</h4>
             <p>You need it if your AG Champion uses runtime data files such as opening books, precomputed tables or trained weights. The platform copies it next to your AG Champion and your code reads it from <code>ctx.data_dir</code>.</p>
 <pre class="doc-tree" tabindex="0">your-username/my-bot-data/
-    |-- config_data.json     (see Step 3)
+    |-- config_data.json     (optional, see Config files)
     |-- opening_book.txt     (any data files your load() reads)
     `-- AGL_VERIFY.txt       (added in Step 5)</pre>
           </div>
@@ -232,23 +527,23 @@
         <div class="doc-step-head"><span class="doc-step-num" aria-hidden="true">3</span><h2>Step 3: Write your AG Champion</h2></div>
         <p>
           Your AG Champion is Python code that receives a board position and returns a legal move string.
-          The logic inside is entirely up to you.
-          The platform downloads your code and runs it in a <a href="{{ hiw }}#term-sandbox">sandbox</a> on its own servers, so you need no external hosting or always-on server.
+          The logic inside is entirely up to you. You can also build it with an <a href="#ai-assistant">AI assistant</a>.
+          The platform downloads your code and runs it in a <a href="{{ hiw }}#term-sandbox">sandbox</a> (a locked box on its own servers), so you need no external hosting or always-on server.
         </p>
         <div class="doc-callout doc-tip" role="note">
           <span class="doc-callout-label">Tip</span>
           <p><strong>Any algorithm is welcome.</strong> Monte Carlo Vector Search (<a href="{{ hiw }}#term-mcvs">MCVS</a>), Minimax, alpha-beta pruning, MCTS, policy networks, value networks, reinforcement learning, opening books, endgame tablebases, hybrid approaches: if it returns a legal move string within the time limit, it qualifies.</p>
         </div>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <p>Your code runs with no network, read-only files, a fixed set of libraries and a move time limit. Check <a href="{{ hiw }}#rule-limits">Sandbox limits</a> before you write code. For example, calls such as <code>requests</code> or <code>urllib</code> fail.</p>
         </div>
         <dl class="doc-meta">
           <dt>What to do</dt>
           <dd>
             <ol>
-              <li>In your model repo, edit the <a href="{{ hiw }}#term-entrypoint">entry-point file</a> so that it defines <code>load(ctx)</code> and <code>get_move(state, fen, player)</code> (see below).</li>
-              <li>Add the two <a href="#step-config">config files</a>.</li>
+              <li>In your model repo, edit the <a href="{{ hiw }}#term-entrypoint">entry-point file</a> so that it defines <code>load(ctx)</code> and <code>get_move(state, fen, player)</code>               (see below). Choose a file name, written here as <code>NAME_OF_ALGO_FILE.py</code>. It is a name you choose, for example <code>my_bot.py</code>. It must end in <code>.py</code> and have no spaces. Use the same name everywhere.</li>
+                            <li>Add <code>config_model.json</code> and write your file name in it under <code>"entrypoint"</code>. See <a href="#step-config">Config files</a> in the Advanced section. <!-- TODO: confirm with platform owner that "entrypoint" is now always required --></li>
               <li>Save your files as UTF-8. The platform also tolerates common Windows encodings (cp1255, cp1252) and reports a warning when it has to fall back.</li>
             </ol>
           </dd>
@@ -261,42 +556,13 @@
         </dl>
 
         <h3>The contract: load(ctx) and get_move(state, fen, player)</h3>
-        <p>Your entry-point file must define both functions. There is no other interface.</p>
+        <p>Your entry-point file must define both functions. There is no other interface. A working Chess example is in the <a href="#starter-code">starter code</a>.</p>
         <ul>
           <li><code>state = load(ctx)</code> is called <strong>once</strong> when your AG Champion is loaded. Open your weights, opening books and other files here and return whatever you want to keep. It is passed back to you as <code>state</code>.</li>
           <li><code>ctx.model_dir</code> and <code>ctx.data_dir</code> are real, read-only folders (<code>pathlib.Path</code>) that hold your model repo files and your data repo files. <code>ctx.data_dir</code> is <code>None</code> when no data files are available. The platform never opens your data files for you. Read them yourself inside <code>load()</code>.</li>
           <li><code>move = get_move(state, fen, player)</code> is called for every move. <code>fen</code> is the position, written as <a href="{{ hiw }}#term-fen">FEN</a> text. <code>player</code> is <code>"w"</code> or <code>"b"</code> (the side to move). Return the move as a plain string.</li>
         </ul>
-        <p>By default the platform imports <code>&lt;game&gt;_mcvs.py</code> (<code>chess_mcvs.py</code> for Chess, <code>breakthrough_mcvs.py</code> for Breakthrough). To use a different file, name it in <code>entrypoint</code> in <code>config_model.json</code>.</p>
-
-        <div class="doc-code">
-          <span class="doc-code-label">chess_mcvs.py (Chess example)</span>
-          <button type="button" class="doc-copy" data-copy-target="code-chess">Copy</button>
-<pre tabindex="0" id="code-chess"><code># chess_mcvs.py - at the root of your model repo
-import random
-
-import chess
-
-
-def load(ctx):
-    # Called once. ctx.data_dir is None if no data files are available.
-    state = {"opening_book": None}
-    if ctx.data_dir is not None:
-        book = ctx.data_dir / "opening_book.txt"
-        if book.exists():
-            state["opening_book"] = book.read_text(encoding="utf-8").splitlines()
-    return state
-
-
-def get_move(state, fen, player):
-    # Return one legal move in UCI notation, for example "e2e4".
-    board = chess.Board(fen)
-    legal = list(board.legal_moves)
-    if not legal:
-        return ""
-    # ---- replace this with your real model ----
-    return random.choice(legal).uci()</code></pre>
-        </div>
+        <p>You tell the platform which file to run by writing its name in <code>config_model.json</code> under <code>"entrypoint"</code>. See <a href="#step-config">Config files</a>.</p>
 
         <h4>Move format</h4>
         <div class="doc-table-wrap" role="region" aria-label="Move format" tabindex="0">
@@ -327,20 +593,66 @@ def get_move(state, fen, player):
               The position is a FEN-like string with rank 8 first (a rank is a row of the board), <code>W</code> for white pieces, <code>B</code> for black pieces, digits for empty squares and the side to move at the end.
               The start position is <code>BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w</code>.
             </p>
-            <p>A piece moves one square forward, straight (only onto an empty square) or diagonally (onto an empty square or an enemy piece). White moves toward rank 8, black toward rank 1.</p>
+            <p>A piece moves one square forward, straight (only onto an empty square) or diagonally (onto an empty square or an enemy piece). White moves toward rank 8, black toward rank 1. A player who reaches the last rank wins.</p>
             <div class="doc-code">
-              <span class="doc-code-label">breakthrough_mcvs.py (minimal skeleton)</span>
+              <span class="doc-code-label">Breakthrough starter: a working bot that plays random legal moves. Save it as NAME_OF_ALGO_FILE.py</span>
               <button type="button" class="doc-copy" data-copy-target="code-breakthrough">Copy</button>
-<pre tabindex="0" id="code-breakthrough"><code># breakthrough_mcvs.py - minimal skeleton
+<pre tabindex="0" id="code-breakthrough"><code># NAME_OF_ALGO_FILE.py
+# Breakthrough starter bot. It plays a random legal move.
+import random
+
+FILES = "abcdefgh"  # file a is the left column, file h is the right column
+
+
+def parse_board(fen):
+    # Turn the position text into a dict: {(file_number, rank): piece}.
+    # file_number is 0 for a, 1 for b, ... 7 for h. rank is 1 to 8.
+    board = {}
+    rows = fen.split()[0].split("/")  # the first row of the text is rank 8
+    for row_index, row in enumerate(rows):
+        rank = 8 - row_index
+        file_number = 0
+        for ch in row:
+            if ch.isdigit():
+                file_number += int(ch)  # a digit means that many empty squares
+            else:
+                board[(file_number, rank)] = ch  # "W" or "B"
+                file_number += 1
+    return board
+
+
+def legal_moves(board, player):
+    me = "W" if player == "w" else "B"
+    step = 1 if me == "W" else -1  # white moves up (toward rank 8), black moves down
+    moves = []
+    for (f, r), piece in board.items():
+        if piece != me:
+            continue
+        nr = r + step  # the rank one square forward
+        if nr &lt; 1 or nr &gt; 8:
+            continue
+        # Straight forward: only onto an empty square.
+        if (f, nr) not in board:
+            moves.append(FILES[f] + str(r) + FILES[f] + str(nr))
+        # Diagonally forward: onto an empty square or an enemy piece.
+        for nf in (f - 1, f + 1):
+            if 0 &lt;= nf &lt;= 7 and board.get((nf, nr)) != me:
+                moves.append(FILES[f] + str(r) + FILES[nf] + str(nr))
+    return moves
+
+
 def load(ctx):
-    return {}
+    return {}  # nothing to load in this simple bot
 
 
 def get_move(state, fen, player):
-    # fen example: "BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w"
     # Return "from-square" + "to-square", for example "a2a3".
-    return "a2a3"</code></pre>
+    moves = legal_moves(parse_board(fen), player)
+    if not moves:
+        return ""
+    return random.choice(moves)  # replace this with your real model</code></pre>
             </div>
+            <p>This starter plays random legal moves, so it is a test, not a strong bot.</p>
           </div>
         </details>
 
@@ -348,56 +660,6 @@ def get_move(state, fen, player):
           <span class="doc-callout-label">Tip</span>
           <p>There is no web server, Space or hosted endpoint to run. Your model repo stays Gated, and the platform only needs the read access you approve.</p>
         </div>
-
-        <h3 id="step-config">Add the config files</h3>
-        <p>
-          Two small <a href="{{ hiw }}#term-config-file">JSON</a> files describe your repos. Add <code>config_model.json</code> to your model repo, and <code>config_data.json</code> to your data repo if you use one.
-          The model check does not require them. Without <code>config_model.json</code>, the platform uses <code>&lt;game&gt;_mcvs.py</code>, or imports every <code>.py</code> file if that file does not exist.
-          The <strong>Repo File Status</strong> panel on the Gladiator tab and the Diagnostics tab do need them. They read <code>files</code> from <code>config_model.json</code> (model repo) and, if you use a data repo, from <code>config_data.json</code> (data repo). They report a problem when a file cannot be read or lists no files.
-        </p>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
-          <p>Each file must be valid JSON: no comments and no trailing commas. A listed <code>entrypoint</code> or <code>modules</code> file that does not exist is reported as a problem.</p>
-        </div>
-
-        <h4><code>config_model.json</code> <span class="doc-muted">(root of the model repo)</span></h4>
-        <div class="doc-code">
-          <span class="doc-code-label">config_model.json</span>
-          <button type="button" class="doc-copy" data-copy-target="code-config-model">Copy</button>
-<pre tabindex="0" id="code-config-model"><code>{
-  "schema_version": 1,
-  "entrypoint": "chess_mcvs.py",
-  "data_files": ["opening_book.txt"],
-  "requirements": ["numpy", "python-chess"],
-  "files": ["chess_mcvs.py"]
-}</code></pre>
-        </div>
-        <div class="doc-table-wrap" role="region" aria-label="Fields of config_model.json" tabindex="0">
-          <table class="doc-table">
-            <caption>Fields of <code>config_model.json</code></caption>
-            <thead>
-              <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Needed?</th><th scope="col">What it does</th></tr>
-            </thead>
-            <tbody>
-              <tr><th scope="row"><code>schema_version</code></th><td>integer</td><td>Optional</td><td>Manifest format version. Use <code>1</code>.</td></tr>
-              <tr><th scope="row"><code>entrypoint</code></th><td>string</td><td>Optional</td><td>The <code>.py</code> file to import. Default: <code>&lt;game&gt;_mcvs.py</code>. If that file does not exist either, every <code>.py</code> file in the repo is imported.</td></tr>
-              <tr><th scope="row"><code>modules</code></th><td>list of strings</td><td>Optional</td><td>An older alternative to <code>entrypoint</code>. Every listed file is imported and the last one wins.</td></tr>
-              <tr><th scope="row"><code>data_files</code></th><td>list of strings</td><td>Optional</td><td>Files your AG Champion expects to find in your data repo. The model check fails if one of them is missing.</td></tr>
-              <tr><th scope="row"><code>requirements</code></th><td>list of strings</td><td>Optional</td><td>Informational only. Nothing is installed.</td></tr>
-              <tr><th scope="row"><code>files</code></th><td>list of strings</td><td>Add it</td><td>The files that must exist in the model repo. Used by the Repo File Status panel and by Diagnostics, which report a problem if the list is missing or empty. The sandbox does not use it.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h4><code>config_data.json</code> <span class="doc-muted">(root of the data repo, only if you use one)</span></h4>
-        <div class="doc-code">
-          <span class="doc-code-label">config_data.json</span>
-          <button type="button" class="doc-copy" data-copy-target="code-config-data">Copy</button>
-<pre tabindex="0" id="code-config-data"><code>{
-  "files": ["opening_book.txt"]
-}</code></pre>
-        </div>
-        <p><code>files</code> lists every file that must exist in the data repo. It is read from the <code>main</code> branch and is used by the Repo File Status panel and by Diagnostics, which report a problem if the file is missing or lists no files. Keep it consistent with <code>data_files</code> in <code>config_model.json</code>.</p>
         <p class="doc-next">Next step: <a href="#step-register">Step 4: Register your repos</a></p>
       </section>
 
@@ -408,8 +670,8 @@ def get_move(state, fen, player):
           On the <strong>Gladiator</strong> tab, each game (Chess, Breakthrough) has its own card with numbered steps (Enter repo, Approve platform account, Add AGL_VERIFY.txt, Verify).
           A line at the top of the tab tells you the next step.
         </p>
-        <div class="doc-callout doc-important" role="note">
-          <span class="doc-callout-label">Important</span>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
           <p>If you change your model repo ID later, your rated-games counter resets. See <a href="{{ hiw }}#rule-qualification">Tournament qualification</a>.</p>
         </div>
         <dl class="doc-meta">
@@ -428,8 +690,6 @@ def get_move(state, fen, player):
           <dt>If it fails</dt>
           <dd><a href="#ts-repo-id">My repo is rejected</a></dd>
         </dl>
-        <!-- SCREENSHOT: The Gladiator tab of the Profile page with a model repo entered and the Save and verify button highlighted. Save as static/img/docs/step4-gladiator-tab.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step4-gladiator-tab.png" alt="Gladiator tab with the Hugging Face Model Repo field filled in and the gold Save and verify button highlighted"><figcaption>The Gladiator tab.</figcaption></figure> -->
-        <!-- SCREENSHOT: The Gladiator tab after saving, showing the verification code with the Copy file name and Copy code buttons next to it. Save as static/img/docs/step4-verification-code.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step4-verification-code.png" alt="Gladiator tab showing the 32-character verification code with the Copy file name and Copy code buttons beside it"><figcaption>The verification code and its Copy buttons.</figcaption></figure> -->
         <details class="doc-details">
           <summary>What the buttons on the Gladiator tab do <span class="doc-tag">Reference</span></summary>
           <div class="doc-details-body">
@@ -459,8 +719,8 @@ def get_move(state, fen, player):
           <span class="doc-callout-label">Important</span>
           <p>Put <code>AGL_VERIFY.txt</code> at the <strong>root</strong> of the repo on the <code>main</code> branch, not inside a subfolder.</p>
         </div>
-        <div class="doc-callout doc-warning" role="note">
-          <span class="doc-callout-label">Warning</span>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
           <p>If you have pushed a new commit to your model repo since your AG Champion was approved, clicking <strong>Re-check Ownership</strong> approves the new commit and your rated-games count goes back to 0. If nothing has changed, clicking it again is safe. See <a href="{{ hiw }}#rule-qualification">Tournament qualification</a>.</p>
         </div>
         <dl class="doc-meta">
@@ -482,15 +742,14 @@ def get_move(state, fen, player):
           <dt>If it fails</dt>
           <dd><a href="#ts-ownership">Ownership verification failed</a>, <a href="#ts-model-check">Model check failed</a></dd>
         </dl>
-        <!-- SCREENSHOT: A Hugging Face repo file list showing AGL_VERIFY.txt at the root next to the code files. Save as static/img/docs/step5-verify-file.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step5-verify-file.png" alt="File list of a Hugging Face repo with AGL_VERIFY.txt at the top level"><figcaption>AGL_VERIFY.txt at the root of the repo.</figcaption></figure> -->
         <details class="doc-details">
           <summary>How to add a file on Hugging Face <span class="doc-tag">Generic guide</span></summary>
           <div class="doc-details-body">
             <ol>
-              <li>Open your repo and click the <strong>Files</strong> tab (it may be called Files and versions). <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Click <strong>Add file</strong>, then choose to create a new file. <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Type <code>AGL_VERIFY.txt</code> as the file name and paste the verification code as the content. <!-- VERIFY against current Hugging Face UI --></li>
-              <li>Commit the file to the <code>main</code> branch. <!-- VERIFY against current Hugging Face UI --></li>
+              <li>Open your repo and click the <strong>Files</strong> tab (it may be called Files and versions).</li>
+              <li>Click <strong>Add file</strong>, then choose to create a new file.</li>
+              <li>Type <code>AGL_VERIFY.txt</code> as the file name and paste the verification code as the content.</li>
+              <li>Commit the file to the <code>main</code> branch.</li>
             </ol>
           </div>
         </details>
@@ -525,7 +784,6 @@ def get_move(state, fen, player):
           <dt>If it fails</dt>
           <dd><a href="#ts-diag-files">Diagnostics says the model or data files are not on the server yet</a>, <a href="#ts-sandbox-unavailable">Diagnostics says the sandbox is unavailable</a>, <a href="#ts-model-check">Model check failed</a></dd>
         </dl>
-        <!-- SCREENSHOT: The Diagnostics tab after a successful run, showing the final RESULT line. Save as static/img/docs/step6-diagnostics.png and replace this comment with: <figure class="doc-shot"><img src="/static/img/docs/step6-diagnostics.png" alt="Diagnostics tab with a finished report that ends with RESULT: your model works correctly"><figcaption>A finished Diagnostics report.</figcaption></figure> -->
         <details class="doc-details">
           <summary>The 7 checks Diagnostics runs <span class="doc-tag">Reference</span></summary>
           <div class="doc-details-body">
@@ -548,7 +806,7 @@ def get_move(state, fen, player):
         <div class="doc-step-head"><span class="doc-step-num" aria-hidden="true">7</span><h2>Step 7: Play and compete</h2></div>
         <div class="doc-callout doc-warning" role="note">
           <span class="doc-callout-label">Warning</span>
-          <p>After you join a tournament, do not push any change to your AG Champion repo. A new commit disqualifies you automatically. Details: <a href="{{ hiw }}#rule-sha">Version pinning</a>.</p>
+          <p><strong>After you join a tournament, do not push any change to your AG Champion repo. A new commit disqualifies you automatically.</strong> A commit is a saved change, and every commit has its own SHA (a unique ID). Details: <a href="{{ hiw }}#rule-sha">Version pinning</a>.</p>
         </div>
         <dl class="doc-meta">
           <dt>What to do</dt>
@@ -559,13 +817,105 @@ def get_move(state, fen, player):
             </ul>
           </dd>
           <dt>Where</dt>
-          <dd>The <a href="{% url 'games:lobby' %}">Lobby</a> for quick matches and the <a href="{% url 'tournaments:list' %}">tournaments page</a> for tournaments. For how tournaments run, see <a href="{% url 'tournaments:how_it_works' %}">How tournaments work</a>.</dd>
+          <dd>The <a href="{% url 'games:lobby' %}">Lobby</a> for quick matches. The Lobby is labelled "Hatzar Grutaot" in the menu. This is Hebrew (<span lang="he" dir="rtl">חצר גרוטאות</span>) and means "Scrapyard". The name was coined by Malka Haas. Use the <a href="{% url 'tournaments:list' %}">tournaments page</a> for tournaments. For how tournaments run, see <a href="{% url 'tournaments:how_it_works' %}">How tournaments work</a>.</dd>
           <dt>How you know it worked</dt>
           <dd>Your AG Champion plays its moves on its own. Results of rated games update your Elo. For how each move is generated, see <a href="{{ hiw }}#move">During a game</a>.</dd>
           <dt>If it fails</dt>
           <dd><a href="#ts-join">I cannot join a tournament</a>, <a href="#ts-move-timeout">Move timed out, or random moves are played for my AG Champion</a>, <a href="#ts-sha">Disqualified: SHA mismatch</a></dd>
         </dl>
       </section>
+
+      <!-- Advanced -->
+      <section id="advanced" class="card mb-6">
+        <h2>Advanced</h2>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Tip</span>
+          <p><strong>Every bot needs a <code>config_model.json</code> file with <code>"entrypoint"</code>.</strong> It tells the platform which file to run. The other fields in it, and <code>config_data.json</code>, are optional. A beginner only needs the short example below.</p>
+        </div>
+        <!-- TODO: confirm with platform owner that "entrypoint" is now always required -->
+
+        <h3 id="step-config">Config files</h3>
+        <p>
+          Two small <a href="{{ hiw }}#term-config-file">JSON</a> files describe your repos: <code>config_model.json</code> for your model repo, and <code>config_data.json</code> for your data repo if you use one.
+          You tell the platform which file to run by writing its name in <code>config_model.json</code> under <code>"entrypoint"</code>. <code>NAME_OF_ALGO_FILE.py</code> in the example below stands for the file name you chose: replace it with your own name, and use the same name everywhere.
+          The <strong>Repo File Status</strong> panel on the Gladiator tab and the Diagnostics tab also read <code>files</code> from <code>config_model.json</code> (model repo) and, if you use a data repo, from <code>config_data.json</code> (data repo). They report a problem when a file cannot be read or lists no files.
+        </p>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Important</span>
+          <p>Each file must be valid JSON: no comments and no trailing commas. A listed <code>entrypoint</code> or <code>modules</code> file that does not exist is reported as a problem.</p>
+        </div>
+
+        <h4><code>config_model.json</code> <span class="doc-muted">(root of the model repo)</span></h4>
+        <div class="doc-code">
+          <span class="doc-code-label">config_model.json</span>
+          <button type="button" class="doc-copy" data-copy-target="code-config-model">Copy</button>
+<pre tabindex="0" id="code-config-model"><code>{
+  "schema_version": 1,
+  "entrypoint": "NAME_OF_ALGO_FILE.py",
+  "data_files": ["opening_book.txt"],
+  "requirements": ["numpy", "python-chess"],
+  "files": ["NAME_OF_ALGO_FILE.py"]
+}</code></pre>
+        </div>
+        <div class="doc-table-wrap" role="region" aria-label="Fields of config_model.json" tabindex="0">
+          <table class="doc-table">
+            <caption>Fields of <code>config_model.json</code></caption>
+            <thead>
+              <tr><th scope="col">Field</th><th scope="col">Type</th><th scope="col">Needed?</th><th scope="col">What it does</th></tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row"><code>schema_version</code></th><td>integer</td><td>Optional</td><td>Manifest format version. Use <code>1</code>.</td></tr>
+              <tr><th scope="row"><code>entrypoint</code></th><td>string</td><td>Required</td><td>The name of the <code>.py</code> file the platform runs, for example <code>NAME_OF_ALGO_FILE.py</code>. This is how you tell the platform which file to run.</td></tr>
+              <tr><th scope="row"><code>modules</code></th><td>list of strings</td><td>Optional</td><td>An older alternative to <code>entrypoint</code>. Every listed file is imported and the last one wins.</td></tr>
+              <tr><th scope="row"><code>data_files</code></th><td>list of strings</td><td>Optional</td><td>Files your AG Champion expects to find in your data repo. The model check fails if one of them is missing.</td></tr>
+              <tr><th scope="row"><code>requirements</code></th><td>list of strings</td><td>Optional</td><td>Informational only. Nothing is installed.</td></tr>
+              <tr><th scope="row"><code>files</code></th><td>list of strings</td><td>Recommended</td><td>The files that must exist in the model repo. Used by the Repo File Status panel and by Diagnostics, which report a problem if the list is missing or empty. The sandbox does not use it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h4><code>config_data.json</code> <span class="doc-muted">(root of the data repo, only if you use one)</span></h4>
+        <div class="doc-code">
+          <span class="doc-code-label">config_data.json</span>
+          <button type="button" class="doc-copy" data-copy-target="code-config-data">Copy</button>
+<pre tabindex="0" id="code-config-data"><code>{
+  "files": ["opening_book.txt"]
+}</code></pre>
+        </div>
+        <p><code>files</code> lists every file that must exist in the data repo. It is read from the <code>main</code> branch and is used by the Repo File Status panel and by Diagnostics, which report a problem if the file is missing or lists no files. Keep it consistent with <code>data_files</code> in <code>config_model.json</code>.</p>
+
+                <details class="doc-details" id="local-test">
+                  <summary>Optional: test on your own computer <span class="doc-tag">Advanced</span></summary>
+                  <div class="doc-details-body">
+                    <p>You do not need this. The platform's model check and Diagnostics test your bot for you. Use this only if you want to try your code before you upload it.</p>
+                    <ol>
+                      <li>Install Python from python.org.</li>
+                      <li>Open a terminal (a window where you type commands) and run <code>pip install python-chess numpy</code>.</li>
+                      <li>Put your file <code>NAME_OF_ALGO_FILE.py</code> in a folder. In the same folder, create a file named <code>test_bot.py</code> with the code below.</li>
+                      <li>In the <code>import</code> line, write your file name without <code>.py</code>. For example, write <code>my_bot</code> for <code>my_bot.py</code>.</li>
+                      <li>In the terminal, go to that folder and run <code>python test_bot.py</code>. It prints one move.</li>
+                    </ol>
+                    <div class="doc-code">
+                      <span class="doc-code-label">test_bot.py</span>
+                      <button type="button" class="doc-copy" data-copy-target="code-local-test">Copy</button>
+        <pre tabindex="0" id="code-local-test"><code># test_bot.py - put it in the same folder as NAME_OF_ALGO_FILE.py
+        from pathlib import Path
+        from types import SimpleNamespace
+
+        import NAME_OF_ALGO_FILE as bot  # your file name, without .py
+
+        # A simple stand-in for what the platform gives to load().
+        ctx = SimpleNamespace(model_dir=Path("."), data_dir=None)
+        state = bot.load(ctx)
+
+        # Chess sample position (the start position).
+        # For Breakthrough use: "BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w"
+        fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        print(bot.get_move(state, fen, "w"))</code></pre>
+                    </div>
+                  </div>
+                </details>
+              </section>
 
       <!-- Best Practices -->
       <section id="best-practices" class="card mb-6">
@@ -601,7 +951,8 @@ def get_move(state, fen, player):
           <div class="doc-details-body">
             <ul>
               <li>Enter the repo as <code>username/repo-name</code>. A huggingface.co model or dataset link is converted automatically. A Space URL is rejected.</li>
-              <li>A public model repo is rejected: set it to Gated first. The data repo is the opposite: it must be Public. See <a href="{{ hiw }}#rule-repo-access">Repo access</a>.</li>
+              {% if guest_mode_enabled %}<li><strong>Guests:</strong> your repo must be Public and under your own Hugging Face username. A repo ID that contains <code>--</code> is rejected. Size and file-count limits apply.</li>{% endif %}
+              <li>For a full account, a public model repo is rejected: set it to Gated first. The data repo is the opposite: it must be Public. See <a href="{{ hiw }}#rule-repo-access">Repo access</a>.</li>
             </ul>
           </div>
         </details>
@@ -610,8 +961,10 @@ def get_move(state, fen, player):
           <summary>Model check failed</summary>
           <div class="doc-details-body">
             <ul>
-              <li>The Gladiator tab shows the reason. Typical causes: a syntax error, a missing <code>load(ctx)</code>, invalid <code>config_model.json</code>, a file listed in <code>data_files</code> that is missing from the data repo, or a move that is not legal for one of the three sample positions.</li>
+              <li>The Gladiator tab shows the reason. Typical causes: a syntax error, a missing <code>load(ctx)</code>, an <code>"entrypoint"</code> in <code>config_model.json</code> that does not match your file name, invalid <code>config_model.json</code>, a file listed in <code>data_files</code> that is missing from the data repo, or a move that is not legal for one of the three sample positions.</li>
               <li>Fix the repo, then click <strong>Verify Ownership</strong> (or <strong>Save and verify</strong>) again.</li>
+              <li>You tell the platform which file to run by writing its name in <code>config_model.json</code> under <code>"entrypoint"</code>. Check that the name is spelled exactly like your file.</li>
+              <li>Not sure how to fix it? Use the <a href="#ai-assistant">Fix it prompt</a> with an AI assistant.</li>
             </ul>
           </div>
         </details>
@@ -707,7 +1060,7 @@ def get_move(state, fen, player):
         <details class="doc-details">
           <summary>Can I use PyTorch or other libraries?</summary>
           <div class="doc-details-body">
-            <p>Only the libraries the sandbox image contains. They are listed under <a href="{{ hiw }}#rule-limits">Sandbox limits</a>. The sandbox has no network access, so packages cannot be installed at match time. Develop and test locally against the same libraries.</p>
+            <p>Only the libraries the sandbox image contains. They are listed under <a href="{{ hiw }}#rule-limits">Sandbox limits</a>. The sandbox has no network access, so packages cannot be installed at match time. Testing on your own computer is optional and for advanced users. Beginners can skip it and use the platform's model check and Diagnostics instead. If you do test locally, use the same libraries: see <a href="#local-test">Optional: test on your own computer</a>.</p>
           </div>
         </details>
         <details class="doc-details">
