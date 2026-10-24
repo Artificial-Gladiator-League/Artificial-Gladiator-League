@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+{% block title %}Playing against ShiRi • agladiator.com{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 mb-4">
+    <div>
+      <a href="{% url 'core:home' %}" class="text-xs text-gray-500 hover:text-brand transition">← Back to Home</a>
+      <h1 class="text-xl font-bold mt-1">Playing against ShiRi</h1>
+      <p class="text-xs text-gray-500">Your own model plays ShiRi (Monte Carlo Vector Search) · Chess &amp; Breakthrough · Unrated, nothing is saved</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="flex items-center gap-1.5 text-xs">
+        <span id="wsDot" class="ws-dot connecting"></span>
+        <span id="wsLabel" class="text-gray-400">Connecting…</span>
+      </span>
+    </div>
+  </div>
+
+  {% if not user.is_authenticated %}
+  <div class="rounded-xl border border-brand/30 bg-brand/5 px-5 py-4 flex flex-col sm:flex-row items-center justify-between gap-3 mb-4">
+    <p class="text-sm text-gray-300">
+      You're browsing as a visitor. <span class="text-gray-500">Log in to watch your own model play ShiRi.</span>
+    </p>
+    <a href="{% url 'users:login' %}" class="btn-brand text-sm py-2 px-5 whitespace-nowrap">Log in to Play →</a>
+  </div>
+  {% endif %}
+
+  <!-- Board + sidebar -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- Board column -->
+    <div class="lg:col-span-2 flex flex-col items-center gap-3">
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        <div class="flex items-center gap-2 text-sm">
+          <span id="topColorChip"></span>
+          <span class="font-semibold" id="topName">ShiRi</span>
+        </div>
+        <div class="chess-clock" id="topClock">
+          <span id="topClockTime">--:--</span>
+        </div>
+      </div>
+
+      <div class="game-board-wrap relative" id="boardContainer">
+        <div id="gameBoard" class="cg-wrap w-full h-full chessground-container"></div>
+        <div id="gameOverOverlay" class="game-over-overlay hidden">
+          <div class="text-center">
+            <p class="result-text" id="resultText"></p>
+            <p class="text-sm text-gray-300 mt-1" id="resultDetail"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="w-full max-w-[560px] flex items-center justify-between">
+        <div class="flex items-center gap-2 text-sm">
+          <span id="bottomColorChip"></span>
+          <span class="font-semibold" id="bottomName">Your model</span>
+        </div>
+        <div class="chess-clock" id="bottomClock">
+          <span id="bottomClockTime">--:--</span>
+        </div>
+      </div>
+
+      <div id="stopWrap" class="hidden w-full max-w-[560px]">
+        <button id="stopBtn" class="btn-danger text-xs py-2 px-4">Stop</button>
+      </div>
+
+      <div id="turnBanner" class="hidden w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg transition-all"></div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-4">
+      <div class="card space-y-5">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold">New Game</h3>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Game Type</label>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="shiri-type-btn tc-btn active" data-val="chess">♟ Chess</button>
+            <button type="button" class="shiri-type-btn tc-btn" data-val="breakthrough">♙<span style="display:inline-block;transform:rotate(180deg);line-height:1;">♟</span> Breakthrough</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Minutes per side</label>
+          <div class="flex flex-wrap gap-2">
+            {% for m in base_minutes_choices %}
+            <button type="button" class="shiri-base-btn tc-btn{% if m == default_base_minutes %} active{% endif %}" data-val="{{ m }}">{{ m }} min</button>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Increment (seconds)</label>
+          <div class="flex flex-wrap gap-2">
+            {% for i in increment_choices %}
+            <button type="button" class="shiri-inc-btn tc-btn{% if i == default_increment %} active{% endif %}" data-val="{{ i }}">{{ i }}s</button>
+            {% endfor %}
+          </div>
+        </div>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Time per move (your AI thinking)</label>
+          <div class="flex flex-wrap gap-2">
+            {% for s in thinking_choices %}
+            <button type="button" class="shiri-model-thinking-btn tc-btn{% if s == 5 %} active{% endif %}" data-val="{{ s }}">{{ s }}s</button>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-gray-500 mt-2">Target pace for your AI's moves. A faster answer is shown only when this time is up. Your AI's clock keeps running during this time.</p>
+        </div>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">Time per move (ShiRi thinking)</label>
+          <div class="flex flex-wrap gap-2">
+            {% for s in thinking_choices %}
+            <button type="button" class="shiri-thinking-btn tc-btn{% if s == 5 %} active{% endif %}" data-val="{{ s }}">{{ s }}s</button>
+            {% endfor %}
+          </div>
+          <p class="text-xs text-gray-500 mt-2">ShiRi searches for this long (less when her clock is low) and then moves.</p>
+        </div>
+        <div>
+          <label class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2 block">ShiRi plays as</label>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="shiri-color-btn tc-btn active" data-val="random">🎲 Random</button>
+            <button type="button" class="shiri-color-btn tc-btn" data-val="white">⬜ White</button>
+            <button type="button" class="shiri-color-btn tc-btn" data-val="black">⬛ Black</button>
+          </div>
+        </div>
+        <div class="rounded-xl border border-gray-800 bg-gray-900/60 px-4 py-3 text-center">
+          <span class="text-xs text-gray-500">Time control:</span>
+          <span id="shiriPreview" class="text-sm font-semibold text-brand ml-2">{{ default_base_minutes }}+{{ default_increment }}</span>
+          <span id="shiriVariant" class="ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold bg-yellow-500/15 text-yellow-300 border border-yellow-400/30">Blitz</span>
+        </div>
+        <button id="startGameBtn" class="btn-brand text-lg w-full py-3" {% if not user.is_authenticated %}disabled{% endif %}>Start Game</button>
+      </div>
+
+      <div class="card">
+        <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold mb-2">Game Info</h3>
+        <table class="text-xs w-full">
+          <tbody>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Your model</td>
+              <td class="font-medium" id="infoModel">—</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Opponent</td>
+              <td class="font-medium">ShiRi (MCVS)</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Type</td>
+              <td class="font-medium" id="infoType">Chess</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Time Control</td>
+              <td class="font-medium" id="infoTc">{{ default_base_minutes }}+{{ default_increment }}</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">Your AI time per move</td>
+              <td class="font-medium" id="infoModelThinking">5s</td>
+            </tr>
+            <tr>
+              <td class="text-gray-500 py-0.5 pr-3">ShiRi time per move</td>
+              <td class="font-medium" id="infoThinking">5s</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card p-0">
+        <div class="px-3 py-2 border-b border-gray-700">
+          <h3 class="text-xs uppercase tracking-widest text-gray-500 font-semibold flex items-center justify-between">
+            Moves <span class="text-gray-600 font-normal" id="moveCount">0</span>
+          </h3>
+        </div>
+        <div class="move-list" id="moveList">
+          <div class="text-center text-xs text-gray-600 py-6">Start a game to watch.</div>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        <a href="{% url 'games:lobby' %}" class="btn-outline text-xs py-2 w-full text-center">← Lobby</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  var authed = {{ user.is_authenticated|yesno:"true,false" }};
+  var boardEl = document.getElementById('gameBoard');
+  var overlayEl = document.getElementById('gameOverOverlay');
+  var resultTextEl = document.getElementById('resultText');
+  var resultDetail = document.getElementById('resultDetail');
+  var wsDot = document.getElementById('wsDot');
+  var wsLabel = document.getElementById('wsLabel');
+  var moveListEl = document.getElementById('moveList');
+  var moveCountEl = document.getElementById('moveCount');
+  var turnBanner = document.getElementById('turnBanner');
+  var stopWrap = document.getElementById('stopWrap');
+  var stopBtn = document.getElementById('stopBtn');
+  var startBtn = document.getElementById('startGameBtn');
+
+  var BLACK_CHIP = '<span style="display:inline-flex;align-items:center;justify-content:center;width:1.25rem;height:1.25rem;border-radius:0.25rem;background:#1a1a1a;border:1px solid #555;font-size:0.65rem;font-weight:700;color:#fff;">B</span>';
+  var WHITE_CHIP = '<span style="display:inline-flex;align-items:center;justify-content:center;width:1.25rem;height:1.25rem;border-radius:0.25rem;background:#fff;border:1px solid #ccc;font-size:0.65rem;font-weight:700;color:#111;">W</span>';
+  var CHESS_START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  var BT_START = 'BBBBBBBB/BBBBBBBB/8/8/8/8/WWWWWWWW/WWWWWWWW w';
+  var BANNER = 'w-full max-w-[560px] text-center text-sm font-semibold py-2 rounded-lg ';
+  var REASONS = {
+    checkmate: 'checkmate', stalemate: 'stalemate', insufficient_material: 'insufficient material',
+    fifty_moves: 'fifty-move rule', repetition: 'repetition', breakthrough: 'breakthrough',
+    elimination: 'all pieces captured', no_moves: 'no legal moves', max_length: 'maximum game length',
+    timeout: 'time out'
+  };
+
+  // ── Setup selections (same tc-btn pattern as the lobby modal) ──
+  var sel = { type: 'chess', color: 'random', thinking: '5', modelThinking: '5', base: '{{ default_base_minutes }}', inc: '{{ default_increment }}' };
+  function wireGroup(cls, key, onChange) {
+    var btns = document.querySelectorAll('.' + cls);
+    btns.forEach(function (b) {
+      b.addEventListener('click', function () {
+        btns.forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        sel[key] = b.dataset.val;
+        if (onChange) onChange();
+      });
+    });
+  }
+
+  // Same time-control labels as the Create Lobby Game modal
+  function classifyTC(m) {
+    if (m < 3) return { label: 'Bullet', css: 'bg-red-500/15 text-red-300 border border-red-400/30' };
+    if (m < 10) return { label: 'Blitz', css: 'bg-yellow-500/15 text-yellow-300 border border-yellow-400/30' };
+    if (m < 30) return { label: 'Rapid', css: 'bg-blue-500/15 text-blue-300 border border-blue-400/30' };
+    return { label: 'Classical', css: 'bg-green-500/15 text-green-300 border border-green-400/30' };
+  }
+  function updatePreview() {
+    document.getElementById('shiriPreview').textContent = sel.base + '+' + sel.inc;
+    var v = classifyTC(Number(sel.base));
+    var badge = document.getElementById('shiriVariant');
+    badge.textContent = v.label;
+    badge.className = 'ml-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ' + v.css;
+    if (!lastState) showClocks(Number(sel.base) * 60, Number(sel.base) * 60);
+  }
+  wireGroup('shiri-type-btn', 'type', function () { if (!lastState) showPreview(); });
+  wireGroup('shiri-color-btn', 'color');
+  wireGroup('shiri-base-btn', 'base', updatePreview);
+  wireGroup('shiri-inc-btn', 'inc', updatePreview);
+  wireGroup('shiri-model-thinking-btn', 'modelThinking');
+  wireGroup('shiri-thinking-btn', 'thinking');
+
+  var ws = null, ground = null, gameType = 'chess', lastState = null;
+
+  // ── Clocks: each side's clock only runs while that side really thinks (the server says which) ──
+  var topClockEl = document.getElementById('topClockTime'), bottomClockEl = document.getElementById('bottomClockTime');
+  var topClock = document.getElementById('topClock'), bottomClock = document.getElementById('bottomClock');
+  var clock = { white: 0, black: 0, active: null, at: 0 };
+  var modelColor = 'white';
+
+  function formatClock(sec) {
+    if (sec < 0) sec = 0;
+    var m = Math.floor(sec / 60), s = Math.floor(sec % 60), t = Math.floor((sec % 1) * 10);
+    if (sec < 20) return m + ':' + String(s).padStart(2, '0') + '.' + t;
+    return m + ':' + String(s).padStart(2, '0');
+  }
+  function clockNow(color) {
+    var t = clock[color];
+    if (clock.active === color) t -= (Date.now() - clock.at) / 1000;
+    return Math.max(0, t);
+  }
+  function renderClocks() {
+    var shiriColor = modelColor === 'white' ? 'black' : 'white';
+    var bottomT = clockNow(modelColor), topT = clockNow(shiriColor);
+    bottomClockEl.textContent = formatClock(bottomT);
+    topClockEl.textContent = formatClock(topT);
+    bottomClock.className = 'chess-clock ' + modelColor + '-clock' + (clock.active === modelColor ? ' active-clock' : '') + (bottomT < 30 ? ' low-time' : '');
+    topClock.className = 'chess-clock ' + shiriColor + '-clock' + (clock.active === shiriColor ? ' active-clock' : '') + (topT < 30 ? ' low-time' : '');
+  }
+  function showClocks(whiteSec, blackSec) {
+    clock = { white: whiteSec, black: blackSec, active: null, at: Date.now() };
+    renderClocks();
+  }
+  setInterval(renderClocks, 100);
+
+  function setWsStatus(state) {
+    if (state === 'live') {
+      wsDot.className = 'live-dot'; wsLabel.textContent = 'Live'; wsLabel.className = 'text-green-400 font-semibold text-xs';
+    } else if (state === 'reconnecting') {
+      wsDot.className = 'ws-dot disconnected'; wsLabel.textContent = 'Reconnecting\u2026'; wsLabel.className = 'text-gray-400 text-xs';
+    } else {
+      wsDot.className = 'ws-dot connecting'; wsLabel.textContent = 'Connecting\u2026'; wsLabel.className = 'text-gray-400 text-xs';
+    }
+  }
+
+  function setBanner(text, kind) {
+    if (!text) { turnBanner.classList.add('hidden'); return; }
+    turnBanner.classList.remove('hidden');
+    turnBanner.textContent = text;
+    turnBanner.className = BANNER + (kind === 'go'
+      ? 'bg-green-900/40 text-green-300 border border-green-700'
+      : kind === 'error'
+        ? 'bg-red-900/40 text-red-300 border border-red-700'
+        : 'bg-gray-800/60 text-gray-400 border border-gray-700');
+  }
+
+  function chip(color) { return color === 'white' ? WHITE_CHIP : BLACK_CHIP; }
+
+  // ── Breakthrough board (same markup as the game page), read-only ──
+  function parseBtFen(fen) {
+    var ranks = fen.split(' ')[0].split('/'), grid = [];
+    for (var r = 0; r < ranks.length; r++) {
+      var row = [];
+      for (var i = 0; i < ranks[r].length; i++) {
+        var ch = ranks[r][i];
+        if (ch >= '1' && ch <= '8') { for (var j = 0; j < parseInt(ch); j++) row.push('.'); }
+        else row.push(ch);
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  function renderBtBoard(fen, lastUci, orientation) {
+    var grid = parseBtFen(fen), files = 'abcdefgh';
+    var fromSq = lastUci ? lastUci.substring(0, 2) : null, toSq = lastUci ? lastUci.substring(2, 4) : null;
+    var flipped = orientation === 'black';
+    var html = '<div style="display:grid;grid-template-columns:repeat(8,1fr);width:100%;height:100%;">';
+    for (var r = 0; r < 8; r++) {
+      for (var c = 0; c < 8; c++) {
+        var dr = flipped ? (7 - r) : r, dc = flipped ? (7 - c) : c;
+        var dark = (dr + dc) % 2 === 1;
+        var bg = dark ? '#b58863' : '#f0d9b5';
+        var sq = files[dc] + (8 - dr);
+        if (sq === fromSq || sq === toSq) bg = dark ? '#aba23a' : '#cdd16a';
+        var piece = grid[dr] ? (grid[dr][dc] || '.') : '.';
+        var inner = '';
+        if (piece === 'W') inner = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#fff 60%,#ddd);border:2px solid #bbb;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+        else if (piece === 'B') inner = '<div style="width:65%;height:65%;border-radius:50%;background:linear-gradient(135deg,#333 60%,#111);border:2px solid #555;box-shadow:0 2px 6px rgba(0,0,0,0.4);"></div>';
+        html += '<div style="background:' + bg + ';display:flex;align-items:center;justify-content:center;">' + inner + '</div>';
+      }
+    }
+    boardEl.innerHTML = html + '</div>';
+  }
+
+  // ── Chess board (Chessground, same library as the game page), read-only ──
+  function ensureGround(orientation, fen) {
+    if (ground || !window.Chessground) return;
+    ground = window.Chessground(boardEl, {
+      orientation: orientation, fen: fen, viewOnly: true,
+      highlight: { lastMove: true, check: true },
+      animation: { enabled: true, duration: 200 },
+      coordinates: true
+    });
+  }
+
+  function renderChess(s) {
+    ensureGround(s.model_color, s.fen);
+    if (!ground) return;
+    var check = false;
+    try { check = new window.Chess(s.fen).inCheck(); } catch (err) { /* chess.js not ready */ }
+    ground.set({
+      fen: s.fen, orientation: s.model_color, check: check,
+      lastMove: s.last_move ? [s.last_move.substring(0, 2), s.last_move.substring(2, 4)] : undefined
+    });
+  }
+
+  function destroyGround() {
+    if (ground) { ground.destroy(); ground = null; }
+    boardEl.innerHTML = '';
+  }
+
+  function showPreview() {
+    destroyGround();
+    gameType = sel.type;
+    document.getElementById('infoType').textContent = gameType === 'chess' ? 'Chess' : 'Breakthrough';
+    if (gameType === 'breakthrough') renderBtBoard(BT_START, null, 'white');
+    else if (window.Chessground) ensureGround('white', CHESS_START);
+    document.getElementById('bottomColorChip').innerHTML = WHITE_CHIP;
+    document.getElementById('topColorChip').innerHTML = BLACK_CHIP;
+  }
+
+  // ── Move list ──
+  function renderMoves(moves) {
+    moveListEl.innerHTML = '';
+    if (!moves.length) {
+      moveListEl.innerHTML = '<div class="text-center text-xs text-gray-600 py-6">Waiting for moves…</div>';
+    }
+    for (var i = 0; i < moves.length; i += 2) {
+      var row = document.createElement('div');
+      row.className = 'move-row';
+      var wLast = (i === moves.length - 1), bLast = (i + 1 === moves.length - 1);
+      row.innerHTML = '<span class="move-num">' + (i / 2 + 1) + '.</span>' +
+        '<span class="move-white' + (wLast ? ' last-move' : '') + '">' + moves[i] + '</span>' +
+        '<span class="move-black' + (bLast ? ' last-move' : '') + '">' + (moves[i + 1] || '') + '</span>';
+      moveListEl.appendChild(row);
+    }
+    moveCountEl.textContent = moves.length;
+    moveListEl.scrollTop = moveListEl.scrollHeight;
+  }
+
+  function showOverlay(s) {
+    overlayEl.classList.remove('hidden');
+    if (s.status === 'cancelled') {
+      resultTextEl.textContent = 'Cancelled';
+      resultTextEl.className = 'result-text text-yellow-300';
+      resultDetail.textContent = s.message;
+    } else if (s.status === 'stopped') {
+      resultTextEl.textContent = 'Stopped';
+      resultTextEl.className = 'result-text text-gray-300';
+      resultDetail.textContent = '';
+    } else {
+      var modelWon = s.result === (s.model_color === 'white' ? '1-0' : '0-1');
+      resultTextEl.textContent = s.result === '1/2-1/2' ? '½ – ½' : s.result.replace('-', ' – ');
+      resultTextEl.className = 'result-text ' + (s.result === '1/2-1/2' ? 'text-yellow-300' : (modelWon ? 'text-white' : 'text-gray-300'));
+      var who = s.result === '1/2-1/2' ? 'Draw' : (modelWon ? s.model_name + ' wins' : 'ShiRi wins');
+      resultDetail.textContent = s.message || (who + ' · ' + (REASONS[s.reason] || s.reason));
+    }
+  }
+
+  // ── Server messages ──
+  function applyState(s) {
+    if (!lastState) destroyGround();
+    lastState = s;
+    gameType = s.game_type;
+    var shiriColor = s.shiri_color;
+    modelColor = s.model_color;   // the page-level variable the clocks use (no local copy!)
+    document.getElementById('bottomColorChip').innerHTML = chip(modelColor);
+    document.getElementById('bottomName').textContent = s.model_name;
+    document.getElementById('topColorChip').innerHTML = chip(shiriColor);
+    document.getElementById('topName').textContent = 'ShiRi';
+    document.getElementById('infoModel').textContent = s.model_name;
+    document.getElementById('infoType').textContent = gameType === 'chess' ? 'Chess' : 'Breakthrough';
+    document.getElementById('infoThinking').textContent = s.thinking + 's';
+    document.getElementById('infoModelThinking').textContent = s.model_thinking + 's';
+    document.getElementById('infoTc').textContent = s.base_minutes + '+' + s.increment;
+    clock = { white: s.white_time, black: s.black_time, active: s.clock_active, at: Date.now() - (s.turn_elapsed || 0) * 1000 };
+    renderClocks();
+    if (gameType === 'breakthrough') renderBtBoard(s.fen, s.last_move, modelColor);
+    else renderChess(s);
+    renderMoves(s.moves);
+
+    var ongoing = s.status === 'ongoing';
+    stopWrap.classList.toggle('hidden', !ongoing);
+    overlayEl.classList.toggle('hidden', ongoing);
+    startBtn.textContent = ongoing ? 'Restart' : 'New Game';
+    if (!ongoing) {
+      setBanner(s.status === 'cancelled' ? s.message : null, 'error');
+      showOverlay(s);
+    } else if (s.phase === 'preparing') {
+      setBanner('Loading ' + s.model_name + '\u2026', 'wait');
+    } else if (s.thinking_side === 'model') {
+      setBanner(s.model_name + ' is thinking\u2026', 'go');
+    } else if (s.thinking_side === 'shiri') {
+      setBanner('ShiRi is thinking\u2026', 'wait');
+    } else {
+      setBanner(null);
+    }
+  }
+
+  function connectWS() {
+    if (!authed) {
+      wsDot.className = 'ws-dot disconnected'; wsLabel.textContent = 'Log in to play'; wsLabel.className = 'text-gray-400 text-xs';
+      showPreview();
+      return;
+    }
+    var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + '/ws/shiri/');
+    ws.onopen = function () { setWsStatus('live'); };
+    ws.onclose = function () {
+      setWsStatus('reconnecting');
+      stopWrap.classList.add('hidden');
+      setBanner('Connection lost. Start a new game.', 'error');
+    };
+    ws.onerror = function () { setWsStatus('reconnecting'); };
+    ws.onmessage = function (e) {
+      var data;
+      try { data = JSON.parse(e.data); } catch (err) { return; }
+      if (data.type === 'game_state') applyState(data);
+      else if (data.type === 'start_refused') {
+        stopWrap.classList.add('hidden');
+        setBanner(data.message, data.code === 'preparing' ? 'wait' : 'error');
+      }
+    };
+  }
+
+  startBtn.addEventListener('click', function () {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      if (authed) { setBanner('Reconnecting… try again in a moment.', 'error'); connectWS(); }
+      return;
+    }
+    lastState = null;
+    overlayEl.classList.add('hidden');
+    setBanner(null);
+    ws.send(JSON.stringify({
+      type: 'new_game', game_type: sel.type, color: sel.color,
+      base_minutes: parseInt(sel.base, 10), increment: parseInt(sel.inc, 10),
+      thinking: parseInt(sel.thinking, 10), model_thinking: parseInt(sel.modelThinking, 10)
+    }));
+  });
+
+  stopBtn.addEventListener('click', function () {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'stop' }));
+  });
+
+  connectWS();
+  updatePreview();
+  if (window.Chessground) showPreview(); else window.addEventListener('cg-ready', function () { if (!lastState) showPreview(); });
+})();
+</script>
+{% endblock %}

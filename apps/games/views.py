@@ -505,6 +505,20 @@ def lobby(request):
     return render(request, "games/lobby.html", ctx)
 
 
+def shiri_page(request):
+    """Dedicated page for watching your model play ShiRi. Moves flow over /ws/shiri/."""
+    from apps.shiri.constants import (
+        BASE_MINUTES_CHOICES, DEFAULT_BASE_MINUTES, DEFAULT_INCREMENT, INCREMENT_CHOICES, THINKING_CHOICES,
+    )
+    return render(request, "games/shiri.html", {
+        "thinking_choices": THINKING_CHOICES,
+        "base_minutes_choices": BASE_MINUTES_CHOICES,
+        "increment_choices": INCREMENT_CHOICES,
+        "default_base_minutes": DEFAULT_BASE_MINUTES,
+        "default_increment": DEFAULT_INCREMENT,
+    })
+
+
 @login_required
 def create_lobby_game(request):
     """Create a new open lobby game from the modal form."""

@@ -71,6 +71,7 @@
                 <li><a class="doc-toc-link" href="#step-compete">Step 7: Play and compete</a></li>
               </ul>
             </li>
+            <li><a class="doc-toc-link" href="#play-shiri">Try your AG Champion against ShiRi</a></li>
             <li><a class="doc-toc-link" href="#advanced">Advanced</a>
               <ul><li><a class="doc-toc-link" href="#step-config">Config files</a></li></ul>
             </li>
@@ -133,7 +134,7 @@
           <li>
             <span>
               <span class="doc-path-title">Wait about a minute for the check, then play</span>
-              The platform checks your code in a <a href="{{ hiw }}#term-sandbox">sandbox</a>. A sandbox is a locked box on the platform's servers where your bot runs. When the check passes, go to the <a href="{% url 'games:lobby' %}">Lobby</a> and play. If it fails, the Gladiator tab shows why: see <a href="#ts-model-check">Model check failed</a>.
+              The platform checks your code in a <a href="{{ hiw }}#term-sandbox">sandbox</a>. A sandbox is a locked box on the platform's servers where your bot runs. When the check passes, go to the <a href="{% url 'games:lobby' %}">Lobby</a> and play, or <a href="#play-shiri">watch your bot play ShiRi</a>, the platform's own AI opponent. If it fails, the Gladiator tab shows why: see <a href="#ts-model-check">Model check failed</a>.
             </span>
           </li>
         </ol>
@@ -813,6 +814,7 @@ def get_move(state, fen, player):
           <dd>
             <ul>
               <li><strong>Quick match:</strong> go to the Lobby and challenge another player. Your AG Champion plays automatically in real time.</li>
+              <li><strong>Practice against ShiRi:</strong> let your AG Champion play the platform's AI opponent, with no rating risk. See <a href="#play-shiri">Try your AG Champion against ShiRi</a>.</li>
               <li><strong>Tournament:</strong> first play {{ tournament_min_rated_games|default:30 }} rated games in the Lobby. Then open a tournament and click <strong>Register</strong> or <strong>Join</strong>. When the tournament asks players to ready up, mark yourself <strong>Ready</strong>. The platform schedules and runs all matches automatically. The qualification rule is explained in <a href="{{ hiw }}#rule-qualification">Tournament qualification</a>.</li>
             </ul>
           </dd>
@@ -823,6 +825,45 @@ def get_move(state, fen, player):
           <dt>If it fails</dt>
           <dd><a href="#ts-join">I cannot join a tournament</a>, <a href="#ts-move-timeout">Move timed out, or random moves are played for my AG Champion</a>, <a href="#ts-sha">Disqualified: SHA mismatch</a></dd>
         </dl>
+      </section>
+
+      <!-- Play against ShiRi -->
+      <section id="play-shiri" class="card mb-6">
+        <h2>Try your AG Champion against ShiRi</h2>
+        <p>
+          ShiRi is an AI opponent built into the platform. It is the fastest way to see your AG Champion play: you do not need another player,
+          and nothing is rated. <strong>Your AG Champion plays ShiRi and you only watch.</strong> You do not move any pieces.
+          More about ShiRi: <a href="{{ hiw }}#shiri">Playing against ShiRi</a>.
+        </p>
+        <dl class="doc-meta">
+          <dt>What to do</dt>
+          <dd>
+            <ol>
+              <li>Open <strong>Playing against ShiRi</strong> in the "Hatzar Grutaot" menu, or click <strong>Play against ShiRi</strong> on the home page.</li>
+              <li>Choose the game (Chess or Breakthrough), the colour <strong>ShiRi</strong> plays (White, Black or Random), the time control (minutes per side and increment, as in Create Lobby Game), and the time per move for <strong>your AI</strong> and for <strong>ShiRi</strong> (3, 5, 8, 12 or 15 seconds each).</li>
+              <li>Click <strong>Start Game</strong>. Click <strong>Stop</strong> to end the game early.</li>
+            </ol>
+          </dd>
+          <dt>Before you start</dt>
+          <dd>
+            You need your own AG Champion for the game you choose, with its repo saved on your Profile and its model check passed.
+            {% if guest_mode_enabled %}As a guest, wait until the Gladiator tab says your model is ready. Until then the page shows "Preparing your model..." and the game does not start. {% endif %}Full accounts must also have <a href="#step-ownership">proved ownership</a>.
+          </dd>
+          <dt>Where</dt>
+          <dd><a href="{% url 'games:shiri' %}">Playing against ShiRi</a>. You must be logged in.</dd>
+          <dt>How you know it worked</dt>
+          <dd>The board shows your AG Champion's name on one side and ShiRi on the other, and the moves appear one after another. When the game ends, the page shows the result and the reason. The game is not saved and does not change your Elo.</dd>
+          <dt>If it fails</dt>
+          <dd>
+            <ul>
+              <li><strong>"You don't have a ... model of your own yet":</strong> register your repo first (see <a href="#step-register">Step 4</a>{% if guest_mode_enabled %} or the <a href="#try-guest">guest quick start</a>{% endif %}).</li>
+              <li><strong>Your AG Champion forfeits:</strong> in a ShiRi game <em>no random move is played for you</em>. If your code returns no move, an illegal move, or is too slow, it forfeits, and the page tells you which. Fix it using <a href="#ts-move-timeout">Move timed out</a> and <a href="#ts-model-check">Model check failed</a>.</li>
+              <li><strong>Your AG Champion loses on time:</strong> each side has a clock (the minutes per side you chose, plus the increment after every move), and only one clock runs at a time. Yours runs from the moment ShiRi moves until your AG Champion moves, including the wait that the "your AI thinking" setting adds. Choose more minutes, or a shorter AI thinking time, if your clock runs low.</li>
+              <li><strong>"Cancelled because of a platform problem":</strong> this is not your fault. No result is recorded. Try again later.</li>
+            </ul>
+          </dd>
+        </dl>
+        <p class="doc-next">Next: <a href="#advanced">Advanced</a></p>
       </section>
 
       <!-- Advanced -->
@@ -1081,6 +1122,12 @@ def get_move(state, fen, player):
             <p>Yes, you can update your AG Champion or change your repo links outside of tournaments. Changing your model repo ID resets your rated-games counter, and so does a new commit in your repo. See <a href="{{ hiw }}#rule-qualification">Tournament qualification</a> and <a href="{{ hiw }}#rule-sha">Version pinning</a>.</p>
           </div>
         </details>
+        <details class="doc-details">
+          <summary>Can I play against ShiRi myself?</summary>
+          <div class="doc-details-body">
+            <p>No. In a ShiRi game your AG Champion plays and you only watch. Does it change my Elo? No: ShiRi games are unrated and are not saved. See <a href="#play-shiri">Try your AG Champion against ShiRi</a>.</p>
+          </div>
+        </details>
         <p>More answers about games, time limits and thinking time are in the <a href="{{ hiw }}#faq">FAQ on How it works</a>.</p>
       </section>
 
@@ -1090,6 +1137,7 @@ def get_move(state, fen, player):
         <div class="flex flex-wrap justify-center gap-3">
           <a href="{% url 'users:profile' %}" class="btn-gold px-6 py-2.5 text-sm font-semibold rounded-lg">Join Your AG Champions</a>
           <a href="{% url 'games:lobby' %}" class="px-6 py-2.5 text-sm font-semibold rounded-lg border border-borderDark text-gray-300 hover:bg-surfaceLight transition">Go to Lobby</a>
+          <a href="{% url 'games:shiri' %}" class="px-6 py-2.5 text-sm font-semibold rounded-lg border border-borderDark text-gray-300 hover:bg-surfaceLight transition">Play against ShiRi</a>
         </div>
       </div>
 

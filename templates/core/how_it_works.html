@@ -46,6 +46,13 @@
                 <li><a class="doc-toc-link" href="#logout">At logout</a></li>
               </ul>
             </li>
+            <li><a class="doc-toc-link" href="#shiri">Playing against ShiRi</a>
+              <ul>
+                <li><a class="doc-toc-link" href="#shiri-start">How to start</a></li>
+                <li><a class="doc-toc-link" href="#shiri-needs">What you need</a></li>
+                <li><a class="doc-toc-link" href="#shiri-fails">When your AG Champion fails</a></li>
+              </ul>
+            </li>
             <li><a class="doc-toc-link" href="#rules">Rules and limits</a>
               <ul>
                 <li><a class="doc-toc-link" href="#rule-account">Your account</a></li>
@@ -95,7 +102,7 @@
           <li><strong>Continue with Hugging Face.</strong> The platform only receives your public Hugging Face username.</li>
           <li><strong>Connect your Public repo.</strong> On the Gladiator tab, enter a model repo that belongs to your own Hugging Face account. The data repo is optional: leave it empty if you do not have one. A repo ID that contains "--" is rejected for guests, and size and file-count limits apply.</li>
           <li><strong>Platform model check.</strong> The platform downloads a fixed version of your repo and runs the same checks in the sandbox, with stricter limits for guests. The check takes about a minute.</li>
-          <li><strong>Play unrated practice games</strong> against other guests.</li>
+          <li><strong>Play unrated practice games</strong> against other guests, or <a href="#shiri">watch your AG Champion play ShiRi</a>, the platform's own AI opponent.</li>
           <li id="guest-clean-up"><strong>Clean-up.</strong> Your downloaded snapshot is deleted at logout or after {{ guest_snapshot_idle_hours|default:2|floatformat:"-1" }} idle hour{{ guest_snapshot_idle_hours|default:2|pluralize }}, and the guest account after {{ guest_ttl_days|default:3 }} day{{ guest_ttl_days|default:3|pluralize }} of inactivity. You can also delete your guest data at any time.</li>
         </ol>
         <div class="doc-callout doc-tip" role="note">
@@ -258,6 +265,59 @@
           <li>Sandbox containers are not tied to your login. An idle one is stopped automatically after its idle timeout.</li>
           {% if guest_mode_enabled %}<li><strong>Guest accounts</strong> are cleaned up differently. See <a href="#guest-clean-up">Clean-up for guests</a>.</li>{% endif %}
         </ul>
+        <p class="doc-next">Next step: <a href="#shiri">Play your AG Champion against ShiRi</a></p>
+      </section>
+
+      <!-- Playing against ShiRi -->
+      <section id="shiri" class="card mb-6">
+        <h2>Playing against ShiRi</h2>
+        <p>
+          <a href="{% url 'games:shiri' %}">ShiRi</a> is an AI opponent built into the platform. It plays Chess and Breakthrough using
+          <a href="#term-mcvs">Monte Carlo Vector Search</a> (MCVS). In a ShiRi game your own <a href="#term-ag-champion">AG Champion</a> plays against ShiRi and
+          <strong>you only watch</strong>. You do not move any pieces. It is a quick way to see your AG Champion play without waiting for another player.
+        </p>
+        <ol class="doc-flow" aria-label="How a ShiRi game runs">
+          <li>Your AG Champion moves (in the sandbox)</li>
+          <li>ShiRi moves</li>
+          <li>Repeat until the game ends</li>
+        </ol>
+
+        <h3 id="shiri-start">How to start</h3>
+        <ol>
+          <li>Open <strong>Playing against ShiRi</strong> in the "Hatzar Grutaot" menu, or click <strong>Play against ShiRi</strong> on the home page.</li>
+          <li>Choose the game (Chess or Breakthrough), the colour <strong>ShiRi</strong> plays (White, Black or Random) and the time control: <strong>minutes per side</strong> and <strong>increment</strong> (seconds added after each move), with the same options as Create Lobby Game.</li>
+          <li>Choose the <a href="#term-thinking-time">AI thinking time</a> twice: <strong>your AI's</strong> time per move and <strong>ShiRi's</strong> time per move (3, 5, 8, 12 or 15 seconds each).</li>
+          <li>Click <strong>Start Game</strong> and watch. The <strong>Stop</strong> button ends the game at any moment.</li>
+        </ol>
+
+        <h3 id="shiri-needs">What you need</h3>
+        <ul>
+          <li>You must be logged in. Guests can play too.</li>
+          <li>You need your <strong>own</strong> AG Champion for the game you choose. You can only ever run your own AG Champion. If you have none for that game, the page says so and the game does not start.</li>
+          <li>Your model repo must be registered and its <a href="#term-model-check">model check</a> must not have failed. Registered accounts must also have <a href="{% url 'core:how_to_upload' %}#step-ownership">proved ownership</a> of the repo.</li>
+          {% if guest_mode_enabled %}<li><strong>Guests:</strong> your repo must be downloaded and checked first. Until then the page shows "Preparing your model..." and the game does not start. Guests also have stricter sandbox limits.</li>{% endif %}
+        </ul>
+
+        <h3>What happens in the game</h3>
+        <ul>
+          <li>Every move of your AG Champion is generated live in its <a href="#term-sandbox">sandbox</a>, exactly as in a Lobby game (see <a href="#move">During a game</a>). The move time limit is {{ sandbox_move_timeout|default:30 }} seconds.</li>
+          <li>Your AI's thinking time is a <em>target pace</em>, as in a Lobby game: if your AG Champion answers faster, the move is shown only when that time is up. Your clock keeps running during this wait, because it is still your turn.</li>
+          <li>ShiRi's moves are calculated by the platform. ShiRi searches for the time per move you chose, and for less when her own clock is low.</li>
+          <li>Both sides have a clock and <strong>only one clock runs at a time</strong>. When a side moves, its clock stops and its opponent's clock starts at the same instant. The increment is added after every move. A side that runs out of time <strong>loses on time</strong>.</li>
+          <li>While a game runs, ShiRi also plays quick practice games in the background and learns from them. This memory is deleted when the game ends. Every new game starts with an empty memory.</li>
+          <li>A ShiRi game is <strong>unrated</strong> and is <strong>not saved</strong>. It does not change your Elo, does not count toward tournament qualification and does not appear in your game history.</li>
+          <li>A game that reaches 300 moves is declared a draw.</li>
+        </ul>
+
+        <h3 id="shiri-fails">When your AG Champion fails in a ShiRi game</h3>
+        <div class="doc-callout doc-important" role="note">
+          <span class="doc-callout-label">Different from Lobby games</span>
+          <p>In a ShiRi game <strong>no random move is ever played for your AG Champion</strong>, so a random move can never make it look better than it is. If your AG Champion returns no move, an illegal move, or does not answer in time, it <a href="#term-forfeit">forfeits</a> and the page says why. A move such as <code>e7e8</code> without the promotion letter counts as illegal, as everywhere on the platform.</p>
+        </div>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
+          <p>If the sandbox itself is unavailable, or the platform is missing your downloaded files, the game is <strong>cancelled</strong> with no result. The page says it is a platform problem and not your fault. This is the same principle as in <a href="#rule-sandbox-down">When the sandbox is unavailable</a>.</p>
+        </div>
         <p class="doc-next">Next step: <a href="#rules">Read the rules and limits</a></p>
       </section>
 
@@ -372,6 +432,10 @@
           </ul>
           <p>Only a problem with the sandbox itself counts. A move that is too slow, a crash, no move or an illegal move from your own AG Champion keeps the rules above.</p>
         </div>
+        <div class="doc-callout doc-tip" role="note">
+          <span class="doc-callout-label">Note</span>
+          <p>Games against ShiRi follow different rules for failed moves: no random move is played and your AG Champion forfeits. See <a href="#shiri-fails">When your AG Champion fails in a ShiRi game</a>.</p>
+        </div>
         <p class="doc-next">Next step: <a href="#titles">See the ranking titles</a></p>
       </section>
 
@@ -437,6 +501,18 @@
           </div>
         </details>
         <details class="doc-details">
+          <summary>Can I play against ShiRi myself?</summary>
+          <div class="doc-details-body">
+            <p>No. In a ShiRi game your AG Champion plays and you only watch. See <a href="#shiri">Playing against ShiRi</a>.</p>
+          </div>
+        </details>
+        <details class="doc-details">
+          <summary>Does a ShiRi game change my Elo?</summary>
+          <div class="doc-details-body">
+            <p>No. ShiRi games are unrated, are not saved, and do not count toward <a href="#rule-qualification">tournament qualification</a>. They are a safe way to test your AG Champion. One difference to remember: a failed move is a forfeit, not a random move (see <a href="#shiri-fails">When your AG Champion fails in a ShiRi game</a>).</p>
+          </div>
+        </details>
+        <details class="doc-details">
           <summary>What is "AI thinking time", and is it guaranteed?</summary>
           <div class="doc-details-body">
             <p>"Thinking time" (configured when creating or joining a game) is a <em>target pace</em> for AI moves, not a hard guarantee. Actual move latency depends on how fast your AG Champion runs inside the sandbox. Heavier models or deep searches take longer.</p>
@@ -491,7 +567,7 @@
           <dt id="term-main-branch">Main branch</dt>
           <dd>The default version line of a repo, named <code>main</code>. The platform reads your files from it.</dd>
           <dt id="term-mcvs">MCVS (optional)</dt>
-          <dd>Optional: you can skip this term. It is short for Monte Carlo Vector Search, one example of a search method you can use.</dd>
+          <dd>Optional: you can skip this term. It is short for Monte Carlo Vector Search, a search method. It is the method <a href="#term-shiri">ShiRi</a> uses to choose its moves.</dd>
           <dt id="term-model-check">Model check</dt>
           <dd>An automatic test the platform runs on your AG Champion. For example, it checks that your code loads and that every move on three sample positions is legal.</dd>
           <dt id="term-model-repo">Model repo</dt>
@@ -506,8 +582,10 @@
           <dd>The isolated, locked-down container on the platform's servers where your AG Champion runs.</dd>
           <dt id="term-sha">SHA</dt>
           <dd>The unique ID of a commit. The platform records (pins) the SHA of your model repo to detect changes.</dd>
+          <dt id="term-shiri">ShiRi</dt>
+          <dd>The AI opponent built into the platform. It plays Chess and Breakthrough using <a href="#term-mcvs">MCVS</a>. Your AG Champion can play it in an unrated game that you watch: see <a href="#shiri">Playing against ShiRi</a>.</dd>
           <dt id="term-thinking-time">Thinking time</dt>
-          <dd>A target pace for AI moves that you set when you create or join a game. It is not a hard guarantee.</dd>
+          <dd>A target pace for AI moves that you set when you create or join a game. It is not a hard guarantee. In a ShiRi game you set it twice: once for your AI and once for ShiRi, who uses it as her search time per move.</dd>
           <dt id="term-uci">UCI notation</dt>
           <dd>The way Chess moves are written: the square you move from, followed by the square you move to, for example <code>e2e4</code>.</dd>
           <dt id="term-verification-code">Verification code</dt>

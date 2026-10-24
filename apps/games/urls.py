@@ -7,6 +7,7 @@ app_name = "games"
 urlpatterns = [
     path('favicon.ico', RedirectView.as_view(url='/img/favicon.ico')),
     path("lobby/", views.lobby, name="lobby"),
+    path("shiri/", views.shiri_page, name="shiri"),
     path("create/", views.create_game, name="create_game"),
     path("create-lobby/", views.create_lobby_game, name="create_lobby_game"),
     path("<int:game_id>/join/", views.join_game, name="join_game"),

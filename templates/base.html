@@ -136,6 +136,9 @@
               <a href="{% url 'tournaments:list' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
                 <span>  </span> Arena Tournament
               </a>
+              <a href="{% url 'games:shiri' %}" class="flex items-center gap-2 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-surface transition">
+                <span>  </span> Playing against ShiRi
+              </a>
             </div>
           </div>
           <a href="{% url 'core:leaderboard' %}" class="nav-link{% if request.resolver_match.view_name == 'core:leaderboard' %} active{% endif %} px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-surfaceLight">Leaderboards</a>
@@ -227,6 +230,7 @@
       <a href="{% url 'games:lobby' %}" class="block nav-link{% if request.resolver_match.app_name == 'games' %} active{% endif %} py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Lobby</a>
       <button type="button" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight w-full text-left mobile-create-lobby-btn cursor-pointer">Create Lobby Game</button>
       <a href="{% url 'tournaments:list' %}" class="block nav-link py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Arena Tournament</a>
+      <a href="{% url 'games:shiri' %}" class="block nav-link{% if request.resolver_match.view_name == 'games:shiri' %} active{% endif %} py-2.5 px-3 pl-6 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Playing against ShiRi</a>
       <a href="{% url 'core:leaderboard' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:leaderboard' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Leaderboards</a>
       <a href="{% url 'forum:category_list' %}" class="block nav-link{% if request.resolver_match.app_name == 'forum' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">Forum</a>
       <a href="{% url 'core:how_to_upload' %}" class="block nav-link{% if request.resolver_match.view_name == 'core:how_to_upload' %} active{% endif %} py-2.5 px-3 rounded-lg hover:bg-gray-50 dark:hover:bg-surfaceLight">How to Register</a>

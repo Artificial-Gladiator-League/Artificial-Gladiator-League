@@ -6,7 +6,7 @@ import re
 from django.conf import settings
 
 GUEST_WS_ALLOWED = re.compile(
-    r"^/?ws/(notifications/|leaderboard/|presence/|games/lobby/|games/\d+/|games/\d+/spectate/)$"
+    r"^/?ws/(notifications/|leaderboard/|presence/|shiri/|games/lobby/|games/\d+/|games/\d+/spectate/)$"
 )
 
 

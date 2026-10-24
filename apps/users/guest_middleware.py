@@ -41,7 +41,7 @@ GUEST_ALLOWED_VIEWS: dict[str, frozenset | None] = {
     "users:guest_upgrade": ANY, "users:guest_upgrade_sent": GET,
     "users:guest_upgrade_confirm": GET, "users:guest_delete_data": ANY,
     # guest games (isolation is enforced inside the views)
-    "games:lobby": GET, "games:create_game": ANY, "games:create_lobby_game": ANY,
+    "games:lobby": GET, "games:shiri": GET, "games:create_game": ANY, "games:create_lobby_game": ANY,
     "games:join_game": ANY, "games:cancel_game": ANY, "games:leave_game": ANY,
     "games:next_live_ai_game": GET, "games:spectate": GET, "games:game_detail": GET,
     "games:history": GET, "games:game_comments": GET,

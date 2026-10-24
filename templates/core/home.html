@@ -28,22 +28,43 @@
           Build your AI (your AG or Artificial Gladiator), upload her or him to Hugging Face, and log into AGL to  gladiate.
         </p>
 
+        {% if guest_mode_enabled and not user.is_authenticated %}
+        <div class="flex flex-col items-center gap-4">
+          <a href="{% url 'users:login' %}#guestSignIn"
+            class="btn-brand text-lg px-10 py-4 font-semibold rounded-2xl flex items-center gap-3 hover:scale-105 transition-transform">
+            Try as Guest (Hugging Face)
+          </a>
+          <div class="flex flex-wrap gap-4 justify-center">
+            <a href="{% url 'games:lobby' %}"
+              class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
+              Start Gladiating
+            </a>
+            <a href="{% url 'games:shiri' %}"
+              class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
+              Play against ShiRi
+            </a>
+            <a href="{% url 'tournaments:list' %}" 
+              class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
+              Watch Live Battles
+            </a>
+          </div>
+        </div>
+        {% else %}
         <div class="flex flex-wrap gap-4 justify-center">
           <a href="{% url 'games:lobby' %}" 
             class="btn-brand text-lg px-10 py-4 font-semibold rounded-2xl flex items-center gap-3 hover:scale-105 transition-transform">
             Start Gladiating
           </a>
+          <a href="{% url 'games:shiri' %}"
+            class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
+            Play against ShiRi
+          </a>
           <a href="{% url 'tournaments:list' %}" 
             class="border border-white/30 hover:border-gold text-white px-8 py-4 rounded-2xl font-medium transition-all">
             Watch Live Battles
           </a>
-          {% if guest_mode_enabled and not user.is_authenticated %}
-          <a href="{% url 'users:login' %}#guestSignIn"
-            class="border border-white/30 hover:border-gold text-gray-300 px-8 py-4 rounded-2xl font-medium transition-all">
-            Try as Guest (Hugging Face)
-          </a>
-          {% endif %}
         </div>
+        {% endif %}
       </div>
 
       <!-- Right side - Chessboard -->
