@@ -1,6 +1,6 @@
 ﻿{% extends "base.html" %}
 {% load static %}
-{% block title %}The Official Home of Artificial Gladiator League • {% block page_title %}agladiator.com{% endblock %}{% endblock %}
+{% block title %}Artificial Gladiator League – Compete Your AI in Chess and Breakthrough{% endblock %}
 
 {% block main_class %}{% endblock %}
 
@@ -8,8 +8,8 @@
 <!-- ══════════════════════════════════════════════
      HERO SECTION — Full-Width Immersive
      ══════════════════════════════════════════════ -->
-<section class="relative min-h-[85vh] flex items-center overflow-hidden">
-  <div class="max-w-[1200px] mx-auto px-6 py-20 relative z-10">
+<section class="relative min-h-[65vh] flex items-center overflow-hidden">
+  <div class="max-w-[1200px] mx-auto px-6 pt-12 pb-6 relative z-10">
     <div class="grid lg:grid-cols-2 gap-16 items-center">
       
       <!-- Left: Text + CTAs -->
@@ -20,12 +20,15 @@
           <span class="brand-line2"><span class="brand-gladiator">Gladiator</span> <span class="brand-league">League</span></span>
         </h1>
 
-        <p class="text-lg text-gray-400 dark:text-gray-400 max-w-lg mx-auto mb-10 leading-relaxed text-left">
-          Join your Artificial Gladiator. Gladiate in skill-based games in the ultimate Artificial Gladiator League (AGL) platform.
+        <p class="text-lg text-gray-300 max-w-lg mx-auto mb-4 leading-relaxed text-left">
+          Artificial Gladiator League (AGL) is a platform where you build an AI (AG Champion or just AG) that plays
+          Chess and Breakthrough, upload it to Hugging Face, and compete against other AGs
+          in rated games and tournaments.
         </p>
-        
-        <p class="text-lg text-gray-400 dark:text-gray-400 max-w-lg mx-auto mb-10 leading-relaxed text-left">
-          Build your AI (your AG or Artificial Gladiator), upload her or him to Hugging Face, and log into AGL to  gladiate.
+
+        <p class="text-lg text-gray-400 max-w-lg mx-auto mb-10 leading-relaxed text-left">
+          Want to try it first? Sign in as a guest with no email or password, or watch your
+          AG gladiate against ShiRi, the platform's own opponent. In AGL, to "gladiate" means to compete.
         </p>
 
         {% if guest_mode_enabled and not user.is_authenticated %}
@@ -77,9 +80,63 @@
             <div id="gameSubtitle" class="text-xs text-gray-400"></div>
           </div>
 
-          <div id="heroBoard" class="w-full aspect-square rounded-2xl overflow-hidden"></div>
+          <div id="heroBoard" role="img" aria-label="Animated chess board replaying a famous game" class="w-full aspect-square rounded-2xl overflow-hidden"></div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     HOW IT WORKS — crawlable text for search engines
+     ══════════════════════════════════════════════ -->
+<section class="max-w-[1200px] mx-auto px-6 pt-8 pb-16">
+  <h2 class="text-3xl font-bold text-white text-center mb-10">
+    How Artificial Gladiator League works
+  </h2>
+
+  <div class="grid md:grid-cols-3 gap-6">
+    <div class="bg-surface border border-borderDark rounded-2xl p-6">
+      <h3 class="text-xl font-semibold text-white mb-3">1. Build your AG</h3>
+      <p class="text-gray-400 leading-relaxed">
+        Build the skeleton of your AG Champion: a python creation that looks at the board and chooses a move. Start
+        from our ready-made starter code, then breathe life into the skeleton
+        with your own strategy, or let an AI assistant help you shape it.
+      </p>
+    </div>
+
+    <div class="bg-surface border border-borderDark rounded-2xl p-6">
+      <h3 class="text-xl font-semibold text-white mb-3">2. Upload it to Hugging Face</h3>
+      <p class="text-gray-400 leading-relaxed">
+        Keep your files in your own Hugging Face account. The platform copies them
+        and runs your AG in a locked, isolated sandbox, so you never have to host
+        anything yourself. When you logout the files that were copied to the platform are removed.
+      </p>
+    </div>
+
+    <div class="bg-surface border border-borderDark rounded-2xl p-6">
+      <h3 class="text-xl font-semibold text-white mb-3">3. Gladiate</h3>
+      <p class="text-gray-400 leading-relaxed">
+        Gladiate in unrated practice games as a guest, or register a full account for
+        rated games, tournaments, and a place on the leaderboard.
+      </p>
+    </div>
+  </div>
+
+  <p class="text-center text-gray-400 mt-8">
+    Ready to start? Read
+    <a href="{% url 'core:how_to_upload' %}" class="text-gold hover:underline">how to register your AG Champion</a>
+    or see
+    <a href="{% url 'core:how_it_works' %}" class="text-gold hover:underline">the full rules and FAQ</a>.
+  </p>
+
+  <div class="max-w-3xl mx-auto mt-12 text-center">
+    <h2 class="text-2xl font-bold text-white mb-3">Who is behind AGL?</h2>
+    <p class="text-gray-400 leading-relaxed">
+      Artificial Gladiator League was designed and built by Chaim Duchovny, a math
+      teacher, together with his research on general game playing.
+      <a href="{% url 'core:about' %}" class="text-gold hover:underline">Read the story on the About page</a>.
+    </p>
   </div>
 </section>
 {% endblock %}

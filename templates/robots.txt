@@ -1,0 +1,10 @@
+{% autoescape off %}User-agent: *
+Allow: /
+{% for path in disallowed_paths %}Disallow: {{ path }}
+{% endfor %}{% for bot in ai_crawlers %}
+User-agent: {{ bot }}
+Allow: /
+{% for path in disallowed_paths %}Disallow: {{ path }}
+{% endfor %}{% endfor %}
+Sitemap: {{ sitemap_url }}
+{% endautoescape %}

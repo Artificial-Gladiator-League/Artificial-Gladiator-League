@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",         # Site domain (agladiator.com) used by sitemap.xml / robots.txt
+    "django.contrib.sitemaps",
     # Project apps
     "apps.core",
     "apps.users",
@@ -65,6 +67,9 @@ except ImportError:
     pass
 
 ROOT_URLCONF = "agladiator.urls"
+
+# The Site row (id 1) is set to agladiator.com by apps/core migration 0001.
+SITE_ID = 1
 
 TEMPLATES = [
     {

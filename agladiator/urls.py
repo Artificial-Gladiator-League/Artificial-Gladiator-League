@@ -5,14 +5,20 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
+from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path, re_path, reverse_lazy
 from django.views.generic import RedirectView
+
+from apps.core.robots import robots_txt
+from apps.core.sitemaps import sitemaps
 
 # Derive domain/protocol from SITE_URL so reset emails never expose request.get_host().
 _RESET_DOMAIN = settings.SITE_URL.replace("https://", "").replace("http://", "").rstrip("/")
 _RESET_PROTOCOL = "https" if settings.SITE_URL.startswith("https") else "http"
 
 urlpatterns = [
+    path("robots.txt", robots_txt, name="robots_txt"),
+    path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="django.contrib.sitemaps.views.sitemap"),
     path('favicon.ico', RedirectView.as_view(url='/static/img/favicon.ico')),
     path("admin/", admin.site.urls),
     path("", include("apps.core.urls")),
